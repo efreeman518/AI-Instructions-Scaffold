@@ -87,7 +87,7 @@ $quickTrigger = New-ScheduledTaskTrigger `
     -At $QuickTime
 
 # Remove existing if present
-Unregister-ScheduledTask -TaskName $QuickTaskName -Confirm:$false -ErrorAction SilentlyContinue
+Unregister-ScheduledTask -TaskName $QuickTaskName -TaskPath "\Maintenance\" -Confirm:$false -ErrorAction SilentlyContinue
 
 Register-ScheduledTask `
     -TaskName   $QuickTaskName `
@@ -110,16 +110,16 @@ $deepAction = New-ScheduledTaskAction `
     -Execute  $psExe `
     -Argument "-ExecutionPolicy Bypass -File `"$ScriptDest`" -Mode Deep"
 
-# Monthly: 1st Sunday. Build via XML since PS doesn't have a native "first Sunday" trigger.
-# We use a weekly trigger filtered by the XML schedule.
-$deepTrigger = New-ScheduledTaskTrigger `
-    -Weekly `
-    -DaysOfWeek Sunday `
-    -At $DeepTime
+# Monthly: 1st Sunday of each month. PowerShell has no native "first Sunday"
+# trigger, so register a scaffold task with a weekly Sunday trigger (to capture
+# the principal/settings/action as valid Task Scheduler XML), then swap its weekly
+# schedule for a MonthlyDayOfWeek schedule (Week 1, Sunday, all 12 months) and
+# re-register from the patched XML.
+$deepTrigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At $DeepTime
 
-Unregister-ScheduledTask -TaskName $DeepTaskName -Confirm:$false -ErrorAction SilentlyContinue
+Unregister-ScheduledTask -TaskName $DeepTaskName -TaskPath "\Maintenance\" -Confirm:$false -ErrorAction SilentlyContinue
 
-$deepTask = Register-ScheduledTask `
+Register-ScheduledTask `
     -TaskName   $DeepTaskName `
     -TaskPath   "\Maintenance\" `
     -Action     $deepAction `
@@ -129,17 +129,16 @@ $deepTask = Register-ScheduledTask `
     -Description "Monthly deep PC maintenance: DISM, SFC, disk optimize, event log archive, large file report." |
     Out-Null
 
-# Patch the trigger to "first Sunday of month" via XML
-$taskXml  = (Export-ScheduledTask -TaskName $DeepTaskName -TaskPath "\Maintenance\" )
-$newXml   = $taskXml -replace `
-    '<WeeksInterval>1</WeeksInterval>', `
-    '<WeeksInterval>4</WeeksInterval>'
-# Note: true "first Sunday" requires COM; 4-week interval is a practical equivalent.
-# For exact "1st Sunday", manage via Task Scheduler GUI -> Triggers -> Monthly.
+# Swap the weekly schedule for a true "1st Sunday of month" (MonthlyDOW) schedule.
+# The .*? match is Singleline so it spans the multi-line <ScheduleByWeek> block;
+# <StartBoundary> (which carries $DeepTime) is left intact. Re-register from the
+# patched XML with -Force to overwrite the scaffold.
+$monthlyDow = '<ScheduleByMonthDayOfWeek><Weeks><Week>1</Week></Weeks><DaysOfWeek><Sunday /></DaysOfWeek><Months><January /><February /><March /><April /><May /><June /><July /><August /><September /><October /><November /><December /></Months></ScheduleByMonthDayOfWeek>'
+$deepXml = Export-ScheduledTask -TaskName $DeepTaskName -TaskPath "\Maintenance\"
+$deepXml = [regex]::Replace($deepXml, '<ScheduleByWeek>.*?</ScheduleByWeek>', $monthlyDow, [System.Text.RegularExpressions.RegexOptions]::Singleline)
+Register-ScheduledTask -Xml $deepXml -TaskName $DeepTaskName -TaskPath "\Maintenance\" -Force | Out-Null
 
-Write-Host "  [OK]  $DeepTaskName - every 4 weeks (Sunday at $DeepTime)" -ForegroundColor Green
-Write-Host "  [TIP] For exact '1st Sunday of month', open Task Scheduler ->" -ForegroundColor DarkGray
-Write-Host "        Task Scheduler Library -> Maintenance -> edit trigger manually" -ForegroundColor DarkGray
+Write-Host "  [OK]  $DeepTaskName - 1st Sunday of each month at $DeepTime" -ForegroundColor Green
 
 
 # --- VERIFY -------------------------------------------------------------------

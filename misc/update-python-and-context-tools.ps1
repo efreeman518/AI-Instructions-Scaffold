@@ -1110,7 +1110,7 @@ CMD=$(python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('tool_inp
     $gfHookMarker  = 'graphify: knowledge graph at graphify-out/'
 
     # Append a marked block to a global instruction file if its marker is absent.
-    function Ensure-GraphifyBlock {
+    function Initialize-GraphifyBlock {
         param([string]$Path, [string]$Marker, [string]$Block)
         if (-not (Test-Path -LiteralPath $Path)) { Write-Info "Not present, skipping: $Path"; return }
         $raw = Get-Content -LiteralPath $Path -Raw
@@ -1120,7 +1120,7 @@ CMD=$(python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('tool_inp
     }
 
     # Append the graphify grep hook to ~/.claude/settings.json PreToolUse if absent.
-    function Ensure-GraphifyGrepHook {
+    function Initialize-GraphifyGrepHook {
         param([string]$Path, [string]$HookCmd, [string]$Marker)
         if (-not (Test-Path -LiteralPath $Path)) { Write-Info "Not present, skipping: $Path"; return }
         $raw = Get-Content -LiteralPath $Path -Raw
@@ -1139,7 +1139,7 @@ CMD=$(python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('tool_inp
     }
 
     # VS Code Copilot global steering (user settings.json). Off by default; -ConfigureVsCodeGlobal opts in.
-    function Ensure-GraphifyVsCodeSteering {
+    function Initialize-GraphifyVsCodeSteering {
         $vs = "$env:APPDATA\Code\User\settings.json"
         $entryText = 'When graphify-out/graph.json exists in the workspace, first run `graphify query "<question>"` (or `graphify path`/`explain`) for codebase questions instead of grepping raw files; prefer graphify-out/wiki/index.md for broad navigation; run `graphify update .` after code changes. Inert when no graph is present.'
         if (-not (Test-Path -LiteralPath $vs)) { Write-Info "VS Code user settings.json not found - skipping ($vs)"; return }
@@ -1186,14 +1186,14 @@ CMD=$(python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('tool_inp
     } "install /graphify skill globally (claude, copilot)"
 
     # 2. Conditional steering block into the global instruction files (idempotent).
-    Invoke-Maybe { Ensure-GraphifyBlock -Path $claudeMd    -Marker $gfBlockMarker -Block ($gfClaudeHeader.Trim() + "`n`n" + $gfUsageBlock.Trim()) } "ensure graphify steering in ~/.claude/CLAUDE.md"
-    Invoke-Maybe { Ensure-GraphifyBlock -Path $codexAgents -Marker $gfBlockMarker -Block ($gfUsageBlock.Trim()) } "ensure graphify steering in $codexAgents"
+    Invoke-Maybe { Initialize-GraphifyBlock -Path $claudeMd    -Marker $gfBlockMarker -Block ($gfClaudeHeader.Trim() + "`n`n" + $gfUsageBlock.Trim()) } "ensure graphify steering in ~/.claude/CLAUDE.md"
+    Invoke-Maybe { Initialize-GraphifyBlock -Path $codexAgents -Marker $gfBlockMarker -Block ($gfUsageBlock.Trim()) } "ensure graphify steering in $codexAgents"
 
     # 3. Claude grep-steering PreToolUse hook (idempotent, validated, backed up).
-    Invoke-Maybe { Ensure-GraphifyGrepHook -Path $claudeSettings -HookCmd $gfGrepHookCmd -Marker $gfHookMarker } "ensure graphify grep hook in ~/.claude/settings.json"
+    Invoke-Maybe { Initialize-GraphifyGrepHook -Path $claudeSettings -HookCmd $gfGrepHookCmd -Marker $gfHookMarker } "ensure graphify grep hook in ~/.claude/settings.json"
 
     # 4. VS Code Copilot global steering (opt-in via -ConfigureVsCodeGlobal; else warns).
-    Invoke-Maybe { Ensure-GraphifyVsCodeSteering } "ensure graphify VS Code global steering"
+    Invoke-Maybe { Initialize-GraphifyVsCodeSteering } "ensure graphify VS Code global steering"
 }
 
 # ==============================================================================
@@ -1247,7 +1247,7 @@ $hrBlock = @'
 # Prepend (first run) or refresh-in-place (re-run) a marker-delimited managed block.
 # Skips a harness whose global file is absent; backs up before any write; refuses to
 # touch a file whose markers are malformed (only one of the pair present).
-function Ensure-ManagedBlock {
+function Initialize-ManagedBlock {
     param([string]$Path, [string]$BeginMarker, [string]$EndMarker, [string]$Block)
     if (-not (Test-Path -LiteralPath $Path)) { Write-Info "Not present, skipping: $Path"; return }
     $raw = Get-Content -LiteralPath $Path -Raw
@@ -1274,9 +1274,9 @@ $hrClaudeMd     = "$env:USERPROFILE\.claude\CLAUDE.md"
 $hrCodexAgents  = if ($env:CODEX_HOME) { "$env:CODEX_HOME\AGENTS.md" } else { "$env:USERPROFILE\.codex\AGENTS.md" }
 $hrCopilotInstr = "$env:USERPROFILE\.copilot\copilot-instructions.md"
 
-Invoke-Maybe { Ensure-ManagedBlock -Path $hrClaudeMd     -BeginMarker $hrBeginMarker -EndMarker $hrEndMarker -Block $hrBlock } "ensure global harness rules in ~/.claude/CLAUDE.md"
-Invoke-Maybe { Ensure-ManagedBlock -Path $hrCodexAgents  -BeginMarker $hrBeginMarker -EndMarker $hrEndMarker -Block $hrBlock } "ensure global harness rules in $hrCodexAgents"
-Invoke-Maybe { Ensure-ManagedBlock -Path $hrCopilotInstr -BeginMarker $hrBeginMarker -EndMarker $hrEndMarker -Block $hrBlock } "ensure global harness rules in ~/.copilot/copilot-instructions.md"
+Invoke-Maybe { Initialize-ManagedBlock -Path $hrClaudeMd     -BeginMarker $hrBeginMarker -EndMarker $hrEndMarker -Block $hrBlock } "ensure global harness rules in ~/.claude/CLAUDE.md"
+Invoke-Maybe { Initialize-ManagedBlock -Path $hrCodexAgents  -BeginMarker $hrBeginMarker -EndMarker $hrEndMarker -Block $hrBlock } "ensure global harness rules in $hrCodexAgents"
+Invoke-Maybe { Initialize-ManagedBlock -Path $hrCopilotInstr -BeginMarker $hrBeginMarker -EndMarker $hrEndMarker -Block $hrBlock } "ensure global harness rules in ~/.copilot/copilot-instructions.md"
 
 # ==============================================================================
 # PHASE 9 - Desktop + Startup shortcuts

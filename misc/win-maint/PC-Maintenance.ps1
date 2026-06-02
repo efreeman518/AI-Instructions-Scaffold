@@ -25,7 +25,7 @@
 
 .NOTES
     ELEVATION: Must be run as Administrator, but via UAC elevation of your own
-    account — NOT as a separate built-in Administrator account. The RTK/Headroom
+    account - NOT as a separate built-in Administrator account. The RTK/Headroom
     update step (section 7) writes to $env:USERPROFILE (shim files, venv, setx
     env vars). If you elevate as a different user, those paths point to the wrong
     profile and the updates land in the wrong place.
@@ -109,6 +109,61 @@ Write-Log ""
 Write-Log "  PC Maintenance - $Mode Mode" "White"
 Write-Log "  $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')  |  $env:COMPUTERNAME" "DarkGray"
 Write-Log "  Log: $LogFile" "DarkGray"
+
+
+# ===============================================================================
+#  SINGLE-INSTANCE GUARD - one run at a time, Deep takes precedence
+# ===============================================================================
+# Both scheduled tasks use -StartWhenAvailable, so when the PC boots after being
+# off across both scheduled times, Task Scheduler fires BOTH missed runs at once.
+# Deep is a strict superset of Quick (sections 1-10 are identical), so a Quick run
+# alongside Deep is pure redundancy AND races on shared resources: wuauserv/DoSvc
+# stop-start, explorer kill/restart, winget/choco global installer locks, and the
+# RTK/Headroom updater writing the same profile paths. Rule enforced here: only one
+# run at a time, and Deep always wins. The lock is released before the keypress
+# prompt at the end (see SUMMARY) so a finished window never holds it open.
+$mutex    = New-Object System.Threading.Mutex($false, "Global\PC-Maintenance-Run")
+$haveLock = $false
+
+# True when the Deep scheduled task is currently running or queued. The name/path
+# must match Setup-MaintenanceSchedule.ps1; if they ever drift this returns $false
+# and the mutex alone still prevents genuinely concurrent runs.
+function Test-DeepActive {
+    $deep = Get-ScheduledTask -TaskName "PC Maintenance - Monthly Deep" `
+        -TaskPath "\Maintenance\" -ErrorAction SilentlyContinue
+    return [bool]($deep -and ($deep.State -eq 'Running' -or $deep.State -eq 'Queued'))
+}
+
+if ($Mode -eq "Quick") {
+    if (Test-DeepActive) {
+        Write-Log "  [SKIP]   Deep maintenance is active - skipping Quick (Deep is a superset)." "Yellow"
+        $mutex.Dispose(); exit 0
+    }
+    # Non-blocking: if any run already holds the lock, skip rather than wait.
+    try { $haveLock = $mutex.WaitOne(0) }
+    catch [System.Threading.AbandonedMutexException] { $haveLock = $true }  # prior run crashed; we own it now
+    if (-not $haveLock) {
+        Write-Log "  [SKIP]   Another maintenance run holds the lock - skipping Quick." "Yellow"
+        $mutex.Dispose(); exit 0
+    }
+    # Boot co-launch grace: at boot both tasks can start within the same second, so
+    # Quick may have grabbed the lock a hair before Deep's process became visible.
+    # Pause, then re-check; if Deep has since appeared, release and yield to it.
+    Start-Sleep -Seconds 45
+    if (Test-DeepActive) {
+        Write-Log "  [YIELD]  Deep maintenance started - releasing lock and skipping Quick." "Yellow"
+        $mutex.ReleaseMutex(); $mutex.Dispose(); exit 0
+    }
+}
+else {
+    # Deep always wins: wait (bounded) for an in-flight Quick to finish, then take the lock.
+    try { $haveLock = $mutex.WaitOne([TimeSpan]::FromMinutes(20)) }
+    catch [System.Threading.AbandonedMutexException] { $haveLock = $true }
+    if (-not $haveLock) {
+        Write-Log "  [WARN]   Timed out waiting for the maintenance lock - another run appears stuck. Exiting." "Red"
+        $mutex.Dispose(); exit 1
+    }
+}
 
 
 # ===============================================================================
@@ -559,6 +614,14 @@ $freePct = [math]::Round(($drive.Free / ($drive.Used + $drive.Free)) * 100, 0)
 $color   = if ($freePct -lt 15) { "Red" } elseif ($freePct -lt 25) { "Yellow" } else { "Green" }
 Write-Log "  C: free now: $freeGB GB  ($freePct%)" $color
 Write-Log ""
+
+# Release the single-instance lock now - BEFORE the keypress wait below - so a
+# completed window left sitting on the prompt never blocks the other task.
+if ($haveLock) {
+    try { $mutex.ReleaseMutex() }
+    catch { Write-Log "  [NOTE]   Mutex release skipped: $($_.Exception.Message)" "DarkGray" }
+    $mutex.Dispose()
+}
 
 Write-Host "  Press any key to close..." -ForegroundColor Cyan
 $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
