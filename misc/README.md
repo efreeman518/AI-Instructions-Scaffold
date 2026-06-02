@@ -108,6 +108,37 @@ prints the exact entry to paste. The VS Code Copilot **extension** also cannot b
 through headroom (it uses GitHub's proprietary endpoints); rtk command-rewrite for that
 extension is per-repo via [`enable-rtk-copilot-project.ps1`](enable-rtk-copilot-project.ps1).
 
+### Reading the savings report (`token-savings-report.ps1`)
+
+[`token-savings-report.ps1`](token-savings-report.ps1) is a read-only dashboard that pulls
+live numbers from all three tools, scoped to a window (`-Window day|week|month|all`, or
+`-Days N`), in `text` / `json` / `csv`. Two parts of the output are easy to misread.
+
+**The dollar amount comes only from headroom, and it is a provider-native cache discount, not
+money headroom uniquely saved.** rtk and graphify produce no dollar figure. The `$` is
+headroom's `prefix_cache.totals.net_savings_usd`: cache-read tokens that Anthropic reports in
+each API response, valued at the model input price times the ~90% cache-read discount, minus
+the ~25% premium on cache writes. It is an estimate from headroom's internal price table
+(directional, not a billed invoice). Anthropic performs prefix caching with or without
+headroom; headroom's contribution is raising the cache **hit rate** (CacheAligner / prefix
+freeze), so the figure is labeled "cost discount (cache)" - the discount observed through the
+proxy, not a saving headroom created. headroom's separate lossy `compression` line is its own
+token saving (often near zero by default).
+
+**The totals are machine-global and cross-harness, but cannot be attributed to a specific
+harness** - none of the sources record which harness produced a given number:
+
+| Tool | What it counts | Harness coverage |
+|------|----------------|------------------|
+| rtk | Every command rewritten through the rtk hook/prefix (`history.db`, machine-global). | Any harness wired with rtk (Claude Code, Codex, Copilot CLI). No harness column in the table - only `-Project` (repo path) narrows it. |
+| headroom | Only traffic routed through the proxy at `127.0.0.1:8787`. | Claude Code + Codex + Copilot CLI. NOT the VS Code Copilot extension (proprietary endpoints, unproxyable). Split by provider/model, not by harness; if only Claude is routed, the totals are Claude-only. |
+| graphify | Per-repo `graphify-out/` coverage (nodes/edges/freshness). | n/a - no tokens, no dollars, no harness concept. |
+
+No double counting: headroom re-reports rtk's CLI-filtering number, so the report shows it for
+reconciliation but the combined "unique token reduction" sums rtk saved + headroom compression
+only. rtk figures honor the selected window; headroom cache/compression are lifetime/session
+totals (the proxy exposes no per-day savings series) and are labeled as such in the output.
+
 ### Version policy
 
 Reference the tools by command name; do not pin versions. The installer keeps rtk, headroom,
@@ -145,6 +176,7 @@ above; use what applies to your machine. Several require an elevated (Administra
 | [`apply-graphify-to-repo.txt`](apply-graphify-to-repo.txt) | prompt | AI tooling | Per-repo graphify enablement: measure the layer, build `graphify-out/graph.json`. |
 | [`strip-graphify-repo-wiring.ps1`](strip-graphify-repo-wiring.ps1) | script | AI tooling | Strip graphify wiring that leaked into a repo's tracked files. |
 | [`enable-rtk-copilot-project.ps1`](enable-rtk-copilot-project.ps1) | script | AI tooling | Per-repo rtk command-rewrite for the VS Code Copilot extension (no global Copilot location exists). |
+| [`token-savings-report.ps1`](token-savings-report.ps1) | script | AI tooling | Read-only dashboard of token/cost savings across rtk + headroom + graphify, windowed (day/week/month/all); text/json/csv. |
 | [`context-optimize.md`](context-optimize.md) | runbook | AI tooling | rtk + headroom deep reference: manual install, per-agent wiring, telemetry, troubleshooting. |
 | [`clean-python.md`](clean-python.md) | runbook | Machine setup | Windows Python cleanup to one current, repo-independent runtime. |
 | [`install-wsl-docker-podman.md`](install-wsl-docker-podman.md) | runbook | Machine setup | WSL2 + Docker Engine (+ Podman) for .NET Aspire on Windows. |
