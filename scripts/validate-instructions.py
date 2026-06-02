@@ -22,6 +22,11 @@ Checks:
     or ``file.md -> Section Name`` (with the path in backticks), verify the named
     section exists as a heading in the target file. Catches refs left dangling
     after file splits.
+  - Phase 5 load-set integrity: every skill/template/pattern named in the
+    ai/SKILL.md "Phase 5 file table" (and its base-context line) resolves to a
+    real file. The table references targets by backtick short-name, not by
+    markdown link, so check_links does not cover them - a renamed or deleted
+    skill/template would otherwise drift silently.
 
 Exit code 0 if all checks pass, 1 otherwise. Output groups failures by file.
 """
@@ -365,6 +370,97 @@ def check_payload_shape(findings: Findings) -> None:
             findings.err(installer, f"SMOKE_CHECK_HARNESS_ENTRYPOINTS contains unexpected entries: {sorted(extra)}")
 
 
+# --- Phase 5 load-set table (GAP-003) ---------------------------------------
+# The "Phase 5 file table" in ai/SKILL.md lists skills/templates/patterns by
+# short backtick name (e.g. `domain-model`, `entity`, `patterns/data-layer-wiring`),
+# not as markdown links, so check_links cannot catch a renamed/deleted target.
+# Resolve every backtick file-token in the table rows against the filesystem.
+
+PHASE5_SKILL_REL = "ai/SKILL.md"
+PHASE5_TABLE_HEADING = "## Phase 5 file table"
+BACKTICK_SPAN_PATTERN = re.compile(r"`([^`]+)`")
+# A load-set file token is one or more lowercase-kebab segments, optionally
+# joined by '/'. This deliberately excludes camelCase config keys
+# (`includeFlowEngine: true`), code spans (`MapFlowEngineAdmin(...)`),
+# dotted file names (`RegisterServices.FlowEngine.cs`), and brace tokens
+# (`{Entity}RepositoryIntegrationTests`) that also appear in backticks.
+LOADSET_TOKEN_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*(?:/[a-z0-9]+(?:-[a-z0-9]+)*)*$")
+# Column order of the table after splitting on '|': subphase, then these three.
+LOADSET_COLUMN_KINDS = ["subphase", "skills", "templates", "ondemand"]
+
+
+def _resolve_loadset_token(token: str, kind: str) -> list[Path]:
+    """Candidate paths a load-set token may map to, given its column kind."""
+    candidates: list[Path] = []
+    if "/" in token:  # path-form token, e.g. patterns/data-layer-wiring
+        candidates.append(INSTRUCTIONS_ROOT / (token + ".md"))
+    if kind == "skills":
+        candidates.append(INSTRUCTIONS_ROOT / "skills" / (token + ".md"))
+    elif kind == "templates":
+        # Most templates use the -template suffix; a few (test-templates-*) do not.
+        candidates.append(INSTRUCTIONS_ROOT / "templates" / (token + "-template.md"))
+        candidates.append(INSTRUCTIONS_ROOT / "templates" / (token + ".md"))
+    else:  # on-demand column mixes skills, templates, and patterns
+        candidates.append(INSTRUCTIONS_ROOT / "skills" / (token + ".md"))
+        candidates.append(INSTRUCTIONS_ROOT / "templates" / (token + "-template.md"))
+        candidates.append(INSTRUCTIONS_ROOT / "templates" / (token + ".md"))
+    return candidates
+
+
+def check_phase5_load_set(findings: Findings) -> None:
+    skill_path = INSTRUCTIONS_ROOT / PHASE5_SKILL_REL
+    if not skill_path.exists():
+        findings.err(skill_path, "ai/SKILL.md missing - cannot validate Phase 5 load-set table")
+        return
+    lines = skill_path.read_text(encoding="utf-8").splitlines()
+
+    start = next((i for i, ln in enumerate(lines) if ln.strip() == PHASE5_TABLE_HEADING), None)
+    if start is None:
+        findings.err(skill_path, f"section '{PHASE5_TABLE_HEADING}' not found - load-set table moved or renamed")
+        return
+    end = next((j for j in range(start + 1, len(lines)) if lines[j].startswith("## ")), len(lines))
+
+    checked = 0
+    for offset, line in enumerate(lines[start:end]):
+        line_no = start + offset + 1
+        stripped = line.strip()
+
+        # Base-context line: validate `path/with.md` style references too.
+        if "base context" in stripped.lower():
+            for span in BACKTICK_SPAN_PATTERN.findall(line):
+                span = span.strip()
+                if span.endswith(".md") and "/" in span and " " not in span:
+                    checked += 1
+                    cand = INSTRUCTIONS_ROOT / span
+                    if not cand.exists():
+                        findings.err(skill_path, f"line {line_no}: base-context file `{span}` not found")
+            continue
+
+        # Table data rows: first cell is **5a..5e ...**.
+        if not stripped.startswith("|"):
+            continue
+        cells = [c.strip() for c in stripped.strip("|").split("|")]
+        if len(cells) < 4 or not re.match(r"\*\*5[a-e]\b", cells[0]):
+            continue
+        for idx, cell in enumerate(cells[1:4], start=1):
+            kind = LOADSET_COLUMN_KINDS[idx]
+            for span in BACKTICK_SPAN_PATTERN.findall(cell):
+                token = span.strip()
+                if not LOADSET_TOKEN_PATTERN.match(token):
+                    continue
+                checked += 1
+                candidates = _resolve_loadset_token(token, kind)
+                if not any(c.exists() for c in candidates):
+                    tried = ", ".join(display_path(c) for c in candidates)
+                    findings.err(
+                        skill_path,
+                        f"line {line_no}: Phase 5 load-set reference `{token}` ({kind}) resolves to no file (tried: {tried})",
+                    )
+
+    if checked == 0:
+        findings.warn(skill_path, "Phase 5 load-set check matched 0 file tokens - table format may have changed")
+
+
 def main() -> int:
     findings = Findings()
 
@@ -378,6 +474,7 @@ def main() -> int:
     check_command_shape(findings)
     check_maintenance_guards(findings)
     check_payload_shape(findings)
+    check_phase5_load_set(findings)
 
     print(f"validated {len(md_files)} markdown file(s) under {INSTRUCTIONS_ROOT}")
     if APP_ROOT != INSTRUCTIONS_ROOT:

@@ -1195,6 +1195,88 @@ CMD=$(python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('tool_inp
 }
 
 # ==============================================================================
+# PHASE 8c - global harness base rules (always-on, unconditional)
+# ==============================================================================
+# Canonical Critical Rules + MCP / RTK / Headroom guidance, written to the TOP of each
+# harness' GLOBAL instruction file as a marker-delimited managed region:
+#   ~/.claude/CLAUDE.md, ~/.codex/AGENTS.md (or $CODEX_HOME), ~/.copilot/copilot-instructions.md
+# Unlike the graphify steering in 8b, these rules are UNCONDITIONAL (no graphify-out/ guard)
+# and do NOT depend on graphify being installed, so they get their own phase outside the
+# graphify gate. Idempotent: the first run prepends the block to the top of the file; a
+# re-run refreshes the text BETWEEN the markers in place. HTML-comment markers avoid
+# colliding with any hand-written heading text already in those files.
+Write-Step "PHASE 8c - global harness base rules"
+
+$hrBeginMarker = '<!-- BEGIN managed:global-harness-rules -->'
+$hrEndMarker   = '<!-- END managed:global-harness-rules -->'
+
+$hrBlock = @'
+## Critical Rules
+
+- Accuracy, pragmatism, and honesty are critical. State facts; avoid unsupported opinions.
+- Be concise and focused. Short, direct responses. No filler, no preamble, no trailing summaries.
+- Use caveman compression principles. Strip articles, connectives, filler, and passive voice. Keep facts, numbers, names, technical terms, commands, paths, and constraints.
+- Compress working notes harder than final answers. Plans, scratch text, and progress updates may use fragments. Final user-facing answers must stay readable.
+- Never trade brevity for ambiguity. If compression would hide risk, uncertainty, or a blocker, state it plainly.
+
+## MCP Servers
+
+- Prefer CLI tools over MCP servers when an equivalent CLI is available. Use MCP only when it provides session-specific value that the CLI does not.
+- Global MCP servers may be configured, but keep them disabled by default. Enable a specific MCP server only when the current session needs it, then disable it again when that need is gone.
+
+## RTK - Token-Optimized Commands
+
+- Prefer `rtk` for external CLI commands when available. Unknown commands pass through unchanged, so RTK is safe for normal command use.
+- Prefix command chains segment-by-segment. Example: `rtk git status && rtk dotnet test`.
+- Common commands: `rtk git`, `rtk gh`, `rtk dotnet`, `rtk npm`, `rtk pnpm`, `rtk npx`, `rtk cargo`, `rtk docker`, `rtk kubectl`, `rtk curl`, `rtk grep`, `rtk ls`, `rtk find`.
+- Useful wrappers: `rtk summary <cmd>`, `rtk err <cmd>`, `rtk log <file>`, `rtk json <file>`, `rtk diff`, `rtk proxy <cmd>`.
+
+## Headroom
+
+- Headroom is globally used as the context optimization layer alongside RTK.
+- Headroom proxy runs at system startup and normally listens on `http://127.0.0.1:8787`.
+- Default startup mode: token optimization enabled, caching enabled, rate limiting enabled, telemetry disabled, memory enabled (multi-provider), OSS license.
+- Health endpoints include `/livez`, `/readyz`, `/health`, `/stats`, `/stats-history`, and `/metrics`.
+- Codex/OpenAI-compatible traffic routes through `/v1/responses` and `/v1/chat/completions` via `http://127.0.0.1:8787/v1`.
+- Use `rtk headroom ...` for Headroom CLI calls. Common commands: `rtk headroom memory list`, `rtk headroom memory stats`, `rtk headroom diff`, `rtk headroom sg`, `rtk headroom loc`, `rtk headroom perf`, and `rtk headroom install status`.
+- If model calls fail with proxy/connectivity errors, check Headroom health/listening state before changing model/provider configuration.
+'@
+
+# Prepend (first run) or refresh-in-place (re-run) a marker-delimited managed block.
+# Skips a harness whose global file is absent; backs up before any write; refuses to
+# touch a file whose markers are malformed (only one of the pair present).
+function Ensure-ManagedBlock {
+    param([string]$Path, [string]$BeginMarker, [string]$EndMarker, [string]$Block)
+    if (-not (Test-Path -LiteralPath $Path)) { Write-Info "Not present, skipping: $Path"; return }
+    $raw = Get-Content -LiteralPath $Path -Raw
+    if ($null -eq $raw) { $raw = '' }
+    $managed = $BeginMarker + "`n" + $Block.Trim() + "`n" + $EndMarker
+    $bi = $raw.IndexOf($BeginMarker)
+    $ei = $raw.IndexOf($EndMarker)
+    if ($bi -ge 0 -and $ei -gt $bi) {
+        $new = $raw.Substring(0, $bi) + $managed + $raw.Substring($ei + $EndMarker.Length)
+        if ($new -eq $raw) { Write-OK "harness base rules already current: $Path"; return }
+        Copy-Item -LiteralPath $Path -Destination "$Path.bak-$stamp" -Force
+        Set-Content -LiteralPath $Path -Value $new -Encoding UTF8
+        Write-OK "harness base rules refreshed: $Path (backup: $Path.bak-$stamp)"
+    } elseif ($bi -lt 0 -and $ei -lt 0) {
+        Copy-Item -LiteralPath $Path -Destination "$Path.bak-$stamp" -Force
+        Set-Content -LiteralPath $Path -Value ($managed + "`n`n" + $raw.TrimStart()) -Encoding UTF8
+        Write-OK "harness base rules prepended: $Path (backup: $Path.bak-$stamp)"
+    } else {
+        Write-Warn "managed markers malformed in $Path - leaving untouched (fix or remove the markers by hand)"
+    }
+}
+
+$hrClaudeMd     = "$env:USERPROFILE\.claude\CLAUDE.md"
+$hrCodexAgents  = if ($env:CODEX_HOME) { "$env:CODEX_HOME\AGENTS.md" } else { "$env:USERPROFILE\.codex\AGENTS.md" }
+$hrCopilotInstr = "$env:USERPROFILE\.copilot\copilot-instructions.md"
+
+Invoke-Maybe { Ensure-ManagedBlock -Path $hrClaudeMd     -BeginMarker $hrBeginMarker -EndMarker $hrEndMarker -Block $hrBlock } "ensure global harness rules in ~/.claude/CLAUDE.md"
+Invoke-Maybe { Ensure-ManagedBlock -Path $hrCodexAgents  -BeginMarker $hrBeginMarker -EndMarker $hrEndMarker -Block $hrBlock } "ensure global harness rules in $hrCodexAgents"
+Invoke-Maybe { Ensure-ManagedBlock -Path $hrCopilotInstr -BeginMarker $hrBeginMarker -EndMarker $hrEndMarker -Block $hrBlock } "ensure global harness rules in ~/.copilot/copilot-instructions.md"
+
+# ==============================================================================
 # PHASE 9 - Desktop + Startup shortcuts
 # ==============================================================================
 Write-Step "PHASE 9 - Desktop and Startup shortcuts"
@@ -1347,6 +1429,14 @@ if (Test-FileContains $vGfCodexAgents '## graphify graph usage') { Write-OK "ste
 if (Test-FileContains $vGfClaudeSettings 'graphify: knowledge graph at graphify-out/') { Write-OK "grep hook       : ~/.claude/settings.json" } else { Write-Warn "grep hook MISSING: ~/.claude/settings.json" }
 
 Write-Info ""
+Write-Info "-- global harness base rules (always-on, unconditional) ---"
+$vHrMarker      = '<!-- BEGIN managed:global-harness-rules -->'
+$vHrCopilot     = "$env:USERPROFILE\.copilot\copilot-instructions.md"
+if (Test-FileContains $vGfClaudeMd $vHrMarker)    { Write-OK "base rules      : ~/.claude/CLAUDE.md" }                else { Write-Warn "base rules MISSING: ~/.claude/CLAUDE.md" }
+if (Test-FileContains $vGfCodexAgents $vHrMarker) { Write-OK "base rules      : $vGfCodexAgents" }                    else { Write-Info "  base rules      : $vGfCodexAgents (codex absent or not wired)" }
+if (Test-FileContains $vHrCopilot $vHrMarker)     { Write-OK "base rules      : ~/.copilot/copilot-instructions.md" } else { Write-Info "  base rules      : ~/.copilot/copilot-instructions.md (copilot absent or not wired)" }
+
+Write-Info ""
 Write-Info "-- Proxy endpoints ----------------------------------------"
 foreach ($ep in "/livez","/readyz","/health","/stats") {
     try {
@@ -1383,6 +1473,9 @@ Pass criteria:
   graphify global steering -> skill + conditional block (CLAUDE.md / AGENTS.md) +
             grep hook (settings.json) wired GLOBALLY but INERT until a repo has
             graphify-out/graph.json. VS Code global steering is opt-in (-ConfigureVsCodeGlobal).
+  global harness base rules -> Critical Rules + MCP/RTK/Headroom block written to the
+            top of CLAUDE.md / AGENTS.md / copilot-instructions.md as a marked managed
+            region (always-on; re-runs refresh in place between the markers).
   /livez + /readyz -> healthy
   /health   -> ready (rust_core:disabled is OK on Python without Rust wheel)
   /stats    -> counters visible

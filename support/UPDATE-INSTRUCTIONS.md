@@ -25,6 +25,8 @@ Your job is to read the findings below and apply approved changes to the instruc
 6. **Mark findings as applied** - after applying a finding, change its status from `pending` to `applied` and add the date.
 7. **Reject with reason** - if a finding is incorrect or not applicable, change its status to `rejected` with a brief explanation.
 
+**Folding in consumer-app gap logs.** Findings raised during a real scaffold live in that project's `.scaffold/INSTRUCTION-GAPS.md`, not here. Periodically - and at the start of every maintenance pass - collect those logs from the consumer apps you maintain, copy each still-relevant finding into the Findings section below using the template, and mark the source entry migrated in the consumer app. Before copying, confirm the gap against the current instruction files: a gap recorded weeks ago may already be closed in the baseline or superseded by a later finding, in which case drop it rather than re-applying. Then triage and apply the migrated findings per steps 1-7 above.
+
 ### Priority Levels
 
 | Priority | Meaning | Maintenance SLA |

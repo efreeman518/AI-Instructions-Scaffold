@@ -14,6 +14,15 @@ Bootstrap for `.instructions/` payloads. Load this file first when scaffold work
 
 Each phase - and each Phase 5 sub-phase - runs in its own AI session. When complete, write/update `HANDOFF.md` in the target project root and close the session. The next session starts fresh from `START-AI.md` + `HANDOFF.md` only.
 
+## Session Close
+
+Before writing `HANDOFF.md` at session close, do a quick instruction-set check: did any instruction behavior turn out missing, ambiguous, or wrong this session - a skill that did not cover the case, a template token with no definition, a gate that misfired? If so, capture it as a one-line entry so it is not lost **(GR-07)**:
+
+- **Installed app:** append to `.scaffold/INSTRUCTION-GAPS.md` at the project root (create `.scaffold/` if absent). Never hot-edit `.instructions/` files mid-scaffold.
+- **This instruction repo:** instead append to [`support/UPDATE-INSTRUCTIONS.md`](support/UPDATE-INSTRUCTIONS.md) section Findings.
+
+This is a capture step, not a fix step - one line is enough; the maintenance agent triages and folds it back later. Then update `HANDOFF.md` and close.
+
 ## Initial Load Rule
 
 Start each session with `START-AI.md` (this file) and `HANDOFF.md` in the target project root (if present - it is the resume contract). Then load only files needed for the current phase. Generate code only in the target project.
