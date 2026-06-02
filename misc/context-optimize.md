@@ -8,6 +8,8 @@ This setup combines:
 - [Headroom](https://github.com/chopratejas/headroom): local proxy/context optimization for model requests, tool outputs, logs, files, and agent traffic.
 - Shared global AI instruction files: one source of truth that feeds Claude, Codex, Copilot, and editor/CLI agents.
 
+> On Windows, the installer `update-python-and-context-tools.ps1` (this folder) automates the rtk + headroom install and all global agent wiring, with fallback versions and Python-ABI handling. Use this runbook for manual setup, macOS/Linux, telemetry toggling, and deep troubleshooting.
+
 ## Why Use This
 
 AI coding agents burn context on noisy terminal output, long logs, repetitive file reads, verbose package managers, raw diffs, and repeated session instructions. Context optimization keeps the facts the agent needs and removes boilerplate that pushes useful state out of the model window.
@@ -18,13 +20,11 @@ Headroom handles the model traffic layer. It runs locally as a proxy or wrapper,
 
 ## Quick Start
 
-After publishing this file, replace `[this page url]` with the public URL.
+Paste a block below to an AI agent to drive setup from this runbook.
 
 ### Install And Configure
 
 ```text
-Follow the instructions at [this page url].
-
 Install RTK and Headroom for my OS, configure RTK for the AI agents I use, set up a Headroom proxy on 127.0.0.1:8787, configure startup service/task if supported, create a desktop/manual shortcut if useful, and add global AI instruction files for Claude, Codex, and GitHub Copilot.
 
 Before changing files, inspect my current config and preserve existing custom instructions. Do not run git commit or git push.

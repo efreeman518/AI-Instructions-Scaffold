@@ -37,14 +37,16 @@ Keep these three straight and there is almost nothing else to learn.
 | Action | When | What it does |
 |--------|------|--------------|
 | Run [`update-python-and-context-tools.ps1`](update-python-and-context-tools.ps1) | periodically, per machine | Installs/updates rtk + headroom + the graphify CLI and wires ALL global config: rtk + headroom always-on in every harness, plus graphify's GLOBAL conditional steering (the `/graphify` skill, a "graphify graph usage" block in `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`, and a PreToolUse grep hook in `~/.claude/settings.json`). Idempotent; safe to re-run. Restart your harnesses afterward so they pick up the new `setx` env vars. |
-| Paste [`ai-tooling-setup-prompt.txt`](ai-tooling-setup-prompt.txt) into a repo | once per repo that warrants a graph (opt-in) | Measures the repo, picks the graphify layer, and builds `graphify-out/graph.json`. The only per-repo step. |
+| Paste [`apply-graphify-to-repo.txt`](apply-graphify-to-repo.txt) into a repo | once per repo that warrants a graph (opt-in) | Measures the repo, picks the graphify layer, and builds `graphify-out/graph.json`. The only per-repo step. |
 | Run [`strip-graphify-repo-wiring.ps1`](strip-graphify-repo-wiring.ps1) in a repo | as needed | Removes graphify wiring that leaked into a repo's tracked files (so it never rides into template-scaffolded apps); leaves the global steering and the built graph intact. Refuses to run against a machine-global config root. |
 
 ### Always-on (rtk, headroom) vs opt-in (graphify)
 
 **rtk and headroom are always-on and environment-global.** The installer wires both into
 every harness, so they apply to every repo and session with no per-repo action. They are
-lossless and universal. Their rules are NOT distributed in any app's payload; they live in
+universal and carry no per-repo cost or decision: rtk's command-output compression is
+lossless, and headroom's prompt-input compression is lossy by default but bypassable when
+exactness matters. Their rules are NOT distributed in any app's payload; they live in
 your global agent config, written by `rtk init -g` and `headroom init -g`. Manual install,
 per-agent wiring, telemetry, and troubleshooting are in
 [`context-optimize.md`](context-optimize.md).
@@ -66,7 +68,7 @@ graphify splits cleanly:
    block + a Claude grep hook). All of it is GUARDED on `graphify-out/graph.json` existing in
    the working directory, so it stays inert in every repo until that repo builds a graph.
 
-**Per-repo half (opt-in; paste `ai-tooling-setup-prompt.txt`):**
+**Per-repo half (opt-in; paste `apply-graphify-to-repo.txt`):**
 
 4. Build the graph from the repo root: `graphify . --wiki` (full layer - also emits the
    agent-crawlable wiki at `graphify-out/wiki/index.md` that the global steering points agents
@@ -140,7 +142,7 @@ above; use what applies to your machine. Several require an elevated (Administra
 | File | Type | Cluster | Purpose |
 |------|------|---------|---------|
 | [`update-python-and-context-tools.ps1`](update-python-and-context-tools.ps1) | script | AI tooling | Global installer/updater for rtk + headroom + graphify CLI, and all global harness wiring. Run periodically. |
-| [`ai-tooling-setup-prompt.txt`](ai-tooling-setup-prompt.txt) | prompt | AI tooling | Per-repo graphify enablement: measure the layer, build `graphify-out/graph.json`. |
+| [`apply-graphify-to-repo.txt`](apply-graphify-to-repo.txt) | prompt | AI tooling | Per-repo graphify enablement: measure the layer, build `graphify-out/graph.json`. |
 | [`strip-graphify-repo-wiring.ps1`](strip-graphify-repo-wiring.ps1) | script | AI tooling | Strip graphify wiring that leaked into a repo's tracked files. |
 | [`enable-rtk-copilot-project.ps1`](enable-rtk-copilot-project.ps1) | script | AI tooling | Per-repo rtk command-rewrite for the VS Code Copilot extension (no global Copilot location exists). |
 | [`context-optimize.md`](context-optimize.md) | runbook | AI tooling | rtk + headroom deep reference: manual install, per-agent wiring, telemetry, troubleshooting. |

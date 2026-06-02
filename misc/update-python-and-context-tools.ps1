@@ -53,7 +53,9 @@
     - This script wires both into every agent harness (Claude Code, Codex, Copilot):
       rtk hooks + RTK.md, headroom ANTHROPIC_BASE_URL/OPENAI_BASE_URL routing.
     - They apply to EVERY repo, EVERY session, with zero per-repo action.
-    - Safe to apply blindly: lossless, universal, no per-repo cost or judgment call.
+    - Safe to apply blindly: universal, no per-repo cost or judgment call.
+    - rtk's output compression is lossless; headroom is lossy by default, bypassable
+      via --no-optimize / passthrough when exact output matters.
 
   GROUP B - graphify: GLOBAL STEERING auto-wired here; the GRAPH itself is OPT-IN PER REPO
     - The knowledge-graph tool. Lets an agent query code/doc relationships instead of
@@ -73,7 +75,7 @@
              `graphify <h> install` is deliberately NOT used for this: it writes the CURRENT
              REPO's TRACKED files (verified) and emits an unconditional block, so the global
              steering is hand-written here instead.
-        PER-REPO (NOT done here - opt-in; see misc/ai-tooling-setup-prompt.txt):
+        PER-REPO (NOT done here - opt-in; see misc/apply-graphify-to-repo.txt):
           4. Enable repo harnesses (optional): graphify claude install --project, etc.
           5. Build the graph:                  graphify . from the repo root
     - The GRAPH is opt-in because it carries per-repo cost (build time, model spend on the
@@ -977,7 +979,7 @@ foreach ($flag in "--auto-patch","--codex") {
 # Run it from a throwaway temp directory: any genuine global writes still happen, but the
 # cwd .github stamp lands in temp and is discarded. Per-repo Copilot rtk wiring is done
 # deliberately via misc/enable-rtk-copilot-project.ps1; global Copilot steering (VS Code
-# user settings) is handled per misc/ai-tooling-setup-prompt.txt.
+# user settings) is handled per misc/apply-graphify-to-repo.txt.
 Write-Info "rtk init -g --copilot (isolated temp cwd - avoids stamping a real repo's .github)"
 Invoke-Maybe {
     $rtkCopilotTmp = Join-Path $env:TEMP "rtk-copilot-init-$PID"
@@ -1491,7 +1493,7 @@ Action required after this script:
   Global graphify steering IS wired now (skill + conditional block + grep hook), but
   stays inert in a repo until that repo builds a graph.
   Per-repo (opt-in, not done here): in a repo that warrants a graph, paste
-  misc/ai-tooling-setup-prompt.txt - it measures the layer, optionally enables the
+  misc/apply-graphify-to-repo.txt - it measures the layer, optionally enables the
   claude/codex/copilot repo harnesses, and builds the graph from the repo root
   ('graphify .' for the full AST + semantic layer, or the structure-only AST-only
   path) to create graphify-out/graph.json. See support/context-tooling.md for the

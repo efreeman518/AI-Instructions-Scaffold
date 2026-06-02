@@ -357,7 +357,7 @@ Setup, the operating model, the activation split, and per-tool details live in
 - Run `misc/update-python-and-context-tools.ps1` periodically (per machine) - installs and
   updates the tools and wires all global config: rtk + headroom always-on, plus graphify's
   conditional steering, which stays inert until a repo builds a graph.
-- Paste `misc/ai-tooling-setup-prompt.txt` into a repo to build a graphify graph there (the
+- Paste `misc/apply-graphify-to-repo.txt` into a repo to build a graphify graph there (the
   only opt-in, per-repo step).
 - Run `misc/strip-graphify-repo-wiring.ps1` to remove graphify wiring that leaked into a
   repo's tracked files.
