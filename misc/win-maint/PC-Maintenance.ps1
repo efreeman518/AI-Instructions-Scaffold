@@ -376,6 +376,15 @@ Get-ScheduledTask -ErrorAction SilentlyContinue | ForEach-Object {
             -replace '%SystemRoot%', $env:SystemRoot `
             -replace '%windir%',     $env:SystemRoot `
             -replace '%ProgramFiles%', $env:ProgramFiles
+        # Resolve existence PATH-aware. A bare filename (e.g. BthUdTask.exe) lives in
+        # System32 and resolves through PATH at runtime, but Test-Path on a bare name
+        # only checks the current directory, so it would always report "missing" - a
+        # false positive. Names with a path separator are checked directly as before.
+        $exeExists = if ($exe -match '[\\/]') {
+            Test-Path $exe
+        } else {
+            [bool](Get-Command $exe -ErrorAction SilentlyContinue)
+        }
         if ($exe -and
             $exe -notlike "*.dll"        -and
             $exe -ne "cmd.exe"           -and
@@ -383,7 +392,7 @@ Get-ScheduledTask -ErrorAction SilentlyContinue | ForEach-Object {
             $exe -notlike "*\cmd.exe"    -and
             $exe -notlike "*powershell*" -and
             $exe -notlike "*pwsh*"       -and
-            -not (Test-Path $exe)) {
+            -not $exeExists) {
             Write-Log "  [STALE]  $($task.TaskPath)$($task.TaskName)" "Yellow"
             Write-Log "           Missing: $exe" "DarkGray"
             $staleFound++
