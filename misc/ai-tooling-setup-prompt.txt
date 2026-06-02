@@ -1,83 +1,73 @@
-TASK: Configure my AI coding harnesses' GLOBAL instructions so the installed tooling
-(rtk, headroom, graphify) is used automatically. Do NOT write tool steering into any
-repo's tracked files - global config only. Be idempotent: merge into existing files,
-never overwrite, never duplicate a section that's already present, and validate JSON
-after editing.
+TASK: Enable graphify (the knowledge graph) IN THIS REPO. This is a per-repo, opt-in
+decision and the ONLY graphify step that is per-repo.
 
-VERSION POLICY (read first): reference the tools by COMMAND NAME ONLY, never pin a
-version. The installer (misc/update-python-and-context-tools.ps1) keeps rtk, headroom,
-and graphify at their latest releases; the harnesses just invoke whatever is installed.
-Do NOT install, update, or version-pin the harness binaries themselves (claude/codex/
-copilot CLIs, VS Code extensions, desktop apps) - they self-update, and a given machine
-may deliberately run only some of them. Configure ONLY the harnesses actually present;
-silently skip any that are absent (do not install them).
+SCOPE - what is already done for you (do NOT redo it here):
+Everything GLOBAL is wired machine-wide by misc/update-python-and-context-tools.ps1:
+  - rtk + headroom run always-on in every repo;
+  - the /graphify skill is installed in each harness;
+  - graphify's CONDITIONAL steering is in each harness' GLOBAL config (a
+    "## graphify graph usage" block in ~/.claude/CLAUDE.md and ~/.codex/AGENTS.md, plus a
+    PreToolUse grep hook in ~/.claude/settings.json). It is guarded on
+    graphify-out/graph.json and stays INERT until this repo builds a graph.
+So do NOT edit any global harness instructions, hooks, or env vars, and do NOT configure
+rtk/headroom at all. This prompt only measures the layer and builds the graph.
 
-RUN MODEL (this is the important part):
-- rtk      -> ALWAYS running, every repo, unconditional.
-- headroom -> ALWAYS running, every repo, unconditional.
-- graphify -> PER REPO and CONDITIONAL: the graph is built per repo; global steering
-              must only activate when `graphify-out/graph.json` exists in the working
-              dir, and be inert otherwise. Never commit graphify wiring into a repo
-              (it would leak into apps scaffolded from template repos).
+VERSION POLICY: reference tools by COMMAND NAME only, never pin a version. Do not install
+or update rtk/headroom/graphify or the harness binaries - the installer keeps them current.
+If graphify is not on PATH, STOP and tell me to run misc/update-python-and-context-tools.ps1.
 
-GLOBAL TARGETS PER HARNESS:
-- Claude Code: ~/.claude/CLAUDE.md (instructions) + ~/.claude/settings.json (hooks:
-  SessionStart / PreToolUse). Merge into the existing hooks arrays; do not replace them.
-- Codex CLI:   ~/.codex/AGENTS.md (instructions) + ~/.codex/config.toml (+ hooks if used).
-- GitHub Copilot: global skills dir (~/.copilot/skills, ~/.claude/skills) for any skill,
-  AND VS Code user settings (github.copilot.chat.codeGeneration.instructions) for the
-  steering text, since Copilot in VS Code has no global instruction file.
+DO THIS:
+1. MEASURE the layer per support/context-tooling.md. LOC ratio, excluding
+   generated/transient files: KNOWLEDGE = .instructions/ + .scaffold/ + docs/*.md ;
+   CODE = src/ (*.cs, *.razor, *.ts, *.tsx, *.xaml). Report KNOWLEDGE, CODE, and the ratio.
+2. RECOMMEND structure-only (AST, no model spend) vs full (AST + semantic LLM) using the
+   decision table in support/context-tooling.md, with a one-line reason. Wait for my OK.
+3. ON APPROVAL, initialize exactly per support/context-tooling.md:
+   - write .graphifyignore (bin/obj/dist/node_modules/test output/EF migrations/rendered
+     HTML/etc.);
+   - set the graphify-out/ split in the repo-root .gitignore. COMMIT graph.json,
+     GRAPH_REPORT.md, graph.html. IGNORE manifest.json, cost.json, cache/, wiki/, obsidian/,
+     .graphify_*. The wiki is gitignored BY DEFAULT - it is regenerable from graph.json via
+     `graphify export wiki` (no model cost). Commit graphify-out/wiki/ only if I explicitly
+     ask.
+   - build from the repo root:
+       full layer:           `graphify . --wiki` - builds the graph AND the agent-crawlable
+                             wiki (graphify-out/wiki/index.md + one article per community + god
+                             nodes), which the global steering points agents to. Always also
+                             produces graph.json, GRAPH_REPORT.md, graph.html. No API key is
+                             needed for the semantic/LLM extraction when you run this inside a
+                             harness session (Claude Code / Claude VS Code) - the host session
+                             makes the LLM calls. (Headless/CI only: set GEMINI_API_KEY or
+                             GOOGLE_API_KEY.)
+       structure-only layer: let .graphifyignore exclude docs/, .instructions/, and .scaffold/,
+                             then `graphify . --no-cluster` (no communities, so a wiki adds
+                             little; skip --wiki). Refresh with `graphify update .`.
+     Confirm graphify-out/graph.json (and, for the full layer, graphify-out/wiki/index.md)
+     exists - a global install or harness registration is NOT a built graph.
+4. KEEP IT FRESH (recommended): run `graphify hook install` to add the post-commit and
+   post-checkout git hooks so code changes auto-update the graph. They rebuild the CODE (AST)
+   layer in the background after every commit by any tool or human - no API cost, no extra
+   commit. The hooks live in .git/hooks/ (untracked), so they do NOT leak into scaffolded
+   apps and are safe even in a template repo. CAVEAT: this refreshes the code (AST) layer
+   ONLY. It does NOT regenerate the wiki or the semantic/doc layer (.instructions/,
+   .scaffold/, docs). To refresh the wiki cheaply from the updated graph run
+   `graphify export wiki` (renders from graph.json, no model cost); for the semantic/doc layer
+   rerun a full `graphify . --wiki` at phase boundaries. For a structure-only repo the hook
+   alone keeps the graph current.
 
-WHAT TO ENSURE FOR EACH TOOL:
+PER-REPO HARNESS WIRING - read carefully:
+- The global conditional steering already routes codebase questions to the graph in ANY repo
+  once graphify-out/graph.json exists, for every harness. You usually do NOT need
+  `graphify claude/codex/copilot install --project`.
+- NEVER commit graphify wiring into a TEMPLATE / scaffold repo - it would leak into every app
+  created from it. (This repository is such a template.) In an ordinary application repo,
+  `graphify <h> install --project` is optional and fine, but it writes TRACKED files, so only
+  do it if I explicitly ask.
+- If this repo ALREADY has graphify wiring committed in CLAUDE.md / AGENTS.md /
+  .github/copilot-instructions.md / .claude/settings.json / .codex/hooks.json, REMOVE it by
+  running misc/strip-graphify-repo-wiring.ps1 from the repo root. It strips per-repo wiring
+  while leaving the global steering and the built graph intact.
 
-rtk (always-on):
-- Each harness's global instructions state: "ALWAYS prefix every Bash/terminal command
-  with `rtk`, no exceptions, even inside && chains."
-- The rtk command-rewrite hook is registered in each harness's GLOBAL hook config
-  (e.g. `rtk hook claude` in ~/.claude/settings.json PreToolUse). Use rtk's own
-  installer if it has one; otherwise add the hook entry.
-
-headroom (always-on):
-- headroom's SessionStart + PreToolUse hooks are registered in each harness's GLOBAL
-  hook config (use headroom's installer; on Claude this is the
-  `headroom ... init hook ensure` command in SessionStart and PreToolUse).
-
-graphify (per-repo, conditional):
-- graphify is the ONLY knowledge-graph tool (no codegraph). When a repo enables it,
-  the structure-only (AST, no model spend) vs. full (AST + semantic LLM) LAYER choice
-  is a PER-REPO decision documented in support/context-tooling.md - it is NOT part of
-  this global steering. Global steering only routes codebase questions to the graph
-  when one exists; it does not pick or build a layer.
-- Install the /graphify skill GLOBALLY (e.g. `graphify install --platform claude`,
-  `graphify copilot install`) so it's available everywhere.
-- Add a CONDITIONAL steering block to each harness's GLOBAL instructions, guarded with:
-  "These rules apply only when graphify-out/graph.json exists in the working directory;
-  inert otherwise." The block: for codebase questions first run
-  `graphify query "<q>"` (or `graphify path`/`explain`); prefer graphify-out/wiki/index.md
-  for broad navigation; read GRAPH_REPORT.md only for broad architecture; run
-  `graphify update .` after code changes.
-- Add the Claude grep-steering PreToolUse hook to ~/.claude/settings.json (the one that,
-  when a Bash command uses grep/rg/find/fd and graphify-out/graph.json exists, injects a
-  reminder to use `graphify query`). Guard it on graph.json existing.
-- Do NOT run `graphify claude install` / `graphify codex install` / `graphify vscode
-  install` inside a repo (those write tracked per-repo files). If a repo already has
-  graphify sections committed in CLAUDE.md/AGENTS.md/.github/copilot-instructions.md or
-  .claude/settings.json/.codex/hooks.json, REMOVE them (use `graphify <h> uninstall`,
-  but for vscode strip the .github section manually so the global skill survives).
-- Per-repo graphify work is limited to: building the graph (`/graphify .`), a
-  `.graphifyignore`, a `graphify-out/.gitignore` (commit graph.json/GRAPH_REPORT.md/
-  graph.html; ignore manifest.json, cost.json, cache/, wiki/, obsidian/, .graphify_*),
-  and optionally the commit-time auto-update hook (`graphify hook install` - post-commit
-  + post-checkout, AST-only/no cost, runs for ANY harness). The hook lives in
-  `.git/hooks/` (untracked), so it does NOT leak into template-scaffolded apps and is
-  exempt from the "never commit graphify wiring" rule. It refreshes the code layer only;
-  the semantic/doc layer still needs a periodic full `graphify .`.
-
-VERIFY AND REPORT:
-- All edited JSON parses.
-- Existing hook entries (rtk, headroom) are preserved, not clobbered.
-- Each harness's global instructions contain: unconditional rtk + headroom rules, and a
-  conditional graphify block.
-- No graphify steering remains in any repo's tracked files.
-- State the one known gap explicitly if it applies (e.g. Copilot VS Code global steering
-  requires editing user settings.json, which needs my confirmation).
+REPORT: the measured ratio, the chosen layer and why, the files written, confirmation that
+graphify-out/graph.json exists, whether the auto-update hook was installed, and whether any
+leaked per-repo wiring was stripped.

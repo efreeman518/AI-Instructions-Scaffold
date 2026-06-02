@@ -346,108 +346,26 @@ For copy-paste phase prompts, see [support/prompt-catalog.md](support/prompt-cat
 
 ## Context Tooling
 
-This scaffold assumes four context-optimization tools, installed machine-wide by
-`misc/update-python-and-context-tools.ps1`. They reduce token cost in AI sessions
-but fall into two groups with different activation models. Knowing the split avoids
-confusion about why some tools "just work" and others need a per-repo step.
+This scaffold can use optional context-optimization tools ([rtk](https://github.com/rtk-ai/rtk),
+[headroom](https://github.com/chopratejas/headroom),
+[graphify](https://github.com/safishamsi/graphify)) to cut token cost in AI sessions. They are a separate concern from the scaffold itself - machine and
+operator setup, not part of any app's payload, and not required to scaffold or run an app.
 
-### Always-on (rtk, headroom)
+Setup, the operating model, the activation split, and per-tool details live in
+[misc/README.md](misc/README.md). In short, three actions cover it:
 
-`rtk` compresses CLI command output and `headroom` compresses prompt inputs (tool
-output, conversation history) through a local proxy. The install script wires both
-into every agent harness globally, so they apply to every repository and every
-session with no per-repo action. They are lossless and universal, so they are safe
-to run everywhere. Nothing about an individual repo turns them on or off.
+- Run `misc/update-python-and-context-tools.ps1` periodically (per machine) - installs and
+  updates the tools and wires all global config: rtk + headroom always-on, plus graphify's
+  conditional steering, which stays inert until a repo builds a graph.
+- Paste `misc/ai-tooling-setup-prompt.txt` into a repo to build a graphify graph there (the
+  only opt-in, per-repo step).
+- Run `misc/strip-graphify-repo-wiring.ps1` to remove graphify wiring that leaked into a
+  repo's tracked files.
 
-Because they are environment-global, their rules are **not** distributed in this
-scaffold's per-app payload (`AGENTS.md` / `CLAUDE.md` / `START-AI.md`); they live in
-your global agent config, written by `rtk init -g` and `headroom init -g`. Full
-install, per-agent wiring, telemetry, and troubleshooting are in
+The per-repo graphify layer choice and phase-boundary build timing are in
+[support/context-tooling.md](support/context-tooling.md) (reached per repo via a pointer in
+[START-AI.md](START-AI.md)); the rtk/headroom deep reference is
 [misc/context-optimize.md](misc/context-optimize.md).
-
-### Opt-in per repo (graphify)
-
-`graphify` builds a knowledge graph of a codebase so an agent can query relationships
-(call flow, spec-to-code links, impact radius) instead of grepping and reading raw
-files. It sits upstream of rtk and headroom: it reduces what gets loaded in the first
-place, then rtk and headroom compress whatever still does. There is no overlap between
-the layers.
-
-The install script installs only the global CLI. It activates nothing in any repo,
-does not enable any harness, and does not create a graph database. graphify engages in
-a repository only where you explicitly initialize it, which creates the
-`graphify-out/` marker directory (`graphify .` produces `graphify-out/graph.json`).
-
-graphify setup is three separate steps, plus an optional fourth:
-
-1. Install the global CLI: `uv tool install graphifyy` (`graphifyy` package,
-   `graphify` command).
-2. Optionally enable repo harnesses: `graphify claude install --project`,
-   `graphify codex install --project`, `graphify copilot install --project`.
-3. Build the graph database from the repo root: `graphify .`.
-4. Optionally keep it fresh automatically: `graphify hook install` adds a
-   harness-agnostic post-commit hook that rebuilds the graph (AST-only, no API cost, in
-   the background) after every commit by any tool or human. It does not create an extra
-   commit - the refreshed `graphify-out/` is left as a working-tree change - and the
-   hook lives in `.git/hooks/`, which is never tracked, so it does not leak into
-   scaffolded apps. The hook refreshes the code layer only; rerun `graphify .` at phase
-   boundaries to refresh the semantic/doc layer. See
-   [`support/context-tooling.md`](support/context-tooling.md).
-
-Until that marker exists, the tool is inert in that repo. This is deliberate: the
-graph layer carries per-repo cost (build time, model spend on the doc layer for a full
-build, an artifact to keep current) and a per-repo choice, so auto-enabling it
-everywhere would waste effort on repos where the graph layer does not pay off.
-
-### graphify: structure-only vs. full layer
-
-graphify is the single graph tool. The per-repo decision is which LAYER to build, not
-which tool. Compare the size of the knowledge layer to the application code, excluding
-generated and transient files (bin, obj, node_modules, .tmp, test output, lockfiles,
-EF migrations, rendered HTML):
-
-- KNOWLEDGE = lines in `.instructions/` + `.scaffold/` + `docs/*.md`
-- CODE = lines in application `src/` (`.cs`, `.razor`, `.ts`, `.tsx`, `.xaml`)
-
-| Situation | Layer | Reason |
-|-----------|-------|--------|
-| KNOWLEDGE >= CODE | full | Doc/spec layer is the majority; only the semantic pass reads it |
-| CODE larger but under 3x KNOWLEDGE | full | Spec-to-code links still high value |
-| CODE >= 3x KNOWLEDGE | structure-only | Mostly code navigation; local and free is enough |
-| No `.instructions/` or `.scaffold/` | structure-only | Plain code repo; no doc layer to miss |
-| Brownfield adoption (code exists, no `.scaffold/` yet) | structure-only | Re-evaluate once Phase 1 artifacts are derived |
-
-The **full** layer combines tree-sitter code parsing with LLM semantic extraction of
-markdown, YAML, and infra, so it sees the whole repository, including the
-`.instructions/` / `.scaffold/` knowledge layer and `.razor`/`.xaml` markup. In a
-Claude Code or Claude VS Code session the host Claude session performs that semantic
-extraction directly - no API key needed (headless flows set `GEMINI_API_KEY` /
-`GOOGLE_API_KEY` for Gemini). The **structure-only** layer is AST-only, 100% local,
-zero model spend, but cannot read documents, YAML, or markup. A freshly scaffolded app
-is knowledge-heavy, so the full layer wins; a mature app where code dwarfs the
-now-static doc layer shifts to structure-only, with an occasional full pass for
-spec-to-code consistency checks.
-
-### When to build and rebuild
-
-For scaffolded apps, build or refresh the graph at phase boundaries rather than
-continuously, to avoid churn during the volatile Phase 4-5 window where code lands
-and artifacts are superseded:
-
-- After Phase 1 (domain artifacts exist): first build, high value.
-- After Phase 4 (build is green, contracts scaffolded): refresh.
-- After a Phase 5 slice stabilizes: `graphify . --update` for incremental refresh.
-
-Drift rule: when an artifact and the code disagree, the code wins. Fix the artifact,
-then re-extract the affected slice.
-
-Full layer-selection table, ignore-file contents, and setup commands are in
-[`support/context-tooling.md`](support/context-tooling.md). The activation split is
-mirrored in where guidance lives: rtk and headroom are environment-global and
-configured outside the repo (see [misc/context-optimize.md](misc/context-optimize.md)),
-while graphify lives in [`support/context-tooling.md`](support/context-tooling.md)
-behind a pointer in [START-AI.md](START-AI.md), consulted per repo when deciding
-whether to initialize it and which layer to build.
 
 ## Operational References
 

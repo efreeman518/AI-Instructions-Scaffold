@@ -123,14 +123,17 @@ above:
 # Full layer (AST + semantic): the normal scaffolded-app build.
 # In a Claude Code / Claude VS Code session semantic extraction runs through the
 # host Claude session - no API key. Headless: set GEMINI_API_KEY/GOOGLE_API_KEY.
-graphify .              # PowerShell CLI: no leading slash
+# Add --wiki to also emit the agent-crawlable wiki (graphify-out/wiki/index.md + one
+# article per community + god nodes) that the global steering points agents to.
+graphify . --wiki       # PowerShell CLI: no leading slash
 
 # Structure-only layer (AST, no model spend): code-heavy / low-doc repos.
 # There is no dedicated --code-only flag: graphify ALWAYS extracts code locally via
 # tree-sitter (no API calls); the semantic LLM pass only runs on docs/papers/images.
 # So restrict the corpus to code via .graphifyignore (exclude docs/.instructions/
 # .scaffold) and the semantic pass has nothing to do. Add --no-cluster to also skip
-# the clustering/community-naming step. Refresh with the no-LLM update:
+# the clustering/community-naming step. A structure-only build has no communities, so
+# the wiki adds little - skip --wiki here. Refresh with the no-LLM update:
 graphify .  --no-cluster   # initial structure-only build
 graphify update .          # re-extract changed code files only; no LLM, no model spend
 ```
@@ -140,6 +143,7 @@ Verify the build created:
 - `graphify-out/graph.json`
 - `graphify-out/GRAPH_REPORT.md`
 - `graphify-out/graph.html`
+- `graphify-out/wiki/index.md` (full layer with `--wiki` only)
 
 Do not treat a global install or project harness registration as a built graph.
 The repo is not graph-enabled until `graphify-out/graph.json` exists.
@@ -149,8 +153,14 @@ Query or refresh an existing graph:
 ```powershell
 graphify query "what connects the API to persistence?"
 graphify update .             # incremental AST refresh (no LLM); skill alias: graphify . --update
+graphify export wiki          # regenerate graphify-out/wiki/ from graph.json (no LLM, no model spend)
 graphify extract . --force    # full re-extraction after large refactors or stale/duplicate nodes
 ```
+
+The commit-time auto-update hook (below) refreshes the code/AST layer in graph.json but does
+NOT regenerate the wiki. Rerun `graphify export wiki` (cheap, no model) after large code
+changes, and a full `graphify . --wiki` at phase boundaries to refresh the semantic/doc layer
+and the wiki together.
 
 Codex skill syntax is `$graphify .`; Claude-style `/graphify .` is not valid in
 PowerShell. Prefer CLI/skill mode over the Graphify MCP server to avoid standing
@@ -191,6 +201,11 @@ at the root.
   graphify-out/wiki/
   graphify-out/obsidian/
   graphify-out/.graphify_*
+
+  The wiki is gitignored BY DEFAULT - it is regenerable from `graph.json` via
+  `graphify export wiki` (no model cost), so it does not need to live in git. Commit
+  `graphify-out/wiki/` only on explicit request (e.g. to give every clone the agent entry
+  point without a rebuild).
 
   `manifest.json` / `cost.json` are mtime-based and break on clone; `.graphify_*` is local
   scratch/scan-root state (the `.graphify_semantic_marker` / `.graphify_analysis.json`

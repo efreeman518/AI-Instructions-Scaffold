@@ -23,6 +23,11 @@
   -SkipVersionCheck    Use fallback versions instead of querying upstream.
   -HeadroomTimeout <n> Seconds to wait for headroom --version before giving up.
                        Default: 0 (wait forever). Pass 30 to cap cold-start waits.
+  -ConfigureVsCodeGlobal  Also add the graphify global steering entry to VS Code user
+                       settings.json (github.copilot.chat.codeGeneration.instructions).
+                       Off by default because the write JSON-normalizes that file
+                       (strips comments/formatting); without it the script only WARNS
+                       with the exact entry to paste. See PHASE 8b.
 
 .FALLBACK VERSIONS (used only when -SkipVersionCheck or a network query fails)
   headroom-ai : 0.20.15
@@ -50,21 +55,33 @@
     - They apply to EVERY repo, EVERY session, with zero per-repo action.
     - Safe to apply blindly: lossless, universal, no per-repo cost or judgment call.
 
-  GROUP B - graphify: OPT-IN, PER-REPO, MANUAL INIT
+  GROUP B - graphify: GLOBAL STEERING auto-wired here; the GRAPH itself is OPT-IN PER REPO
     - The knowledge-graph tool. Lets an agent query code/doc relationships instead of
       grepping and reading raw files. It sits UPSTREAM of rtk/headroom (it reduces
       WHAT gets loaded; rtk/headroom compress what still does). No overlap.
-    - This script installs the CLI only. It activates NOTHING in any repo.
-    - Graphify has three separate steps:
-        1. Global CLI install: uv tool install graphifyy
-        2. Optional repo harness enablement:
-           graphify claude install --project
-           graphify codex install --project
-           graphify copilot install --project
-        3. Graph database creation: graphify . from the repo root
-    - Opt-in because it carries per-repo cost (build time, model spend on the doc
-      layer, an artifact to maintain) and a per-repo CHOICE (see below).
-      Auto-enabling everywhere would burn that cost on repos where it does not pay.
+    - graphify splits into a GLOBAL half (done here, machine-wide, idempotent) and a
+      PER-REPO half (opt-in, done in the target repo):
+        GLOBAL (this script - Phase 7 installs the CLI, Phase 8b wires steering):
+          1. Install the CLI:             uv tool install graphifyy
+          2. Install the /graphify skill: graphify install --platform claude; graphify copilot install
+          3. Wire CONDITIONAL steering into each harness' GLOBAL config (hand-written here):
+             - ~/.claude/CLAUDE.md + ~/.codex/AGENTS.md  (a "## graphify graph usage" block)
+             - ~/.claude/settings.json                   (a PreToolUse grep-steering hook)
+             - VS Code user settings.json                (only with -ConfigureVsCodeGlobal; else warns)
+             ALL of it is GUARDED on `graphify-out/graph.json` existing in the working dir,
+             so it stays INERT in every repo until that repo builds a graph. graphify's own
+             `graphify <h> install` is deliberately NOT used for this: it writes the CURRENT
+             REPO's TRACKED files (verified) and emits an unconditional block, so the global
+             steering is hand-written here instead.
+        PER-REPO (NOT done here - opt-in; see misc/ai-tooling-setup-prompt.txt):
+          4. Enable repo harnesses (optional): graphify claude install --project, etc.
+          5. Build the graph:                  graphify . from the repo root
+    - The GRAPH is opt-in because it carries per-repo cost (build time, model spend on the
+      doc layer, an artifact to maintain) and a per-repo CHOICE of layer (see below).
+      Auto-building everywhere would burn that cost on repos where it does not pay. The
+      GLOBAL steering is safe to wire everywhere precisely because it stays inert until a
+      graph exists. To strip graphify wiring that leaked into a repo's tracked files, use
+      misc/strip-graphify-repo-wiring.ps1.
 
   WHICH GRAPHIFY MODE (per repo, by LOC ratio)
     graphify is the single graph tool. The only per-repo decision is which LAYER to
@@ -130,7 +147,8 @@ param(
     [switch]$DryRun,
     [switch]$SkipPythonUpdate,
     [switch]$SkipVersionCheck,
-    [int]$HeadroomTimeout = 0   # 0 = wait forever; pass e.g. 30 to cap cold-start waits
+    [int]$HeadroomTimeout = 0,  # 0 = wait forever; pass e.g. 30 to cap cold-start waits
+    [switch]$ConfigureVsCodeGlobal  # opt-in: also add graphify steering to VS Code user settings.json (JSON-normalizes the file)
 )
 
 $ErrorActionPreference = "Continue"
@@ -1037,6 +1055,146 @@ Invoke-Maybe {
 } "setx routing vars"
 
 # ==============================================================================
+# PHASE 8b - graphify GLOBAL harness steering (skill + conditional block + grep hook)
+# ==============================================================================
+# graphify has NO global-steering installer. Verified behavior:
+#   - `graphify install --platform <p>` copies ONLY the skill to a GLOBAL config dir.
+#   - `graphify <h> install`            writes the CURRENT REPO's TRACKED files
+#                                       (./CLAUDE.md, ./.claude/settings.json, ...) and
+#                                       emits an UNCONDITIONAL block - wrong for global.
+# So the conditional steering block + Claude grep hook are written HERE, by hand, into
+# GLOBAL config, idempotently (marker presence-check). Everything is GUARDED on
+# `graphify-out/graph.json`, so it stays INERT in any repo until that repo builds a graph.
+# This runs AFTER rtk/headroom init (Phase 8) so the global instruction files already
+# exist. The PreToolUse append uses @($json.hooks.PreToolUse) + $entry, which forces a real
+# array, so ConvertTo-Json serializes it as a JSON array regardless of entry count - no
+# Windows PowerShell 5.1 single-element-array quirk even if graphify is the only entry.
+Write-Step "PHASE 8b - graphify global harness steering"
+
+$gfCmd = Get-Command graphify -ErrorAction SilentlyContinue
+if (-not $gfCmd) {
+    Write-Warn "graphify not on PATH - skipping global harness steering"
+} else {
+    $claudeDir      = "$env:USERPROFILE\.claude"
+    $claudeMd       = "$claudeDir\CLAUDE.md"
+    $claudeSettings = "$claudeDir\settings.json"
+    $copilotDir     = "$env:USERPROFILE\.copilot"
+    $codexHome      = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { "$env:USERPROFILE\.codex" }
+    $codexAgents    = "$codexHome\AGENTS.md"
+
+    # Canonical conditional steering block (shared). Claude also gets a skill pointer.
+    $gfUsageBlock = @'
+## graphify graph usage (applies in any repo that has a graph)
+These rules are conditional - they activate only when `graphify-out/graph.json` exists in the working directory, and are inert otherwise.
+- For codebase questions (architecture, structure, where/what/how things relate), first run `graphify query "<question>"`. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for a focused concept. These return a scoped subgraph, usually far smaller than raw grep/file reads.
+- If `graphify-out/wiki/index.md` exists, use it for broad navigation instead of browsing source.
+- Read `graphify-out/GRAPH_REPORT.md` only for broad architecture review, or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
+'@
+
+    $gfClaudeHeader = @'
+# graphify
+- **graphify** (`~/.claude/skills/graphify/SKILL.md`) - any input to knowledge graph. Trigger: `/graphify`
+When the user types `/graphify`, invoke the Skill tool with `skill: "graphify"` before doing anything else.
+'@
+
+    # PreToolUse grep-steering hook command (Bash). Single-quoted here-string => literal;
+    # the inner single quotes, double quotes, and backticks need no escaping.
+    $gfGrepHookCmd = @'
+CMD=$(python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('tool_input',d).get('command',''))" 2>/dev/null || true); case "$CMD" in *grep*|*rg\ *|*ripgrep*|*find\ *|*fd\ *|*ack\ *|*ag\ *)   [ -f graphify-out/graph.json ] &&   echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"graphify: knowledge graph at graphify-out/. For focused questions, run `graphify query \"<question>\"` (scoped subgraph, usually much smaller than GRAPH_REPORT.md) instead of grepping raw files. Read GRAPH_REPORT.md only for broad architecture context."}}'   || true ;; esac
+'@
+
+    $gfBlockMarker = '## graphify graph usage'
+    $gfHookMarker  = 'graphify: knowledge graph at graphify-out/'
+
+    # Append a marked block to a global instruction file if its marker is absent.
+    function Ensure-GraphifyBlock {
+        param([string]$Path, [string]$Marker, [string]$Block)
+        if (-not (Test-Path -LiteralPath $Path)) { Write-Info "Not present, skipping: $Path"; return }
+        $raw = Get-Content -LiteralPath $Path -Raw
+        if ($raw -and ($raw -match [regex]::Escape($Marker))) { Write-OK "graphify steering already present: $Path"; return }
+        Add-Content -LiteralPath $Path -Value ("`n" + $Block.Trim() + "`n") -Encoding UTF8
+        Write-OK "graphify steering appended: $Path"
+    }
+
+    # Append the graphify grep hook to ~/.claude/settings.json PreToolUse if absent.
+    function Ensure-GraphifyGrepHook {
+        param([string]$Path, [string]$HookCmd, [string]$Marker)
+        if (-not (Test-Path -LiteralPath $Path)) { Write-Info "Not present, skipping: $Path"; return }
+        $raw = Get-Content -LiteralPath $Path -Raw
+        if ($raw -and ($raw -match [regex]::Escape($Marker))) { Write-OK "graphify grep hook already present: $Path"; return }
+        try { $json = $raw | ConvertFrom-Json -ErrorAction Stop }
+        catch { Write-Fail "settings.json does not parse - leaving untouched: $($_.Exception.Message)"; return }
+        if (-not $json.hooks) { $json | Add-Member -NotePropertyName hooks -NotePropertyValue ([pscustomobject]@{}) -Force }
+        if (-not $json.hooks.PSObject.Properties['PreToolUse']) { $json.hooks | Add-Member -NotePropertyName PreToolUse -NotePropertyValue @() -Force }
+        $entry = [pscustomobject]@{ matcher = 'Bash'; hooks = @([pscustomobject]@{ type = 'command'; command = $HookCmd }) }
+        $json.hooks.PreToolUse = @($json.hooks.PreToolUse) + $entry
+        $out = $json | ConvertTo-Json -Depth 100
+        try { $null = $out | ConvertFrom-Json -ErrorAction Stop } catch { Write-Fail "Refusing to write malformed settings.json"; return }
+        Copy-Item -LiteralPath $Path -Destination "$Path.bak-$stamp" -Force
+        Set-Content -LiteralPath $Path -Value $out -Encoding UTF8
+        Write-OK "graphify grep hook appended to PreToolUse (backup: $Path.bak-$stamp)"
+    }
+
+    # VS Code Copilot global steering (user settings.json). Off by default; -ConfigureVsCodeGlobal opts in.
+    function Ensure-GraphifyVsCodeSteering {
+        $vs = "$env:APPDATA\Code\User\settings.json"
+        $entryText = 'When graphify-out/graph.json exists in the workspace, first run `graphify query "<question>"` (or `graphify path`/`explain`) for codebase questions instead of grepping raw files; prefer graphify-out/wiki/index.md for broad navigation; run `graphify update .` after code changes. Inert when no graph is present.'
+        if (-not (Test-Path -LiteralPath $vs)) { Write-Info "VS Code user settings.json not found - skipping ($vs)"; return }
+        $raw = Get-Content -LiteralPath $vs -Raw
+        if ($raw -and ($raw -match 'graphify-out/graph\.json')) { Write-OK "VS Code global graphify steering already present: $vs"; return }
+        if (-not $ConfigureVsCodeGlobal) {
+            Write-Warn "VS Code has no global instruction file (known GAP). Add graphify steering manually under"
+            Write-Warn "  github.copilot.chat.codeGeneration.instructions  in $vs :"
+            Write-Warn "    { ""text"": ""$entryText"" }"
+            Write-Warn "  Or re-run with -ConfigureVsCodeGlobal to let this script add it (settings.json gets JSON-normalized)."
+            return
+        }
+        $stripped = ($raw -split "`n" | Where-Object { $_ -notmatch '^\s*//' }) -join "`n"
+        try { $json = $stripped | ConvertFrom-Json -ErrorAction Stop }
+        catch { Write-Warn "VS Code settings.json could not be parsed safely (JSONC) - add the entry manually (see above)."; return }
+        $key = 'github.copilot.chat.codeGeneration.instructions'
+        $entry = [pscustomobject]@{ text = $entryText }
+        if ($json.PSObject.Properties[$key]) { $json.$key = @($json.$key) + $entry }
+        else { $json | Add-Member -NotePropertyName $key -NotePropertyValue @($entry) -Force }
+        $out = $json | ConvertTo-Json -Depth 100
+        try { $null = $out | ConvertFrom-Json -ErrorAction Stop } catch { Write-Fail "Refusing to write malformed VS Code settings.json"; return }
+        Copy-Item -LiteralPath $vs -Destination "$vs.bak-$stamp" -Force
+        Set-Content -LiteralPath $vs -Value $out -Encoding UTF8
+        Write-Warn "VS Code global graphify steering added (backup: $vs.bak-$stamp). Comments/formatting were normalized by JSON round-trip."
+    }
+
+    # 1. Global SKILL install (skill files only -> GLOBAL config dir). From a temp cwd so
+    #    no stray files land in a real repo. Skip a harness whose home dir is absent.
+    Invoke-Maybe {
+        $gfSkillTmp = Join-Path $env:TEMP "graphify-skill-init-$PID"
+        New-Item -ItemType Directory -Force -Path $gfSkillTmp | Out-Null
+        Push-Location $gfSkillTmp
+        try {
+            if (Test-Path -LiteralPath $claudeDir) {
+                & $gfCmd.Source install --platform claude 2>&1 | ForEach-Object { Write-Info "  $_" }
+            } else { Write-Info "  ~/.claude absent - skipping claude skill" }
+            if (Test-Path -LiteralPath $copilotDir) {
+                & $gfCmd.Source copilot install 2>&1 | ForEach-Object { Write-Info "  $_" }
+            } else { Write-Info "  ~/.copilot absent - skipping copilot skill" }
+        } finally {
+            Pop-Location
+            Remove-Item -LiteralPath $gfSkillTmp -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    } "install /graphify skill globally (claude, copilot)"
+
+    # 2. Conditional steering block into the global instruction files (idempotent).
+    Invoke-Maybe { Ensure-GraphifyBlock -Path $claudeMd    -Marker $gfBlockMarker -Block ($gfClaudeHeader.Trim() + "`n`n" + $gfUsageBlock.Trim()) } "ensure graphify steering in ~/.claude/CLAUDE.md"
+    Invoke-Maybe { Ensure-GraphifyBlock -Path $codexAgents -Marker $gfBlockMarker -Block ($gfUsageBlock.Trim()) } "ensure graphify steering in $codexAgents"
+
+    # 3. Claude grep-steering PreToolUse hook (idempotent, validated, backed up).
+    Invoke-Maybe { Ensure-GraphifyGrepHook -Path $claudeSettings -HookCmd $gfGrepHookCmd -Marker $gfHookMarker } "ensure graphify grep hook in ~/.claude/settings.json"
+
+    # 4. VS Code Copilot global steering (opt-in via -ConfigureVsCodeGlobal; else warns).
+    Invoke-Maybe { Ensure-GraphifyVsCodeSteering } "ensure graphify VS Code global steering"
+}
+
+# ==============================================================================
 # PHASE 9 - Desktop + Startup shortcuts
 # ==============================================================================
 Write-Step "PHASE 9 - Desktop and Startup shortcuts"
@@ -1173,6 +1331,22 @@ try {
 } catch { Write-Info "  graphify : not installed (optional)" }
 
 Write-Info ""
+Write-Info "-- graphify global steering (inert until a repo has graphify-out/graph.json) --"
+$vGfClaudeMd       = "$env:USERPROFILE\.claude\CLAUDE.md"
+$vGfClaudeSettings = "$env:USERPROFILE\.claude\settings.json"
+$vGfCodexAgents    = if ($env:CODEX_HOME) { "$env:CODEX_HOME\AGENTS.md" } else { "$env:USERPROFILE\.codex\AGENTS.md" }
+$vGfClaudeSkill    = "$env:USERPROFILE\.claude\skills\graphify"
+$vGfCopilotSkill   = "$env:USERPROFILE\.copilot\skills\graphify"
+function Test-FileContains([string]$p, [string]$m) {
+    return ((Test-Path -LiteralPath $p) -and ((Get-Content -LiteralPath $p -Raw) -match [regex]::Escape($m)))
+}
+if (Test-Path -LiteralPath $vGfClaudeSkill)  { Write-OK "skill (claude)  : $vGfClaudeSkill" }  else { Write-Info "  skill (claude)  : not installed" }
+if (Test-Path -LiteralPath $vGfCopilotSkill) { Write-OK "skill (copilot) : $vGfCopilotSkill" } else { Write-Info "  skill (copilot) : not installed" }
+if (Test-FileContains $vGfClaudeMd '## graphify graph usage')    { Write-OK "steering        : ~/.claude/CLAUDE.md" }    else { Write-Warn "steering MISSING: ~/.claude/CLAUDE.md" }
+if (Test-FileContains $vGfCodexAgents '## graphify graph usage') { Write-OK "steering        : $vGfCodexAgents" }       else { Write-Info "  steering        : $vGfCodexAgents (codex absent or not wired)" }
+if (Test-FileContains $vGfClaudeSettings 'graphify: knowledge graph at graphify-out/') { Write-OK "grep hook       : ~/.claude/settings.json" } else { Write-Warn "grep hook MISSING: ~/.claude/settings.json" }
+
+Write-Info ""
 Write-Info "-- Proxy endpoints ----------------------------------------"
 foreach ($ep in "/livez","/readyz","/health","/stats") {
     try {
@@ -1206,6 +1380,9 @@ Pass criteria:
   rtk       -> v$RtkVersion or newer, telemetry disabled
   headroom  -> v$HeadroomVersion (wheel-installable, shim runtime), telemetry disabled
   graphify  -> installed globally with uv tool (`graphifyy` package, `graphify` CLI)
+  graphify global steering -> skill + conditional block (CLAUDE.md / AGENTS.md) +
+            grep hook (settings.json) wired GLOBALLY but INERT until a repo has
+            graphify-out/graph.json. VS Code global steering is opt-in (-ConfigureVsCodeGlobal).
   /livez + /readyz -> healthy
   /health   -> ready (rust_core:disabled is OK on Python without Rust wheel)
   /stats    -> counters visible
@@ -1218,9 +1395,13 @@ Action required after this script:
   Restart Claude Code, Codex, and any IDE so they pick up the new setx vars.
   This script does NOT update the harness binaries themselves - they self-update,
   and a machine may run only some of them.
-  Per-repo (not done here): optionally enable graphify for claude/codex/copilot,
-  then build the graph from the repo root - 'graphify .' for the full
-  (AST + semantic) layer, or the structure-only (AST, no model spend) path - to
-  create graphify-out/graph.json. See support/context-tooling.md for the layer
-  choice.
+  Global graphify steering IS wired now (skill + conditional block + grep hook), but
+  stays inert in a repo until that repo builds a graph.
+  Per-repo (opt-in, not done here): in a repo that warrants a graph, paste
+  misc/ai-tooling-setup-prompt.txt - it measures the layer, optionally enables the
+  claude/codex/copilot repo harnesses, and builds the graph from the repo root
+  ('graphify .' for the full AST + semantic layer, or the structure-only AST-only
+  path) to create graphify-out/graph.json. See support/context-tooling.md for the
+  layer choice. To strip graphify wiring that leaked into a repo's tracked files, run
+  misc/strip-graphify-repo-wiring.ps1 from that repo.
 "@
