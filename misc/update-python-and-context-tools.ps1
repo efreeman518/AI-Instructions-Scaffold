@@ -917,6 +917,29 @@ if (-not $uv) {
             $env:Path = "$RtkBinDir;" + $env:Path
             $graphifyCmd = Get-Command graphify -ErrorAction SilentlyContinue
             if ($graphifyCmd) {
+                # Re-sync the /graphify skill to the just-upgraded CLI BEFORE probing
+                # --version below. graphify stamps a .graphify_version into each skill
+                # dir and warns "skill is from X, package is Y" on every invocation when
+                # that stamp lags the CLI. Phase 8b is the canonical skill installer, but
+                # the upgrade above bumps the package while the skill still reads the old
+                # version - so the inventory probe (and any session until Phase 8b runs)
+                # surfaces a transient mismatch warning. Syncing here clears it at the
+                # source. Run from a throwaway temp cwd so 'graphify install' cannot stamp
+                # the current repo's tracked files (same footgun Phase 8b guards against).
+                $gfSyncTmp = Join-Path $env:TEMP "graphify-skill-sync-$PID"
+                New-Item -ItemType Directory -Force -Path $gfSyncTmp | Out-Null
+                Push-Location $gfSyncTmp
+                try {
+                    if (Test-Path -LiteralPath "$env:USERPROFILE\.claude") {
+                        & $graphifyCmd.Source install --platform claude 2>&1 | ForEach-Object { Write-Info "  $_" }
+                    }
+                    if (Test-Path -LiteralPath "$env:USERPROFILE\.copilot") {
+                        & $graphifyCmd.Source copilot install 2>&1 | ForEach-Object { Write-Info "  $_" }
+                    }
+                } finally {
+                    Pop-Location
+                    Remove-Item -LiteralPath $gfSyncTmp -Recurse -Force -ErrorAction SilentlyContinue
+                }
                 Write-OK "graphify: $(& $graphifyCmd.Source --version 2>&1)"
             } else {
                 Write-Warn "graphify installed but not on PATH. Open a new shell or add $RtkBinDir to PATH."

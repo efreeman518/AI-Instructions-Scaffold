@@ -30,7 +30,7 @@ $DeepTime        = "03:00"           # 3:00 AM (1st Sunday of month)
 Write-Host ""
 Write-Host "  Setting up maintenance infrastructure..." -ForegroundColor Cyan
 
-foreach ($dir in @($MaintenanceDir, "$MaintenanceDir\Logs", "$MaintenanceDir\EventLogArchive")) {
+foreach ($dir in @($MaintenanceDir, "$MaintenanceDir\Logs", "$MaintenanceDir\EventLogArchive", "$MaintenanceDir\Baseline")) {
     if (-not (Test-Path $dir)) {
         New-Item -Path $dir -ItemType Directory -Force | Out-Null
         Write-Host "  [CREATED] $dir" -ForegroundColor Green
