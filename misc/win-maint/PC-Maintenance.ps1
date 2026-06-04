@@ -190,6 +190,33 @@ function Resolve-Target {
     return $Target
 }
 
+# Normalize a service name for baseline keying. Windows user-service instances are
+# named <Template>_<sessionLUIDhex> (e.g. CDPUserSvc_960a9); the LUID changes every
+# logon session, so the raw name re-alerts on every reboot with zero software change.
+# Stripping a trailing _<hex> keys on the template instead, so only a genuinely new
+# user service surfaces. These instances share one Path (svchost.exe -k <group>, or a
+# fixed exe), so collapsing the suffix never hides a distinct binary. Applied to both
+# sides of the diff, so it stays consistent.
+function Get-ServiceKey {
+    param([string]$Name, [string]$Path)
+    $norm = $Name -replace '_[0-9A-Fa-f]{4,}$', ''
+    return "$norm|$Path"
+}
+
+# Normalize a listener for baseline keying. spoolsv / services / lsass and transient
+# dev tools bind random high ports in the dynamic range (49152-65535) that are
+# reassigned every boot, so Port|Path re-alerts on every run. For dynamic-range ports,
+# key on Path only: a brand-new binary listening still alerts once, but port churn from
+# an already-known binary does not. Below 49152 (well-known / registered) the exact
+# port still matters, so it stays in the key. Tradeoff: a process whose Path cannot be
+# resolved (protected SYSTEM processes report an empty Path) collapses to a single
+# dynamic-range key.
+function Get-ListenerKey {
+    param($Port, [string]$Path)
+    if ([int]$Port -ge 49152) { return "DYN|$Path" }
+    return "$Port|$Path"
+}
+
 # Point-in-time snapshot of services, autostart entries, and listening ports.
 function Get-AuditSnapshot {
     $services = Get-CimInstance Win32_Service -ErrorAction SilentlyContinue |
@@ -617,12 +644,12 @@ if ($ReBaseline -or -not (Test-Path $BaselineFile)) {
 } else {
     $base = Get-Content $BaselineFile -Raw -ErrorAction SilentlyContinue | ConvertFrom-Json -ErrorAction SilentlyContinue
     if ($base) {
-        $baseSvc = @{}; foreach ($s in $base.services)  { $baseSvc["$($s.Name)|$($s.Path)"] = $true }
+        $baseSvc = @{}; foreach ($s in $base.services)  { $baseSvc[(Get-ServiceKey $s.Name $s.Path)] = $true }
         $baseAut = @{}; foreach ($a in $base.autoruns)  { $baseAut["$($a.Source)|$($a.Name)|$($a.Target)"] = $true }
-        $basePrt = @{}; foreach ($l in $base.listeners) { $basePrt["$($l.Port)|$($l.Path)"] = $true }
+        $basePrt = @{}; foreach ($l in $base.listeners) { $basePrt[(Get-ListenerKey $l.Port $l.Path)] = $true }
 
         foreach ($s in $snapshot.services) {
-            if (-not $baseSvc.ContainsKey("$($s.Name)|$($s.Path)")) {
+            if (-not $baseSvc.ContainsKey((Get-ServiceKey $s.Name $s.Path))) {
                 Add-Alert "NEW service since baseline: '$($s.Name)' ($($s.StartMode)) -> $($s.Path)"
             }
         }
@@ -635,7 +662,7 @@ if ($ReBaseline -or -not (Test-Path $BaselineFile)) {
             }
         }
         foreach ($l in $snapshot.listeners) {
-            if (-not $basePrt.ContainsKey("$($l.Port)|$($l.Path)")) {
+            if (-not $basePrt.ContainsKey((Get-ListenerKey $l.Port $l.Path))) {
                 Add-Alert "NEW listening port since baseline: $($l.Port) -> $($l.Proc) [$($l.Path)]"
             }
         }
