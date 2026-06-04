@@ -1075,59 +1075,88 @@ function Repair-CodexHeadroomProvider {
     if ($null -eq $orig) { return }
     $text = $orig -replace "`r`n", "`n"
 
-    $provRx = '(?ms)^[ \t]*#[ \t]*-+[ \t]*Headroom init provider[ \t]*-+.*?#[ \t]*-+[ \t]*end Headroom init provider[ \t]*-+[ \t]*'
-    $featRx = '(?ms)^[ \t]*#[ \t]*-+[ \t]*Headroom init features[ \t]*-+.*?#[ \t]*-+[ \t]*end Headroom init features[ \t]*-+[ \t]*'
-
-    $provMatch = [regex]::Match($text, $provRx)
-    if (-not $provMatch.Success) {
-        Write-Info "No marked Headroom provider block in codex config - leaving untouched"; return
+    # Marker-AGNOSTIC: operate on the [model_providers.headroom] TABLE and the
+    # model_provider key directly, so it fixes the block whether or not Headroom wrapped
+    # it in "# --- Headroom init provider ---" comments (different versions/tools differ).
+    if ($text -notmatch '(?m)^[ \t]*\[model_providers\.headroom\]') {
+        Write-Info "no [model_providers.headroom] in codex config - nothing to repair ($ConfigPath)"; return
     }
-    $provCount = ([regex]::Matches($text, $provRx)).Count
-    $featMatch = [regex]::Match($text, $featRx)
 
-    # Preserve the first surviving block. Strip the spurious env_key line ONLY when the
-    # block uses requires_openai_auth = true - then the bearer comes from Codex's own
-    # login and env_key wrongly forces an OPENAI_API_KEY var. If a block ever shipped
-    # env_key WITHOUT requires_openai_auth (a real API-key proxy), env_key is the only
-    # credential and must be kept.
-    $provLines = $provMatch.Value.Trim() -split "`n"
-    if ($provMatch.Value -match 'requires_openai_auth[ \t]*=[ \t]*true') {
-        $provLines = $provLines | Where-Object { $_ -notmatch '^[ \t]*env_key[ \t]*=' }
+    # Auth shape from the Codex LOGIN MODE (auth.json next to config.toml), NOT from what
+    # the block contains - a block can carry env_key AND/OR requires_openai_auth=false and
+    # still break a Codex/ChatGPT subscription login.
+    #   chatgpt / oauth login  -> no API key exists. The provider MUST be
+    #       requires_openai_auth=true with NO env_key, else Codex aborts at startup with
+    #       "Missing environment variable: OPENAI_API_KEY".
+    #   api-key login          -> env_key is the real credential; leave the table alone.
+    # Fall back to the subscription shape when auth.json is absent AND no OPENAI_API_KEY
+    # is set anywhere - the only state where env_key can break startup.
+    $authMode = $null
+    $authPath = Join-Path (Split-Path -Parent $ConfigPath) 'auth.json'
+    if (Test-Path -LiteralPath $authPath) {
+        try { $authMode = (Get-Content -LiteralPath $authPath -Raw | ConvertFrom-Json -ErrorAction Stop).auth_mode } catch { }
     }
-    $provText = $provLines -join "`n"
-    $featText = if ($featMatch.Success) { $featMatch.Value.Trim() } else { $null }
+    $haveKey = [Environment]::GetEnvironmentVariable('OPENAI_API_KEY', 'User')
+    if (-not $haveKey) { $haveKey = [Environment]::GetEnvironmentVariable('OPENAI_API_KEY', 'Process') }
+    $subscriptionMode = ($authMode -eq 'chatgpt') -or ((-not $authMode) -and (-not $haveKey))
 
-    # Strip EVERY occurrence of both blocks from the body.
-    $body = [regex]::Replace($text, $provRx, '')
-    $body = [regex]::Replace($body, $featRx, '')
-
-    # Relocate the single surviving block above the first table header so the bare
-    # model_provider key parses at root scope.
-    $relocated = if ($featText) { $provText + "`n`n" + $featText } else { $provText }
-    $arr = $body -split "`n"
-    $firstTbl = -1
-    for ($i = 0; $i -lt $arr.Count; $i++) { if ($arr[$i] -match '^[ \t]*\[') { $firstTbl = $i; break } }
-
-    if ($firstTbl -ge 0) {
-        $pre  = if ($firstTbl -gt 0) { ($arr[0..($firstTbl - 1)] -join "`n").TrimEnd() } else { '' }
-        $post = ($arr[$firstTbl..($arr.Count - 1)] -join "`n").TrimEnd()
-        $new  = (@($pre, $relocated, $post) | Where-Object { $_ -ne '' }) -join "`n`n"
-    } else {
-        $new = (@($body.TrimEnd(), $relocated) | Where-Object { $_ -ne '' }) -join "`n`n"
+    # 1) DEDUP duplicate [model_providers.headroom] tables (the TOML duplicate-key crash):
+    #    keep the first, delete the rest. Table = header + following non-table, non-comment
+    #    lines. Remove from last to first so earlier match offsets stay valid.
+    $tblRx = '(?ms)^[ \t]*\[model_providers\.headroom\][ \t]*\n(?:(?![ \t]*\[)(?![ \t]*#)[^\n]*\n?)*'
+    $tbls  = [regex]::Matches($text, $tblRx)
+    $dupCount = $tbls.Count
+    if ($tbls.Count -gt 1) {
+        for ($i = $tbls.Count - 1; $i -ge 1; $i--) { $text = $text.Remove($tbls[$i].Index, $tbls[$i].Length) }
     }
-    $new = ([regex]::Replace($new, "`n{3,}", "`n`n")).TrimEnd() + "`n"
 
-    if ($new -eq ($text.TrimEnd() + "`n")) {
-        Write-OK "codex Headroom provider already single + root-scoped, env_key clean - no change"; return
+    # Headroom writes a codex_hooks flag per init too; collapse stacked copies to the first
+    # so they cannot become a duplicate key once the provider tables are deduped.
+    $chRx = '(?m)^[ \t]*codex_hooks[ \t]*=[ \t]*(?:true|false)[ \t]*\n?'
+    $chs  = [regex]::Matches($text, $chRx)
+    if ($chs.Count -gt 1) {
+        for ($i = $chs.Count - 1; $i -ge 1; $i--) { $text = $text.Remove($chs[$i].Index, $chs[$i].Length) }
+    }
+
+    # 2) Normalize provider keys for the auth mode (line-level - these keys live only in the
+    #    headroom provider table). Subscription: drop env_key, force requires_openai_auth=true.
+    if ($subscriptionMode) {
+        $text = [regex]::Replace($text, '(?m)^[ \t]*env_key[ \t]*=.*\n?', '')
+        if ($text -match '(?m)^[ \t]*requires_openai_auth[ \t]*=') {
+            $text = [regex]::Replace($text, '(?m)^[ \t]*requires_openai_auth[ \t]*=.*$', 'requires_openai_auth = true')
+        } else {
+            # No such key - inject right after the table header (TOML key order is free).
+            $text = [regex]::Replace($text, '(?m)^([ \t]*\[model_providers\.headroom\][ \t]*)$', "`$1`nrequires_openai_auth = true")
+        }
+    }
+
+    # 3) ROOT-SCOPE model_provider = "headroom": it must appear before the first table
+    #    header, else it nests under the preceding table (e.g. desktop.model_provider) and
+    #    routing silently never applies.
+    $firstTblIdx = [regex]::Match($text, '(?m)^[ \t]*\[').Index
+    $mp = [regex]::Match($text, '(?m)^[ \t]*model_provider[ \t]*=[ \t]*"headroom"[ \t]*$')
+    if (-not ($mp.Success -and $mp.Index -lt $firstTblIdx)) {
+        $text = [regex]::Replace($text, '(?m)^[ \t]*model_provider[ \t]*=[ \t]*"headroom"[ \t]*\n?', '')
+        $firstTblIdx = [regex]::Match($text, '(?m)^[ \t]*\[').Index
+        if ($firstTblIdx -ge 0) {
+            $text = $text.Substring(0, $firstTblIdx).TrimEnd() + "`nmodel_provider = `"headroom`"`n`n" + $text.Substring($firstTblIdx)
+        } else {
+            $text = 'model_provider = "headroom"' + "`n" + $text
+        }
+    }
+
+    $text = ([regex]::Replace($text, "`n{3,}", "`n`n")).TrimEnd() + "`n"
+
+    if ($text -eq (($orig -replace "`r`n", "`n").TrimEnd() + "`n")) {
+        Write-OK "codex Headroom provider already correct (single, root-scoped, auth shape matches login) - no change"
+        return
     }
     Copy-Item -LiteralPath $ConfigPath -Destination "$ConfigPath.bak-$Stamp" -Force
     # Write UTF-8 without BOM + CRLF (TOML rejects a BOM; Codex wrote CRLF originally).
-    [System.IO.File]::WriteAllText($ConfigPath, ($new -replace "`n", "`r`n"), (New-Object System.Text.UTF8Encoding($false)))
-    if ($provCount -gt 1) {
-        Write-OK "codex config.toml: collapsed $provCount duplicate Headroom blocks -> 1, dropped env_key, hoisted model_provider to root (backup: $ConfigPath.bak-$Stamp)"
-    } else {
-        Write-OK "codex config.toml: dropped spurious env_key and hoisted Headroom block above first table (backup: $ConfigPath.bak-$Stamp)"
-    }
+    [System.IO.File]::WriteAllText($ConfigPath, ($text -replace "`n", "`r`n"), (New-Object System.Text.UTF8Encoding($false)))
+    $shape   = if ($subscriptionMode) { "subscription/OAuth (requires_openai_auth=true, env_key removed)" } else { "api-key (env_key preserved)" }
+    $dupNote = if ($dupCount -gt 1) { "collapsed $dupCount duplicate provider tables; " } else { "" }
+    Write-OK "codex config.toml normalized: ${dupNote}auth shape -> $shape (backup: $ConfigPath.bak-$Stamp)"
 }
 
 foreach ($agent in "claude","codex","copilot") {
