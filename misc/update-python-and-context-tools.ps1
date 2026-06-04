@@ -1033,8 +1033,115 @@ if (Test-Path $copilotConfig) {
     }
 }
 
-# Headroom harness init - writes global instruction files for each agent
+# Headroom harness init - writes global instruction files / provider wiring per agent.
+#
+# IDEMPOTENCY + AUTH FIX (codex): `headroom init -g codex` is NOT idempotent and
+# emits a broken provider block. Two distinct failures it causes:
+#   1. DUPLICATE KEYS: it APPENDS its provider block (model_provider +
+#      [model_providers.headroom]) to $CODEX_HOME\config.toml on EVERY run with no
+#      presence check. Re-running this script stacks duplicate
+#      [model_providers.headroom] tables -> Codex aborts with a TOML
+#      "duplicate key" parse error and will not start.
+#   2. WRONG SCOPE + SPURIOUS env_key: the block is appended at EOF, after existing
+#      [tables], so the bare `model_provider = "headroom"` key silently nests under
+#      whatever table precedes it (e.g. desktop.model_provider) instead of being a
+#      root key - the proxy routing never takes effect. The block also writes
+#      `env_key = "OPENAI_API_KEY"` alongside `requires_openai_auth = true`; for a
+#      ChatGPT-login Codex (auth_mode = chatgpt, no API key) that env_key makes Codex
+#      demand a variable that does not exist -> "Missing environment variable:
+#      OPENAI_API_KEY". With requires_openai_auth = true the bearer already comes
+#      from Codex's own login, so env_key is wrong and must be dropped.
+#
+# Fix is two-part:
+#   1. Guard the codex init: only invoke it when no [model_providers.headroom]
+#      block exists yet (first-time wiring). Stops new duplicates being appended.
+#   2. Repair-CodexHeadroomProvider (always, after init): collapse any duplicate
+#      Headroom blocks down to one, strip the env_key line, and relocate the block
+#      ABOVE the first [table] so model_provider parses at root scope. Internal
+#      block structure is otherwise preserved as Headroom emits it.
+$codexHome   = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { "$env:USERPROFILE\.codex" }
+$codexConfig = Join-Path $codexHome "config.toml"
+
+# Normalize the Headroom provider block in codex config.toml: keep a single copy,
+# drop the spurious env_key, and hoist it above the first table so model_provider
+# is root-scoped. No-op when already correct, or when no marked Headroom block is
+# present (unmarked legacy installs are left untouched to avoid guesswork).
+function Repair-CodexHeadroomProvider {
+    param([string]$ConfigPath, [string]$Stamp)
+    if (-not (Test-Path -LiteralPath $ConfigPath)) {
+        Write-Info "codex config.toml absent - nothing to repair ($ConfigPath)"; return
+    }
+    $orig = Get-Content -LiteralPath $ConfigPath -Raw
+    if ($null -eq $orig) { return }
+    $text = $orig -replace "`r`n", "`n"
+
+    $provRx = '(?ms)^[ \t]*#[ \t]*-+[ \t]*Headroom init provider[ \t]*-+.*?#[ \t]*-+[ \t]*end Headroom init provider[ \t]*-+[ \t]*'
+    $featRx = '(?ms)^[ \t]*#[ \t]*-+[ \t]*Headroom init features[ \t]*-+.*?#[ \t]*-+[ \t]*end Headroom init features[ \t]*-+[ \t]*'
+
+    $provMatch = [regex]::Match($text, $provRx)
+    if (-not $provMatch.Success) {
+        Write-Info "No marked Headroom provider block in codex config - leaving untouched"; return
+    }
+    $provCount = ([regex]::Matches($text, $provRx)).Count
+    $featMatch = [regex]::Match($text, $featRx)
+
+    # Preserve the first surviving block. Strip the spurious env_key line ONLY when the
+    # block uses requires_openai_auth = true - then the bearer comes from Codex's own
+    # login and env_key wrongly forces an OPENAI_API_KEY var. If a block ever shipped
+    # env_key WITHOUT requires_openai_auth (a real API-key proxy), env_key is the only
+    # credential and must be kept.
+    $provLines = $provMatch.Value.Trim() -split "`n"
+    if ($provMatch.Value -match 'requires_openai_auth[ \t]*=[ \t]*true') {
+        $provLines = $provLines | Where-Object { $_ -notmatch '^[ \t]*env_key[ \t]*=' }
+    }
+    $provText = $provLines -join "`n"
+    $featText = if ($featMatch.Success) { $featMatch.Value.Trim() } else { $null }
+
+    # Strip EVERY occurrence of both blocks from the body.
+    $body = [regex]::Replace($text, $provRx, '')
+    $body = [regex]::Replace($body, $featRx, '')
+
+    # Relocate the single surviving block above the first table header so the bare
+    # model_provider key parses at root scope.
+    $relocated = if ($featText) { $provText + "`n`n" + $featText } else { $provText }
+    $arr = $body -split "`n"
+    $firstTbl = -1
+    for ($i = 0; $i -lt $arr.Count; $i++) { if ($arr[$i] -match '^[ \t]*\[') { $firstTbl = $i; break } }
+
+    if ($firstTbl -ge 0) {
+        $pre  = if ($firstTbl -gt 0) { ($arr[0..($firstTbl - 1)] -join "`n").TrimEnd() } else { '' }
+        $post = ($arr[$firstTbl..($arr.Count - 1)] -join "`n").TrimEnd()
+        $new  = (@($pre, $relocated, $post) | Where-Object { $_ -ne '' }) -join "`n`n"
+    } else {
+        $new = (@($body.TrimEnd(), $relocated) | Where-Object { $_ -ne '' }) -join "`n`n"
+    }
+    $new = ([regex]::Replace($new, "`n{3,}", "`n`n")).TrimEnd() + "`n"
+
+    if ($new -eq ($text.TrimEnd() + "`n")) {
+        Write-OK "codex Headroom provider already single + root-scoped, env_key clean - no change"; return
+    }
+    Copy-Item -LiteralPath $ConfigPath -Destination "$ConfigPath.bak-$Stamp" -Force
+    # Write UTF-8 without BOM + CRLF (TOML rejects a BOM; Codex wrote CRLF originally).
+    [System.IO.File]::WriteAllText($ConfigPath, ($new -replace "`n", "`r`n"), (New-Object System.Text.UTF8Encoding($false)))
+    if ($provCount -gt 1) {
+        Write-OK "codex config.toml: collapsed $provCount duplicate Headroom blocks -> 1, dropped env_key, hoisted model_provider to root (backup: $ConfigPath.bak-$Stamp)"
+    } else {
+        Write-OK "codex config.toml: dropped spurious env_key and hoisted Headroom block above first table (backup: $ConfigPath.bak-$Stamp)"
+    }
+}
+
 foreach ($agent in "claude","codex","copilot") {
+    if ($agent -eq "codex") {
+        # Skip the non-idempotent CLI init once the provider is wired - re-running it
+        # only appends another duplicate [model_providers.headroom] table. The repair
+        # step below keeps the existing block correct.
+        $codexWired = (Test-Path -LiteralPath $codexConfig) -and
+                      ((Get-Content -LiteralPath $codexConfig -Raw) -match '\[model_providers\.headroom\]')
+        if ($codexWired) {
+            Write-Info "headroom init -g codex - SKIP (provider already wired; repair step normalizes it)"
+            continue
+        }
+    }
     Write-Info "headroom init -g $agent"
     Invoke-Maybe {
         $initOut = headroom init -g $agent 2>&1
@@ -1044,6 +1151,10 @@ foreach ($agent in "claude","codex","copilot") {
         }
     } "headroom init -g $agent"
 }
+
+# Always normalize/repair the codex provider block: dedups any leftovers from prior
+# non-idempotent runs, strips env_key, hoists model_provider to root. Idempotent.
+Invoke-Maybe { Repair-CodexHeadroomProvider -ConfigPath $codexConfig -Stamp $stamp } "repair/dedup codex Headroom provider block"
 
 # Patch the Copilot hook to use the lightweight proxy-ensure.cmd instead of the
 # default 'headroom init hook ensure' command. The default routes through the PS
@@ -1072,6 +1183,23 @@ Invoke-Maybe {
 
 # Set durable routing env vars so all agents send requests through the proxy.
 # setx writes to the registry - effective in all new shells and agent processes.
+#
+# AUTH MODEL (per Headroom docs - this script sets ROUTING only, never provider keys):
+#   - Routing is by base URL. These two BASE_URLs are the complete set of vars that
+#     point the harnesses at the proxy (docs: `ANTHROPIC_BASE_URL=...:8787 claude`,
+#     `OPENAI_BASE_URL=...:8787/v1`). We use 127.0.0.1 over the docs' `localhost` so
+#     it can't resolve to an IPv6 ::1 that misses the 127.0.0.1-bound listener.
+#   - OPENAI_API_KEY / ANTHROPIC_API_KEY are the PROXY's UPSTREAM credentials,
+#     "used when proxying to OpenAI/Anthropic" (API-key mode) - conditional on the
+#     backend, NOT a routing input. The script neither sets nor clears them; if you
+#     run the proxy in API-key mode, put your REAL keys in the env the proxy inherits.
+#   - This machine runs the OTHER mode: subscription / OAuth pass-through
+#     (auth_mode=chatgpt, ~/.headroom/subscription_state.json present, no API keys).
+#     Each harness forwards its OWN login - Claude Code via ANTHROPIC_BASE_URL, Codex
+#     its ChatGPT token via the provider's requires_openai_auth=true (NOT an env_key).
+#     A placeholder OPENAI_API_KEY is 401'd, and a client-side env_key on a ChatGPT
+#     login is exactly what yields "Missing environment variable: OPENAI_API_KEY" -
+#     which is why the Phase 8 codex repair strips env_key when requires_openai_auth.
 Write-Info "Setting ANTHROPIC_BASE_URL + OPENAI_BASE_URL via setx..."
 Invoke-Maybe {
     setx ANTHROPIC_BASE_URL "http://127.0.0.1:$ProxyPort"    | Out-Null
@@ -1485,6 +1613,62 @@ Write-Info "  ANTHROPIC_BASE_URL  : $([Environment]::GetEnvironmentVariable('ANT
 Write-Info "  OPENAI_BASE_URL     : $([Environment]::GetEnvironmentVariable('OPENAI_BASE_URL','User'))"
 Write-Info "  HEADROOM_TELEMETRY  : $([Environment]::GetEnvironmentVariable('HEADROOM_TELEMETRY','User'))"
 Write-Info "  HEADROOM_ENSURE_CMD : $([Environment]::GetEnvironmentVariable('HEADROOM_ENSURE_CMD','User'))"
+
+# -- Harness routing + config integrity ---------------------------------------
+# Confirms the harnesses are actually pointed at the local proxy and that no init
+# (this script OR another process) left a harness config malformed. Detection only:
+# a warning here means "re-run this script", which self-heals via the Phase 8 repair.
+Write-Info ""
+Write-Info "-- Harness routing + config integrity ---------------------"
+
+# Claude + Codex must point at the local proxy via the BASE_URL vars (the proxy holds
+# no keys; each harness forwards its own auth). Verify they are set, not just print.
+$expectAnthropic = "http://127.0.0.1:$ProxyPort"
+$expectOpenAI    = "http://127.0.0.1:$ProxyPort/v1"
+$curAnthropic    = [Environment]::GetEnvironmentVariable('ANTHROPIC_BASE_URL','User')
+$curOpenAI       = [Environment]::GetEnvironmentVariable('OPENAI_BASE_URL','User')
+if ($curAnthropic -eq $expectAnthropic) { Write-OK "ANTHROPIC_BASE_URL -> proxy (Claude Code routing)" }
+else { Write-Warn "ANTHROPIC_BASE_URL is '$curAnthropic' (expected $expectAnthropic) - Claude Code will NOT route through the proxy" }
+if ($curOpenAI -eq $expectOpenAI) { Write-OK "OPENAI_BASE_URL -> proxy (Codex / OpenAI-protocol routing)" }
+else { Write-Warn "OPENAI_BASE_URL is '$curOpenAI' (expected $expectOpenAI) - Codex / OpenAI clients will NOT route through the proxy" }
+
+# Codex config.toml: single, root-scoped Headroom provider, no spurious env_key.
+$icCodex = if ($env:CODEX_HOME) { "$env:CODEX_HOME\config.toml" } else { "$env:USERPROFILE\.codex\config.toml" }
+if (Test-Path -LiteralPath $icCodex) {
+    $ct = (Get-Content -LiteralPath $icCodex -Raw) -replace "`r`n", "`n"
+    $provCount = ([regex]::Matches($ct, '(?m)^[ \t]*\[model_providers\.headroom\]')).Count
+    if ($provCount -gt 1) {
+        Write-Warn "codex config.toml: $provCount [model_providers.headroom] tables -> TOML duplicate-key crash. Re-run this script to auto-repair."
+    } elseif ($provCount -eq 1) {
+        $mpIdx  = $ct.IndexOf('model_provider = "headroom"')
+        $tblM   = [regex]::Match($ct, '(?m)^[ \t]*\[')
+        $tblIdx = if ($tblM.Success) { $tblM.Index } else { -1 }
+        if ($mpIdx -lt 0) {
+            Write-Warn "codex config.toml: provider table present but no model_provider directive - Codex will not select it."
+        } elseif ($tblIdx -ge 0 -and $mpIdx -gt $tblIdx) {
+            Write-Warn "codex config.toml: model_provider nested under a table, not root - routing inactive. Re-run to auto-repair."
+        } elseif (($ct -match '(?m)^[ \t]*env_key[ \t]*=[ \t]*"OPENAI_API_KEY"') -and ($ct -match 'requires_openai_auth[ \t]*=[ \t]*true')) {
+            Write-Warn "codex config.toml: env_key set with requires_openai_auth -> 'Missing OPENAI_API_KEY' on ChatGPT login. Re-run to auto-repair."
+        } else {
+            Write-OK "codex config.toml: single root-scoped Headroom provider, no spurious env_key"
+        }
+    } else {
+        Write-Info "  codex config.toml: no Headroom provider (codex absent / not wired)"
+    }
+} else {
+    Write-Info "  codex config.toml: not present"
+}
+
+# JSON harness configs must parse - a malformed hook file silently disables the harness.
+foreach ($jc in @(
+    @{ Name = "~/.claude/settings.json"; Path = "$env:USERPROFILE\.claude\settings.json" },
+    @{ Name = "~/.copilot/config.json";  Path = "$env:USERPROFILE\.copilot\config.json"  }
+)) {
+    if (Test-Path -LiteralPath $jc.Path) {
+        try { $null = Get-Content -LiteralPath $jc.Path -Raw | ConvertFrom-Json -ErrorAction Stop; Write-OK "$($jc.Name): valid JSON" }
+        catch { Write-Warn "$($jc.Name): does NOT parse - $($_.Exception.Message)" }
+    } else { Write-Info "  $($jc.Name): not present" }
+}
 
 Write-Host "`n=== Done ===" -ForegroundColor Green
 Write-Host @"
