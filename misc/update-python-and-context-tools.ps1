@@ -1091,14 +1091,25 @@ function Repair-CodexHeadroomProvider {
     #   api-key login          -> env_key is the real credential; leave the table alone.
     # Fall back to the subscription shape when auth.json is absent AND no OPENAI_API_KEY
     # is set anywhere - the only state where env_key can break startup.
-    $authMode = $null
+    $authMode = $null; $keyInAuth = $false
     $authPath = Join-Path (Split-Path -Parent $ConfigPath) 'auth.json'
     if (Test-Path -LiteralPath $authPath) {
-        try { $authMode = (Get-Content -LiteralPath $authPath -Raw | ConvertFrom-Json -ErrorAction Stop).auth_mode } catch { }
+        try {
+            $aj        = Get-Content -LiteralPath $authPath -Raw | ConvertFrom-Json -ErrorAction Stop
+            $authMode  = $aj.auth_mode
+            $keyInAuth = -not [string]::IsNullOrWhiteSpace($aj.OPENAI_API_KEY)
+        } catch { }
     }
-    $haveKey = [Environment]::GetEnvironmentVariable('OPENAI_API_KEY', 'User')
-    if (-not $haveKey) { $haveKey = [Environment]::GetEnvironmentVariable('OPENAI_API_KEY', 'Process') }
-    $subscriptionMode = ($authMode -eq 'chatgpt') -or ((-not $authMode) -and (-not $haveKey))
+    # A usable API key exists only if it's actually set somewhere (env in any scope, or a
+    # non-empty OPENAI_API_KEY inside auth.json). Keep env_key ONLY in that case - it is the
+    # real credential. With no key anywhere, env_key is GUARANTEED to break startup, so the
+    # one safe shape is requires_openai_auth=true and NO env_key (subscription/OAuth login).
+    # A chatgpt auth_mode forces subscription even if a stale key lingers in the environment.
+    $haveKey = $keyInAuth `
+        -or [bool][Environment]::GetEnvironmentVariable('OPENAI_API_KEY', 'User') `
+        -or [bool][Environment]::GetEnvironmentVariable('OPENAI_API_KEY', 'Machine') `
+        -or [bool]$env:OPENAI_API_KEY
+    $subscriptionMode = ($authMode -eq 'chatgpt') -or (-not $haveKey)
 
     # 1) DEDUP duplicate [model_providers.headroom] tables (the TOML duplicate-key crash):
     #    keep the first, delete the rest. Table = header + following non-table, non-comment
