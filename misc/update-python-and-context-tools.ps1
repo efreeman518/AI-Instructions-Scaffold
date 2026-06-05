@@ -1283,6 +1283,7 @@ These rules are conditional - they activate only when `graphify-out/graph.json` 
 - If `graphify-out/wiki/index.md` exists, use it for broad navigation instead of browsing source.
 - Read `graphify-out/GRAPH_REPORT.md` only for broad architecture review, or when query/path/explain do not surface enough context.
 - After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
+- No API key needed: inside a coding-agent session (Claude Code, Claude VS Code, Codex, Copilot) the harness model performs graphify's LLM extraction. `GEMINI_API_KEY`/`GOOGLE_API_KEY` apply to headless/CI runs only, and graphify never reads `ANTHROPIC_API_KEY`/`OPENAI_API_KEY`. Ignore any prompt to supply an API key for graphify.
 '@
 
     $gfClaudeHeader = @'
@@ -1357,6 +1358,31 @@ CMD=$(python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('tool_inp
         Write-Warn "VS Code global graphify steering added (backup: $vs.bak-$stamp). Comments/formatting were normalized by JSON round-trip."
     }
 
+    # Re-patch the vendored /graphify SKILL Step 3 so it never prompts for an API key.
+    # `graphify install` rewrites SKILL.md from the package on every run, so this correction
+    # is re-applied each time. The key-check region is matched by anchors (no literal em-dash
+    # needed); if upstream reworded it the match fails and this no-ops - the conditional
+    # steering block still carries the no-key note.
+    function Repair-GraphifySkillApiKey {
+        param([string]$SkillPath)
+        if (-not (Test-Path -LiteralPath $SkillPath)) { return }
+        $skillRaw = (Get-Content -LiteralPath $SkillPath -Raw -Encoding UTF8) -replace "`r`n", "`n"
+        if ($skillRaw -match '\*\*No API key is needed\.\*\*') {
+            Write-OK "graphify SKILL Step 3 already no-key: $SkillPath"; return
+        }
+        if ($skillRaw -notmatch '(?s)\*\*Before dispatching subagents:\*\*.*?\*\*Run Part A \(AST\)') {
+            Write-Info "  graphify SKILL Step 3 anchors not found (upstream reworded?) - relying on steering block: $SkillPath"; return
+        }
+        $newRegion = (@'
+**No API key is needed.** You are running inside a coding-agent session (Claude Code, Claude VS Code, Copilot) where the host session itself is the LLM: dispatch the Part B subagents below and they perform the semantic extraction directly. Do NOT check for, ask for, or prompt the user to set any API key, and do NOT pause to install anything. graphify does **not** read `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or any other provider key. If any prompt to supply an API key for extraction appears, it is a misread of this skill - ignore it and dispatch subagents as written.
+
+**Headless/CI fallback only (no host session):** if and only if `GEMINI_API_KEY` or `GOOGLE_API_KEY` is already present in the environment, you may use `graphify.llm.extract_corpus_parallel(files, backend="gemini")` instead of subagent dispatch (default model `gemini-3-flash-preview`; override via `GRAPHIFY_GEMINI_MODEL` or `--model`). Never prompt the user to set these; if they are unset, fall straight through to subagent dispatch.
+'@ -replace "`r`n", "`n").TrimEnd("`n") + "`n`n"
+        $patched = [regex]::Replace($skillRaw, '(?s)\*\*Before dispatching subagents:\*\*.*?(?=\*\*Run Part A \(AST\))', ({ param($m) $newRegion }).GetNewClosure())
+        [System.IO.File]::WriteAllText($SkillPath, $patched, (New-Object System.Text.UTF8Encoding($false)))
+        Write-OK "graphify SKILL Step 3 re-patched (no API-key prompt): $SkillPath"
+    }
+
     # 1. Global SKILL install (skill files only -> GLOBAL config dir). From a temp cwd so
     #    no stray files land in a real repo. Skip a harness whose home dir is absent.
     Invoke-Maybe {
@@ -1375,6 +1401,12 @@ CMD=$(python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('tool_inp
             Remove-Item -LiteralPath $gfSkillTmp -Recurse -Force -ErrorAction SilentlyContinue
         }
     } "install /graphify skill globally (claude, copilot)"
+
+    # 1b. Re-patch each freshly installed SKILL.md so Step 3 never prompts for an API key.
+    Invoke-Maybe {
+        Repair-GraphifySkillApiKey -SkillPath (Join-Path $claudeDir  'skills\graphify\SKILL.md')
+        Repair-GraphifySkillApiKey -SkillPath (Join-Path $copilotDir 'skills\graphify\SKILL.md')
+    } "re-patch /graphify SKILL Step 3 (no API-key prompt)"
 
     # 2. Conditional steering block into the global instruction files (idempotent).
     Invoke-Maybe { Initialize-GraphifyBlock -Path $claudeMd    -Marker $gfBlockMarker -Block ($gfClaudeHeader.Trim() + "`n`n" + $gfUsageBlock.Trim()) } "ensure graphify steering in ~/.claude/CLAUDE.md"
@@ -1620,6 +1652,8 @@ if (Test-Path -LiteralPath $vGfCopilotSkill) { Write-OK "skill (copilot) : $vGfC
 if (Test-FileContains $vGfClaudeMd '## graphify graph usage')    { Write-OK "steering        : ~/.claude/CLAUDE.md" }    else { Write-Warn "steering MISSING: ~/.claude/CLAUDE.md" }
 if (Test-FileContains $vGfCodexAgents '## graphify graph usage') { Write-OK "steering        : $vGfCodexAgents" }       else { Write-Info "  steering        : $vGfCodexAgents (codex absent or not wired)" }
 if (Test-FileContains $vGfClaudeSettings 'graphify: knowledge graph at graphify-out/') { Write-OK "grep hook       : ~/.claude/settings.json" } else { Write-Warn "grep hook MISSING: ~/.claude/settings.json" }
+if (Test-Path -LiteralPath "$vGfClaudeSkill\SKILL.md")  { if (Test-FileContains "$vGfClaudeSkill\SKILL.md" 'No API key is needed.')  { Write-OK "skill no-key    : ~/.claude/skills/graphify/SKILL.md" }  else { Write-Warn "skill no-key MISSING: ~/.claude/skills/graphify/SKILL.md (Step 3 may prompt for an API key)" } }
+if (Test-Path -LiteralPath "$vGfCopilotSkill\SKILL.md") { if (Test-FileContains "$vGfCopilotSkill\SKILL.md" 'No API key is needed.') { Write-OK "skill no-key    : ~/.copilot/skills/graphify/SKILL.md" } else { Write-Warn "skill no-key MISSING: ~/.copilot/skills/graphify/SKILL.md (Step 3 may prompt for an API key)" } }
 
 Write-Info ""
 Write-Info "-- global harness base rules (always-on, unconditional) ---"
