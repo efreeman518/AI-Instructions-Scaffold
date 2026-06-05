@@ -90,7 +90,11 @@ on:
       includeIntegration:
         type: boolean
         default: false
-        description: "Run non-endpoint integration tests"
+        description: "Run Test.Integration component tests (standalone Testcontainers SQL/Azurite; requires Docker)"
+      includeAspireMesh:
+        type: boolean
+        default: false
+        description: "Run Test.Aspire distributed-app mesh tests (full AppHost graph; requires Docker)"
 
 jobs:
   build-and-test:
@@ -134,6 +138,8 @@ jobs:
       - run: dotnet test src/Test/Test.Architecture/Test.Architecture.csproj --no-build --configuration Release
       - if: ${{ github.event_name == 'workflow_dispatch' && inputs.includeIntegration == true }}
         run: dotnet test src/Test/Test.Integration/Test.Integration.csproj --no-build --configuration Release
+      - if: ${{ github.event_name == 'workflow_dispatch' && inputs.includeAspireMesh == true }}
+        run: dotnet test src/Test/Test.Aspire/Test.Aspire.csproj --no-build --configuration Release
       - if: ${{ github.event_name == 'workflow_dispatch' && inputs.includeE2E == true }}
         run: dotnet test src/Test/Test.E2E/Test.E2E.csproj --no-build --configuration Release
       # Test.PlaywrightUI requires a hosted stack - see "Hosted-stack orchestration" section below.

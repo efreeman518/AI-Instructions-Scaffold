@@ -13,7 +13,8 @@
 |---|---|---|
 | `Test.Endpoints` (InMemory) | EF InMemory provider | Per-endpoint contract: status code, response shape, validation. **Misses:** projection plans, shadow properties, FK constraints, owned-type column flattening, raw SQL paging behavior. |
 | `Test.E2E` (Testcontainers SQL) | Real SQL Server | Multi-endpoint workflows (create -> search -> update -> delete), paginated search across distinct pages, projection round-trip, child-aggregate FK behavior. |
-| `Test.Integration` (Aspire mesh) | Full distributed app | Cross-process: API -> Service Bus -> Function -> projection store -> audit row. See [test-templates-integration.md](test-templates-integration.md). |
+| `Test.Aspire` (mesh) | Full distributed app | Cross-process: API -> Service Bus -> Function -> projection store -> audit row. See [test-templates-aspire.md](test-templates-aspire.md). |
+| `Test.Integration` (component) | One real store | One class vs one Testcontainer: repo vs SQL, audit repo vs Azurite, projection vs SQL. See [test-templates-integration.md](test-templates-integration.md). |
 
 Rule of thumb: if the workflow spans **two or more endpoints** and the assertion depends on **real EF translation** (paging, projection, owned types, FK behavior), it belongs in `Test.E2E`. Single-endpoint contract checks belong in `Test.Endpoints`.
 

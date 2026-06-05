@@ -42,7 +42,7 @@ Follow `solution-structure.md` exactly:
 - `.slnx`, `Directory.Packages.props`, `global.json`, `nuget.config`
 - All project folders and `.csproj` files per the canonical layout
 - Project references wired per the dependency direction contract
-- Test projects: `Test.Support`, `Test.Unit`, `Test.Integration`, `Test.Endpoints`, `Test.E2E`, plus profile-specific projects (`Test.Architecture`, `Test.PlaywrightUI`, `Test.Load`, `Test.Benchmarks`, `Test.Mutation`) per `testingProfile`
+- Test projects: `Test.Support`, `Test.Unit`, `Test.Integration` (component), `Test.Aspire` (mesh), `Test.Endpoints`, `Test.E2E`, plus profile-specific projects (`Test.Architecture`, `Test.PlaywrightUI`, `Test.Load`, `Test.Benchmarks`, `Test.Mutation`) per `testingProfile`
 
 ### 2. Contracts (Per Entity)
 
@@ -182,13 +182,15 @@ The shared base is the **single source of truth** for swapping the production Db
 - `Test/Test.Support/WebApplicationFactoryBase.cs` - generic base class + `TestDbContextFactory<T>` + `WebApplicationFactoryHelpers` (reflection-based context creation that bypasses `required` member enforcement, descriptor removal helpers). Full file shape: [test-templates-endpoint.md](../templates/test-templates-endpoint.md) section Shared WebApplicationFactoryBase.
 - `Test/Test.Endpoints/CustomApiFactory.cs` - derived factory using `UseInMemoryDatabase`. ~10 lines - overrides only `BuildTrxnOptions` / `BuildQueryOptions`.
 - `Test/Test.E2E/SqlApiFactory.cs` - derived factory using `UseSqlServer(..., sql => sql.UseCompatibilityLevel(170))` against a Testcontainers SQL container, with static `StartContainerAsync` / `StopContainerAsync` lifecycle helpers. Full file shape: [test-templates-e2e.md](../templates/test-templates-e2e.md) section SqlApiFactory.
-- `Test/Test.Integration/AspireTestHost.cs` - assembly-scoped fixture starting the full Aspire AppHost graph (API + Functions + SQL + Azurite) once via `[AssemblyInitialize]`. Full file shape: [test-templates-integration.md](../templates/test-templates-integration.md) section AspireTestHost.
-- `Test/Test.Integration/DbContextFactory.cs` - internal helper that builds `{App}DbContextTrxn` / `{App}DbContextQuery` instances pointed at `AspireTestHost.ConnectionString` so SQL-only and projection tests piggyback on the shared Aspire SQL container instead of starting a parallel Testcontainers stack.
+- `Test/Test.Integration/Infrastructure/SqlContainerFixture.cs` + `AzuriteContainerFixture.cs` (+ `RedisContainerFixture.cs` when Redis is used) - standalone per-store Testcontainers fixtures for the **component** tier; `SqlContainerFixture` builds `{App}DbContextTrxn` / `{App}DbContextQuery` against its own container. No Aspire. Full file shapes: [test-templates-integration.md](../templates/test-templates-integration.md).
+- `Test/Test.Integration/Infrastructure/IntegrationTestSetup.cs` - `[AssemblyInitialize]` starts the store fixtures in parallel (each capturing `StartupError`); `[AssemblyCleanup]` disposes them.
+- `Test/Test.Aspire/AspireTestHost.cs` - lazy assembly-scoped fixture that starts the full Aspire AppHost graph (API + Functions + SQL + Azurite) via `EnsureStartedAsync`, plus `Test/Test.Aspire/AspireMeshLifecycle.cs` (`[AssemblyCleanup]`). Full file shapes: [test-templates-aspire.md](../templates/test-templates-aspire.md).
 - `EndpointTestBase` (optional) - HTTP client helper used by endpoint test classes.
 
 **Empty test project shells:**
 - `Test.Unit/` - project file with MSTest + Moq references, no test classes yet (Phase 5a adds them)
-- `Test.Integration/` - project file with MSTest + Testcontainers + Aspire.Hosting.Testing + Azure.Data.Tables; references `AppHost`, `Test.Support`, and every Application/Infrastructure project. Contains the `AspireTestHost` + `DbContextFactory` shells from above. Phase 5a populates `{Entity}RepositoryIntegrationTests`; Phase 5b populates `ApiAuditPipelineTests`, `DomainEventPipelineTests`, `AuditLogRepositoryAzuriteTests`. See [test-templates-integration.md](../templates/test-templates-integration.md).
+- `Test.Integration/` (component) - project file with MSTest + `Testcontainers.MsSql` + `Testcontainers.Azurite` + `Azure.Data.Tables` + `EF.IntegrationTesting`; references `Test.Support` and the Application/Infrastructure projects the tests use - **no `AppHost`, no `Aspire.Hosting.Testing`**. Contains the `Infrastructure/*ContainerFixture` + `IntegrationTestSetup` shells from above. Phase 5a populates `{Entity}RepositoryIntegrationTests`; Phase 5b populates `DomainEventPipelineTests`, `AuditLogRepositoryAzuriteTests`. See [test-templates-integration.md](../templates/test-templates-integration.md).
+- `Test.Aspire/` (mesh) - project file with MSTest + `Aspire.Hosting.Testing` + `Aspire.Hosting.Azure.Storage` + `Azure.Data.Tables` + `EF.IntegrationTesting`; references `AppHost`, the API host, `Test.Support`, and the Application contracts/models the HTTP payloads need. Contains the `AspireTestHost` + `AspireMeshLifecycle` shells. Phase 5b populates `ApiAuditPipelineTests`, `FunctionAuditPipelineTests`. See [test-templates-aspire.md](../templates/test-templates-aspire.md).
 - `Test.Endpoints/` - project file with MSTest + `Microsoft.AspNetCore.Mvc.Testing`, derived `CustomApiFactory`, no test classes yet (Phase 5b adds endpoint contract tests via WAF)
 - `Test.E2E/` - project file with MSTest + `Microsoft.AspNetCore.Mvc.Testing` + Testcontainers, derived `SqlApiFactory`, no test classes yet (Phase 5b adds multi-endpoint workflow tests against Testcontainers SQL - see [test-templates-e2e.md](../templates/test-templates-e2e.md))
 - `Test.Mutation/` - comprehensive profile project file with MSTest, references to focused target projects, and `stryker-config.json`; no test classes yet (Phase 5d adds focused mutation samples via Stryker.NET - see [test-templates-quality.md](../templates/test-templates-quality.md))
@@ -298,7 +300,7 @@ Developer reviews the scaffolded shape against the verification checklist below.
 - [ ] All no-op stubs satisfy their interfaces (no abstract/unimplemented methods)
 - [ ] Test.Support contains `UnitTestBase`, `InMemoryDbBuilder`, `DbSupport`, `Utility`, `TestConstants`, `JsonTestOptions`, `LocalSqlSettings`, `WebApplicationFactoryBase`
 - [ ] `Test.Endpoints/CustomApiFactory.cs` and `Test.E2E/SqlApiFactory.cs` derive from `WebApplicationFactoryBase<Program, {App}DbContextTrxn, {App}DbContextQuery>` (do not duplicate the swap-out logic)
-- [ ] `Test.Integration/AspireTestHost.cs` and `Test.Integration/DbContextFactory.cs` exist (even when no tests reference them yet - Phase 5 fills them)
+- [ ] `Test.Integration/Infrastructure/SqlContainerFixture.cs` + `AzuriteContainerFixture.cs` + `IntegrationTestSetup.cs` (component) and `Test.Aspire/AspireTestHost.cs` + `AspireMeshLifecycle.cs` (mesh) exist (even when no tests reference them yet - Phase 5 fills them)
 - [ ] Test data `{Entity}DtoBuilder` returns valid DTOs
 - [ ] `RegisterServices.cs` wires all no-op stubs
 - [ ] No domain logic in entity shells (only `throw new NotImplementedException`)

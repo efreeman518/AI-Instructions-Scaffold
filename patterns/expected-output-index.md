@@ -80,12 +80,14 @@ Default scaffold and TaskFlow reference app keep DTOs and mappers in `Applicatio
 | Endpoint factory | `Test/Test.Endpoints/CustomApiFactory.cs` (derives from `Test.Support/WebApplicationFactoryBase`) |
 | E2E factory | `Test/Test.E2E/SqlApiFactory.cs` (Testcontainers SQL, static lifecycle) |
 | E2E workflow tests | `Test/Test.E2E/{Entity}WorkflowTests.cs` |
-| Integration - Aspire fixture | `Test/Test.Integration/AspireTestHost.cs` (full distributed app + lifecycle) |
-| Integration - DB context factory | `Test/Test.Integration/DbContextFactory.cs` (piggyback on `AspireTestHost.ConnectionString`) |
-| Integration - repo integration | `Test/Test.Integration/{Entity}RepositoryIntegrationTests.cs` (migrations + CRUD + tenant filter + M:N) |
-| Integration - audit pipeline (Azurite) | `Test/Test.Integration/AuditLogRepositoryAzuriteTests.cs` |
-| Integration - API audit pipeline | `Test/Test.Integration/ApiAuditPipelineTests.cs` |
-| Integration - projection pipeline | `Test/Test.Integration/DomainEventPipelineTests.cs` |
+| Integration (component) - store fixtures | `Test/Test.Integration/Infrastructure/SqlContainerFixture.cs`, `AzuriteContainerFixture.cs` (+ `RedisContainerFixture.cs` when used) |
+| Integration (component) - assembly lifecycle | `Test/Test.Integration/Infrastructure/IntegrationTestSetup.cs` (starts store fixtures in parallel; captures `StartupError`) |
+| Integration (component) - repo integration | `Test/Test.Integration/{Entity}RepositoryIntegrationTests.cs` (migrations + CRUD + tenant filter + M:N) |
+| Integration (component) - audit repo (Azurite) | `Test/Test.Integration/AuditLogRepositoryAzuriteTests.cs` |
+| Integration (component) - projection pipeline | `Test/Test.Integration/DomainEventPipelineTests.cs` |
+| Aspire (mesh) - lazy host + lifecycle | `Test/Test.Aspire/AspireTestHost.cs` (lazy `EnsureStartedAsync`), `AspireMeshLifecycle.cs` (`[AssemblyCleanup]`) |
+| Aspire (mesh) - API audit pipeline | `Test/Test.Aspire/ApiAuditPipelineTests.cs` |
+| Aspire (mesh) - Function audit pipeline | `Test/Test.Aspire/FunctionAuditPipelineTests.cs` |
 | Architecture | `Test/Test.Architecture/*DependencyTests.cs`, `CqrsArchitectureTests.cs` *(when applicationStyle: cqrs or switch)* |
 | Playwright UI | `Test/Test.PlaywrightUI/Pages/{Entity}CrudTests.cs` (browser; runs against hosted stack) |
 | Mobile UI smoke | `Test/Test.Mobile/*` (MSTest + Appium; opt-in Android/iOS native launch checks) *(when Uno mobile native testing is enabled)* |

@@ -58,7 +58,8 @@ src/
 |   `-- {Host}.React/                   # optional
 |-- Test/
 |   |-- Test.Unit/                    # mocked unit tests
-|   |-- Test.Integration/             # service-level vs real external services (Testcontainers SQL, real cache, etc.)
+|   |-- Test.Integration/             # component: one class vs one real store (standalone Testcontainers SQL/Azurite/Redis)
+|   |-- Test.Aspire/                  # mesh: full AppHost graph over HTTP (lazy-started; Docker-gated)
 |   |-- Test.Endpoints/               # WebApplicationFactory in-memory; per-endpoint contract tests
 |   |-- Test.E2E/                     # WebApplicationFactory + Testcontainers SQL; multi-endpoint workflow chains
 |   |-- Test.Architecture/            # NetArchTest layering rules

@@ -367,11 +367,12 @@ Add `**/StrykerOutput/` to `.gitignore`.
 
 ---
 
-## Integration & E2E Tests (moved to dedicated templates)
+## Integration, Aspire & E2E Tests (moved to dedicated templates)
 
-The Integration (`Test.Integration`) and E2E (`Test.E2E`) tiers are scaffolded during Phase 5a/5b - not Phase 5d. The patterns live in their own templates:
+The Integration (`Test.Integration` component), Aspire (`Test.Aspire` mesh), and E2E (`Test.E2E`) tiers are scaffolded during Phase 5a/5b - not Phase 5d. The patterns live in their own templates:
 
-- [test-templates-integration.md](test-templates-integration.md) - `AspireTestHost`, `DbContextFactory`, `{Entity}RepositoryIntegrationTests`, `AuditLogRepositoryAzuriteTests`, `ApiAuditPipelineTests`, `DomainEventPipelineTests`.
+- [test-templates-integration.md](test-templates-integration.md) - component: `SqlContainerFixture` / `AzuriteContainerFixture` + `IntegrationTestSetup`, `{Entity}RepositoryIntegrationTests`, `AuditLogRepositoryAzuriteTests`, `DomainEventPipelineTests`.
+- [test-templates-aspire.md](test-templates-aspire.md) - mesh: `AspireTestHost` (lazy) + `AspireMeshLifecycle`, `ApiAuditPipelineTests`, `FunctionAuditPipelineTests`.
 - [test-templates-e2e.md](test-templates-e2e.md) - `SqlApiFactory`, `{Entity}WorkflowTests` (full CRUD + paged search + child-aggregate workflows against Testcontainers SQL).
 
 Phase 5d treats these tiers as **regression scope**, not generation scope: run them as part of the final quality gate (`dotnet test --filter "TestCategory=Integration|TestCategory=E2E"`) but do not re-generate fixtures here. If a sub-phase skipped its tier earlier (e.g., `api-only` scaffold), load the matching template on-demand and back-fill.

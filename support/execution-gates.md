@@ -190,7 +190,7 @@ Gate passes when build and the scoped test command succeed (plus any sub-phase-s
 Required:
 - solution structure compiles (`.slnx`, all project files, `Directory.Packages.props`),
 - all interfaces, DTOs, entity shells, and no-op stubs compile,
-- test projects compile (Test.Support, Test.Unit, Test.Integration, Test.Endpoints, Test.E2E, profile-specific projects: Test.Architecture, Test.PlaywrightUI, Test.Load, Test.Benchmarks, Test.Mutation).
+- test projects compile (Test.Support, Test.Unit, Test.Integration, Test.Aspire, Test.Endpoints, Test.E2E, profile-specific projects: Test.Architecture, Test.PlaywrightUI, Test.Load, Test.Benchmarks, Test.Mutation).
 
 Exit criteria:
 - [ ] Solution structure matches `skills/solution-structure.md`
@@ -198,7 +198,7 @@ Exit criteria:
 - [ ] All no-op stubs satisfy their interfaces
 - [ ] `RegisterServices.cs` wires all no-op stubs
 - [ ] Test.Support contains `UnitTestBase`, `InMemoryDbBuilder`, `DbSupport`, `Utility`, `TestConstants`, `JsonTestOptions`, `LocalSqlSettings`, `WebApplicationFactoryBase`
-- [ ] `Test.Endpoints/CustomApiFactory.cs`, `Test.E2E/SqlApiFactory.cs`, `Test.Integration/AspireTestHost.cs`, `Test.Integration/DbContextFactory.cs` all compile and inherit/use the shared `WebApplicationFactoryBase` (no duplicated swap-out plumbing)
+- [ ] `Test.Endpoints/CustomApiFactory.cs` and `Test.E2E/SqlApiFactory.cs` inherit/use the shared `WebApplicationFactoryBase` (no duplicated swap-out plumbing); `Test.Integration/Infrastructure/*ContainerFixture` + `IntegrationTestSetup` (component) and `Test.Aspire/AspireTestHost` + `AspireMeshLifecycle` (mesh) all compile
 - [ ] `{Entity}DtoBuilder` returns valid DTOs
 - [ ] No domain logic in entity shells (only `throw new NotImplementedException`)
 - [ ] `<packagePrefix>.*` shared base types are consumed from feed packages or `src/Packages/<packagePrefix>.*` projects per `packageStrategy` - never reimplemented in application/domain/host layers

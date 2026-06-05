@@ -53,7 +53,7 @@ Use this when adding a new entity to an **already-scaffolded** solution. Skip fu
 15. Wire DI in `RegisterServices.cs` (repos + service, plus CQRS application registration when enabled)
 16. Map endpoints in `WebApplicationBuilderExtensions.cs`; for `switch`, map only service or CQRS routes based on `ApplicationStyleResolver`
 17. Run migration: `dotnet ef migrations add Add{Entity} ...`
-18. Write one vertical tracer test through the public contract or endpoint, confirm red, implement to green, then expand remaining tests in the order matching the profile: Unit -> Endpoint -> Integration (real SQL via Aspire piggyback) -> E2E (multi-endpoint workflow).
+18. Write one vertical tracer test through the public contract or endpoint, confirm red, implement to green, then expand remaining tests in the order matching the profile: Unit -> Endpoint -> Integration (real SQL via a standalone Testcontainer in `Test.Integration`) -> E2E (multi-endpoint workflow).
 
 ### Wiring Checklist
 
@@ -160,7 +160,7 @@ dotnet ef migrations add Add{Entity} --project src/Infrastructure/{Project}.Infr
 ### Required Test Gate by Profile
 
 - `minimal`: Unit + Endpoint pass; mapper parity test exists.
-- `balanced`: Minimal + `{Entity}RepositoryIntegrationTests` (real SQL via Aspire piggyback) + `{Entity}WorkflowTests` (multi-endpoint workflow against Testcontainers SQL) + Architecture pass.
+- `balanced`: Minimal + `{Entity}RepositoryIntegrationTests` (real SQL via a standalone Testcontainer in `Test.Integration`) + `{Entity}WorkflowTests` (multi-endpoint workflow against Testcontainers SQL) + Architecture pass.
 - `comprehensive`: Balanced + Load + Benchmark + Mutation (where enabled) + audit-pipeline / projection-pipeline integration tests where the entity participates in either.
 
 For composite slices, include at least one integration scenario that traverses all participating entities.

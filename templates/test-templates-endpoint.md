@@ -186,7 +186,7 @@ That's the entire file. The pooled-context swap, interceptor removal, factory pl
 
 ## Multi-resource Integration tier
 
-When a test needs **more than just SQL** (Azurite Table Storage, Service Bus emulator, the full API + audit pipeline, projection-store handoffs), do not extend `WebApplicationFactoryBase`. Use the Aspire-managed `AspireTestHost` + `DbContextFactory` piggyback pattern from [test-templates-integration.md](test-templates-integration.md). The WAF base is for HTTP-in-API-out testing; the Aspire fixture is for distributed-app verification.
+When a test needs the **full distributed app over HTTP** (the API + audit pipeline across resources, Service Bus -> Function handoffs), do not extend `WebApplicationFactoryBase` - use the lazy `AspireTestHost` mesh fixture in `Test.Aspire` from [test-templates-aspire.md](test-templates-aspire.md). For **one class vs one real store** (repository vs SQL, audit repo vs Azurite), use the standalone Testcontainers fixtures in `Test.Integration` from [test-templates-integration.md](test-templates-integration.md). The WAF base is for HTTP-in-API-out testing.
 
 ---
 
