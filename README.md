@@ -29,7 +29,7 @@ Use `install-to-project.py` from a local clone of this repo. It copies only the 
 
 Do not install this payload into the TaskFlow reference app (`AI-Instructions-ReferenceApp`) during normal maintenance. TaskFlow is the proof/reference implementation that these instructions point to; it should not carry its own `.instructions/` copy unless you are deliberately smoke-testing installer behavior.
 
-`--target` is the **app repo root** (not the `.instructions/` folder). The script creates `<target>/.instructions/` if it does not exist, and writes harness entrypoints (`AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`, `.claude/commands/`, `.github/agents/`) at the target root so CLI agents, Claude, and Copilot discover the scoped scaffold instructions. Existing root-level `AGENTS.md`/`CLAUDE.md`/`copilot-instructions.md` files are preserved - the installer appends the scaffold block inside sentinel markers (`<!-- ai-scaffold: start --> ... <!-- ai-scaffold: end -->`) so re-running the installer is idempotent.
+`--target` is the **app repo root** (not the `.instructions/` folder). The script creates `<target>/.instructions/` if it does not exist, and writes harness entrypoints (`AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`, `.claude/commands/`, `.github/agents/`) at the target root so CLI agents, Claude, and Copilot discover the scoped scaffold instructions. Root-level `AGENTS.md`/`CLAUDE.md`/`copilot-instructions.md` scaffold content is written inside sentinel markers (`<!-- ai-scaffold: start --> ... <!-- ai-scaffold: end -->`) so re-running the installer is idempotent; existing user content outside the markers is preserved.
 
 ```bash
 # from a clone of this repo
@@ -59,7 +59,7 @@ What it places:
 | `.claude/commands/` | `<app>/.claude/commands/` (Claude slash commands) | dir |
 | `.github/agents/` | `<app>/.github/agents/` (Copilot scoped agents) | dir |
 
-**Merge mode** appends the scaffold block inside `<!-- ai-scaffold: start --> ... <!-- ai-scaffold: end -->` markers when the target file already exists; existing user content is preserved.
+**Merge mode** writes the scaffold block inside `<!-- ai-scaffold: start --> ... <!-- ai-scaffold: end -->` markers. Existing user content outside the markers is preserved, and an older unmarked scaffold-only copy is converted into a single marked block.
 
 Flags:
 

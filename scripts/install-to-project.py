@@ -10,8 +10,8 @@ Copies (unless --instructions-only):
     <repo>/.claude/commands/                 -> <target>/.claude/commands/    (dir)
     <repo>/.github/agents/                   -> <target>/.github/agents/      (dir)
 
-"merge" appends source content inside sentinel markers when the target file already exists,
-so existing user content is preserved.
+"merge" writes source content inside sentinel markers. Existing target files are preserved
+outside the managed block, so re-running the installer is idempotent.
 
 Excludes author-side files: scripts/__pycache__, tests/, .git/, .github/workflows/,
 .githooks/, .vscode/, .venv/, .tmp/, .gitignore.
@@ -68,7 +68,7 @@ MERGE_SENTINEL_START = "<!-- ai-scaffold: start -->"
 MERGE_SENTINEL_END = "<!-- ai-scaffold: end -->"
 
 # Agent/command placements that land at the app repo root, not under .instructions/.
-# kind="merge" appends content inside sentinel markers (idempotent) when file exists.
+# kind="merge" writes content inside sentinel markers (idempotent).
 AGENT_COPIES = [
     ("AGENTS.md", "AGENTS.md", "merge"),
     ("CLAUDE.md", "CLAUDE.md", "merge"),
@@ -152,7 +152,7 @@ class Planner:
             self.copy_file(path, dst / rel, f"{label_prefix}/{rel.as_posix()}")
 
     def merge_file(self, src: Path, dst: Path, label: str) -> None:
-        """Copy src to dst; if dst exists, append src inside sentinel markers (idempotent)."""
+        """Write src inside sentinel markers, preserving target content outside the managed block."""
         src_content = adapt_installed_entrypoint_links(src, src.read_text(encoding="utf-8"))
         block = (
             MERGE_SENTINEL_START
@@ -167,6 +167,8 @@ class Planner:
                 before, rest = dst_content.split(MERGE_SENTINEL_START, 1)
                 _, after = rest.split(MERGE_SENTINEL_END, 1)
                 merged = before.rstrip("\n") + "\n\n" + block + after
+            elif dst_content.strip() == src_content.strip():
+                merged = block + "\n"
             else:
                 merged = dst_content.rstrip("\n") + "\n\n" + block + "\n"
             action = "[dry-run]" if self.dry_run else "[merge]"
@@ -179,7 +181,7 @@ class Planner:
             print(f"  {action} {label}")
             if not self.dry_run:
                 dst.parent.mkdir(parents=True, exist_ok=True)
-                dst.write_text(src_content, encoding="utf-8")
+                dst.write_text(block + "\n", encoding="utf-8")
             self.copied += 1
 
     def summary(self) -> None:
@@ -232,15 +234,36 @@ def verify_install(target_root: Path, instructions_only: bool) -> int:
         expected += SMOKE_CHECK_HARNESS_ENTRYPOINTS
 
     missing = [rel for rel in expected if not (target_root / rel).exists()]
+    unmarked_merge_files: list[str] = []
+    if not instructions_only:
+        for _src_rel, dst_rel, kind in AGENT_COPIES:
+            if kind != "merge":
+                continue
+            path = target_root / dst_rel
+            if not path.exists():
+                continue
+            content = path.read_text(encoding="utf-8")
+            if MERGE_SENTINEL_START not in content or MERGE_SENTINEL_END not in content:
+                unmarked_merge_files.append(dst_rel)
 
     print()
     print("== install smoke check ==")
+    if missing or unmarked_merge_files:
+        issue_count = len(missing) + len(unmarked_merge_files)
+        print(f"  [fail] {issue_count} install issue(s) under {target_root}:")
     if missing:
-        print(f"  [fail] {len(missing)} expected file(s) missing under {target_root}:")
+        print("         missing expected file(s):")
         for rel in missing:
             print(f"         - {rel}")
+    if unmarked_merge_files:
+        print("         merge entrypoint(s) missing sentinel markers:")
+        for rel in unmarked_merge_files:
+            print(f"         - {rel}")
+    if missing or unmarked_merge_files:
         return 1
     print(f"  [ok]   all {len(expected)} expected files present under {target_root}")
+    if not instructions_only:
+        print("  [ok]   merge entrypoints contain sentinel markers")
     return 0
 
 
