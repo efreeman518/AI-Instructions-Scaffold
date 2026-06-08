@@ -245,15 +245,20 @@ function Get-ServiceKey {
 }
 
 # Normalize a listener for baseline keying. spoolsv / services / lsass and transient
-# dev tools bind random high ports in the dynamic range (49152-65535) that are
-# reassigned every boot, so Port|Path re-alerts on every run. For dynamic-range ports,
-# key on (normalized) Path only: a brand-new binary listening still alerts once, but
-# port churn from an already-known binary does not. Below 49152 (well-known /
-# registered) the exact port still matters, so it stays in the key. Path is
-# version-normalized so a version bump of the listening binary does not re-alert.
+# dev tools (VS Code, Docker, language servers, debuggers) bind RANDOM ephemeral
+# ports that are reassigned every launch. The OS ephemeral range on Windows is
+# 49152-65535, but real apps routinely grab ports far below that (VS Code's extension
+# host and Docker's backend pick anywhere in ~1024-65535), so a 49152 cutoff lets
+# those re-alert on every run with a new number. We therefore treat ANY port >= 1024
+# as ephemeral and key on the (version-normalized) Path only: a brand-new BINARY
+# listening still alerts once, but port churn from an already-known binary does not.
+# Ports < 1024 are well-known/privileged - a service appearing there is high-signal,
+# so the exact port stays in the key. Path is version-normalized so a binary's
+# version bump does not re-alert. A process whose Path can't be resolved (protected
+# SYSTEM processes report empty Path) collapses to a single ephemeral key.
 function Get-ListenerKey {
     param($Port, [string]$Path)
-    if ([int]$Port -ge 49152) { return "DYN|$(Get-NormPath $Path)" }
+    if ([int]$Port -ge 1024) { return "EPH|$(Get-NormPath $Path)" }
     return "$Port|$(Get-NormPath $Path)"
 }
 
@@ -263,6 +268,74 @@ function Get-ListenerKey {
 function Get-AutorunKey {
     param([string]$Source, [string]$Name, [string]$Target)
     return "$Source|$Name|$(Get-NormPath $Target)"
+}
+
+# --- APP-UPDATE HARDENING HELPERS (section 7) ---------------------------------
+# Two unattended failure modes these guard against:
+#   HANG   - an updater blocks on a hidden prompt / network stall and the scheduled
+#            window sits forever (until ExecutionTimeLimit kills the whole task).
+#   SILENT - an updater "runs" but never actually updates (npm no-op, custom feed,
+#            provenance wall) and we log [OK] anyway, hiding the stall for months.
+# Invoke-ExternalTimed runs ONE external command with a hard timeout, killing the
+# whole process TREE on overrun (taskkill /T), and returns captured output + status
+# so each caller can classify Updated / UpToDate / Failed / TimedOut from the text.
+
+$script:updateResults = @()   # collected per-tool outcomes for the section summary
+
+# Record one tool's outcome. Status: Updated | UpToDate | Failed | TimedOut | Skipped
+function Add-UpdateResult {
+    param([string]$Tool, [string]$Status, [string]$Detail = '')
+    $script:updateResults += [pscustomobject]@{ Tool = $Tool; Status = $Status; Detail = $Detail }
+}
+
+# Run an external command (file + arg string) with a tree-killing timeout.
+# Returns: @{ Status='Completed'|'TimedOut'|'LaunchFailed'; ExitCode=<int|$null>; Output=<string[]> }
+# Output is captured (not live) so callers can both echo it AND parse it for the
+# silent-skip check. cmd/CLIs that ignore stdin can't hang on a prompt under this.
+function Invoke-ExternalTimed {
+    param(
+        [Parameter(Mandatory)][string]$File,
+        [string]$Arguments = '',
+        [int]$TimeoutSec = 1800           # 30 min default; callers override per tool
+    )
+    $resolved = (Get-Command $File -ErrorAction SilentlyContinue)
+    if (-not $resolved) { return [pscustomobject]@{ Status='LaunchFailed'; ExitCode=$null; Output=@("command not found: $File") } }
+
+    $outFile = [System.IO.Path]::GetTempFileName()
+    $errFile = [System.IO.Path]::GetTempFileName()
+    try {
+        $p = Start-Process -FilePath $resolved.Source -ArgumentList $Arguments `
+                -NoNewWindow -PassThru -RedirectStandardOutput $outFile -RedirectStandardError $errFile -ErrorAction Stop
+    } catch {
+        Remove-Item $outFile,$errFile -Force -ErrorAction SilentlyContinue
+        return [pscustomobject]@{ Status='LaunchFailed'; ExitCode=$null; Output=@($_.Exception.Message) }
+    }
+
+    if ($p.WaitForExit($TimeoutSec * 1000)) {
+        $out  = @(Get-Content $outFile -ErrorAction SilentlyContinue) + @(Get-Content $errFile -ErrorAction SilentlyContinue)
+        $code = $p.ExitCode
+        Remove-Item $outFile,$errFile -Force -ErrorAction SilentlyContinue
+        return [pscustomobject]@{ Status='Completed'; ExitCode=$code; Output=$out }
+    } else {
+        # Overrun: kill the whole tree so a child installer can't outlive the timeout.
+        try { & taskkill.exe /PID $p.Id /T /F *> $null } catch { }
+        Start-Sleep -Milliseconds 500
+        $out = @(Get-Content $outFile -ErrorAction SilentlyContinue) + @(Get-Content $errFile -ErrorAction SilentlyContinue)
+        Remove-Item $outFile,$errFile -Force -ErrorAction SilentlyContinue
+        return [pscustomobject]@{ Status='TimedOut'; ExitCode=$null; Output=$out }
+    }
+}
+
+# Echo captured output through Write-Log, optionally filtered to interesting lines.
+function Write-CapturedOutput {
+    param([string[]]$Lines, [string]$MatchPattern = '\S', [int]$Max = 40)
+    $shown = 0
+    foreach ($ln in $Lines) {
+        if ($ln -match $MatchPattern) {
+            Write-Log "    $ln" "DarkGray"
+            if (++$shown -ge $Max) { Write-Log "    ... (output truncated)" "DarkGray"; break }
+        }
+    }
 }
 
 # Point-in-time snapshot of services, autostart entries, and listening ports.
@@ -467,71 +540,228 @@ $totalFreed += $rbSize
 Write-Section "7/11  App Updates - All Sources"
 
 # -- winget --------------------------------------------------------------------
-Write-Log "  [winget]  Refreshing source index..." "Gray"
-winget source update 2>&1 | Out-Null
-Write-Log "  [winget]  Upgrading all..." "Gray"
-winget upgrade --all --silent --accept-package-agreements --accept-source-agreements 2>&1 |
-    Where-Object { $_ -match '\S' } |
-    ForEach-Object { Write-Log "    $_" "DarkGray" }
-Write-Log "  [OK]      winget complete" "Green"
+# -- winget --------------------------------------------------------------------
+# --include-unknown upgrades packages whose installed version winget can't read
+# (common for tools installed outside winget). --disable-interactivity prevents any
+# package's installer from popping a prompt that would hang the unattended run.
+if (Get-Command winget -ErrorAction SilentlyContinue) {
+    Write-Log "  [winget]  Refreshing source index..." "Gray"
+    Invoke-ExternalTimed -File winget -Arguments "source update" -TimeoutSec 120 | Out-Null
+    Write-Log "  [winget]  Upgrading all..." "Gray"
+    $r = Invoke-ExternalTimed -File winget `
+        -Arguments "upgrade --all --silent --include-unknown --disable-interactivity --accept-package-agreements --accept-source-agreements" `
+        -TimeoutSec 2400
+    Write-CapturedOutput $r.Output
+    switch ($r.Status) {
+        'Completed'    {
+            if ($r.Output -match 'No applicable upgrade|No installed package.*upgrade|found 0') {
+                Write-Log "  [OK]      winget - nothing to upgrade" "Green"; Add-UpdateResult winget UpToDate
+            } else {
+                Write-Log "  [OK]      winget complete (exit $($r.ExitCode))" "Green"; Add-UpdateResult winget Updated "exit $($r.ExitCode)"
+            }
+        }
+        'TimedOut'     { Write-Log "  [TIMEOUT] winget exceeded 40 min - process tree killed" "Red"; Add-UpdateResult winget TimedOut }
+        'LaunchFailed' { Write-Log "  [FAIL]    winget could not launch" "Red"; Add-UpdateResult winget Failed }
+    }
+} else { Add-UpdateResult winget Skipped "not installed" }
 
 # -- Chocolatey ----------------------------------------------------------------
 if (Get-Command choco -ErrorAction SilentlyContinue) {
     Write-Log "  [choco]   Upgrading all..." "Gray"
-    choco upgrade all -y --no-progress 2>&1 |
-        Where-Object { $_ -match "upgraded|already up to date|ERROR|WARNING" } |
-        ForEach-Object { Write-Log "    $_" "DarkGray" }
-    choco optimize --reduce-nupkg-only 2>&1 | Out-Null
-    Write-Log "  [OK]      Chocolatey complete" "Green"
-}
+    # -y auto-confirms; --no-progress avoids progress spam; failed checksums won't
+    # prompt because -y accepts them - acceptable for a trusted-source upgrade-all.
+    $r = Invoke-ExternalTimed -File choco -Arguments "upgrade all -y --no-progress --limit-output" -TimeoutSec 2400
+    Write-CapturedOutput $r.Output 'upgraded|already up to date|ERROR|WARNING|Chocolatey upgraded'
+    switch ($r.Status) {
+        'Completed'    {
+            $upgradedCount = ([regex]::Matches(($r.Output -join "`n"), 'upgraded \d+/\d+')).Value -join '; '
+            if ($r.Output -match 'upgraded 0/|0 packages? upgraded') {
+                Write-Log "  [OK]      choco - nothing to upgrade" "Green"; Add-UpdateResult choco UpToDate
+            } else {
+                Write-Log "  [OK]      Chocolatey complete (exit $($r.ExitCode))" "Green"; Add-UpdateResult choco Updated $upgradedCount
+            }
+            Invoke-ExternalTimed -File choco -Arguments "optimize --reduce-nupkg-only" -TimeoutSec 300 | Out-Null
+        }
+        'TimedOut'     { Write-Log "  [TIMEOUT] choco exceeded 40 min - process tree killed" "Red"; Add-UpdateResult choco TimedOut }
+        'LaunchFailed' { Write-Log "  [FAIL]    choco could not launch" "Red"; Add-UpdateResult choco Failed }
+    }
+} else { Add-UpdateResult choco Skipped "not installed" }
 
 # -- Scoop ---------------------------------------------------------------------
+# scoop is a function/shim, not always a resolvable .exe, and runs in the user
+# context - invoke it inline (it is non-interactive by nature) but guard with a job
+# timeout so a stuck git fetch on a bucket cannot hang the run forever.
 if (Get-Command scoop -ErrorAction SilentlyContinue) {
-    Write-Log "  [scoop]   Updating all..." "Gray"
-    scoop update 2>&1 | Out-Null
-    scoop update * 2>&1 |
-        Where-Object { $_ -match '\S' } |
-        ForEach-Object { Write-Log "    $_" "DarkGray" }
-    scoop cleanup * 2>&1 | Out-Null
-    Write-Log "  [OK]      Scoop complete" "Green"
-}
+    Write-Log "  [scoop]   Updating buckets + apps..." "Gray"
+    $scoopJob = Start-Job { scoop update *>&1; scoop update * *>&1 }
+    if (Wait-Job $scoopJob -Timeout 900) {
+        $out = Receive-Job $scoopJob 2>&1
+        Write-CapturedOutput $out
+        if ($out -match "is up to date|Latest versions for all apps") {
+            Write-Log "  [OK]      scoop - nothing to update" "Green"; Add-UpdateResult scoop UpToDate
+        } else {
+            Write-Log "  [OK]      Scoop complete" "Green"; Add-UpdateResult scoop Updated
+        }
+        scoop cleanup * *>$null
+    } else {
+        Stop-Job $scoopJob -ErrorAction SilentlyContinue
+        Write-Log "  [TIMEOUT] scoop exceeded 15 min - job stopped" "Red"; Add-UpdateResult scoop TimedOut
+    }
+    Remove-Job $scoopJob -Force -ErrorAction SilentlyContinue
+} else { Add-UpdateResult scoop Skipped "not installed" }
 
 # -- npm global packages -------------------------------------------------------
+# 'npm update -g' is a known no-op for packages pinned at 'latest' - it reports
+# success while changing nothing (a classic SILENT skip). The reliable refresh is
+# to enumerate outdated globals and reinstall each at @latest. --no-fund --no-audit
+# suppress the interactive-ish funding/audit chatter.
 if (Get-Command npm -ErrorAction SilentlyContinue) {
-    Write-Log "  [npm]     Updating global packages..." "Gray"
-    npm update -g 2>&1 |
-        Where-Object { $_ -match '\S' } |
-        ForEach-Object { Write-Log "    $_" "DarkGray" }
-    Write-Log "  [OK]      npm complete" "Green"
-}
+    Write-Log "  [npm]     Checking outdated global packages..." "Gray"
+    $npmOut = Invoke-ExternalTimed -File npm -Arguments "outdated -g --json --no-fund --no-audit" -TimeoutSec 300
+    $outdatedNpm = $null
+    try { $outdatedNpm = ($npmOut.Output -join "`n") | ConvertFrom-Json -ErrorAction Stop } catch { }
+    if ($npmOut.Status -eq 'TimedOut') {
+        Write-Log "  [TIMEOUT] npm outdated check stalled" "Red"; Add-UpdateResult npm TimedOut
+    } elseif ($outdatedNpm -and $outdatedNpm.PSObject.Properties.Count -gt 0) {
+        $names = @($outdatedNpm.PSObject.Properties.Name)
+        Write-Log "  [npm]     Reinstalling $($names.Count) outdated global(s) at @latest..." "Gray"
+        $npmUpdated = 0
+        foreach ($n in $names) {
+            $ri = Invoke-ExternalTimed -File npm -Arguments "install -g $n@latest --no-fund --no-audit" -TimeoutSec 600
+            if ($ri.Status -eq 'Completed' -and $ri.ExitCode -eq 0) {
+                Write-Log "    [OK] $n -> latest" "Green"; $npmUpdated++
+            } else {
+                Write-Log "    [SKIP] $n - $($ri.Status) exit $($ri.ExitCode)" "DarkGray"
+            }
+        }
+        Write-Log "  [OK]      npm complete ($npmUpdated/$($names.Count))" "Green"
+        Add-UpdateResult npm Updated "$npmUpdated/$($names.Count)"
+    } else {
+        Write-Log "  [OK]      npm - all globals current" "Green"; Add-UpdateResult npm UpToDate
+    }
+} else { Add-UpdateResult npm Skipped "not installed" }
 
 # -- pip global packages -------------------------------------------------------
+# pip can refuse to touch an externally-managed environment (PEP 668) and will warn
+# rather than update; we detect that and report it instead of logging a false [OK].
 if (Get-Command pip -ErrorAction SilentlyContinue) {
-    Write-Log "  [pip]     Updating outdated packages..." "Gray"
-    $outdated = pip list --outdated --format=json 2>&1 | ConvertFrom-Json -ErrorAction SilentlyContinue
-    if ($outdated) {
+    Write-Log "  [pip]     Checking outdated packages..." "Gray"
+    $pipList = Invoke-ExternalTimed -File pip -Arguments "list --outdated --format=json" -TimeoutSec 300
+    $outdated = $null
+    try { $outdated = ($pipList.Output -join "`n") | ConvertFrom-Json -ErrorAction Stop } catch { }
+    if ($pipList.Status -eq 'TimedOut') {
+        Write-Log "  [TIMEOUT] pip outdated check stalled" "Red"; Add-UpdateResult pip TimedOut
+    } elseif ($outdated) {
+        $pipUpdated = 0; $pipFailed = 0
         foreach ($pkg in $outdated) {
-            pip install --upgrade $pkg.name --quiet 2>&1 | Out-Null
-            Write-Log "    [OK] $($pkg.name)  $($pkg.version) -> $($pkg.latest_version)" "Green"
+            $up = Invoke-ExternalTimed -File pip -Arguments "install --upgrade $($pkg.name) --quiet" -TimeoutSec 600
+            $joined = ($up.Output -join ' ')
+            if ($up.Status -eq 'Completed' -and $up.ExitCode -eq 0 -and $joined -notmatch 'externally-managed|error') {
+                Write-Log "    [OK] $($pkg.name)  $($pkg.version) -> $($pkg.latest_version)" "Green"; $pipUpdated++
+            } elseif ($joined -match 'externally-managed') {
+                Write-Log "    [BLOCKED] $($pkg.name) - externally-managed environment (PEP 668)" "Yellow"; $pipFailed++
+            } else {
+                Write-Log "    [SKIP] $($pkg.name) - $($up.Status) exit $($up.ExitCode)" "DarkGray"; $pipFailed++
+            }
         }
+        Write-Log "  [OK]      pip complete ($pipUpdated updated, $pipFailed not)" "Green"
+        Add-UpdateResult pip $(if ($pipUpdated) { 'Updated' } else { 'Failed' }) "$pipUpdated ok / $pipFailed not"
     } else {
         Write-Log "    All pip packages up to date" "DarkGray"
+        Write-Log "  [OK]      pip complete" "Green"; Add-UpdateResult pip UpToDate
     }
-    Write-Log "  [OK]      pip complete" "Green"
-}
+} else { Add-UpdateResult pip Skipped "not installed" }
 
 # -- dotnet global tools -------------------------------------------------------
+# A tool from a CUSTOM feed (not nuget.org) fails 'dotnet tool update' silently
+# unless its source is reachable. We classify per-tool and surface failures.
 if (Get-Command dotnet -ErrorAction SilentlyContinue) {
     Write-Log "  [dotnet]  Updating global tools..." "Gray"
-    $tools = dotnet tool list --global 2>&1 | Select-Object -Skip 2
+    $listed = Invoke-ExternalTimed -File dotnet -Arguments "tool list --global" -TimeoutSec 120
+    $tools  = $listed.Output | Select-Object -Skip 2
+    $dnUpdated = 0; $dnFailed = 0
     foreach ($line in $tools) {
         $toolName = ($line -split '\s+')[0]
         if ($toolName -and $toolName.Trim() -ne '') {
-            $result = dotnet tool update --global $toolName 2>&1 | Select-Object -Last 1
-            if ($result) { Write-Log "    $result" "DarkGray" }
+            $u = Invoke-ExternalTimed -File dotnet -Arguments "tool update --global $toolName" -TimeoutSec 600
+            $joined = ($u.Output -join ' ')
+            if ($u.Status -eq 'Completed' -and $u.ExitCode -eq 0) {
+                if ($joined -match 'is up to date|already installed') {
+                    Write-Log "    [up to date] $toolName" "DarkGray"
+                } else {
+                    Write-Log "    [OK] $toolName updated" "Green"; $dnUpdated++
+                }
+            } else {
+                Write-Log "    [SKIP] $toolName - $($u.Status) exit $($u.ExitCode) (custom feed unreachable?)" "DarkGray"; $dnFailed++
+            }
         }
     }
-    Write-Log "  [OK]      dotnet tools complete" "Green"
+    Write-Log "  [OK]      dotnet tools complete ($dnUpdated updated, $dnFailed failed)" "Green"
+    Add-UpdateResult 'dotnet-tools' $(if ($dnFailed) { 'Failed' } elseif ($dnUpdated) { 'Updated' } else { 'UpToDate' }) "$dnUpdated up / $dnFailed fail"
+} else { Add-UpdateResult 'dotnet-tools' Skipped "not installed" }
+
+# -- Azure CLI (az) ------------------------------------------------------------
+# 'az upgrade --yes' is fully non-interactive; --all also bumps installed
+# extensions so they don't prompt/lag on a later run. 'az upgrade' natively
+# handles the MSI/installer path. Slow (full CLI reinstall) - generous timeout.
+if (Get-Command az -ErrorAction SilentlyContinue) {
+    Write-Log "  [az]      Upgrading Azure CLI + extensions..." "Gray"
+    $r = Invoke-ExternalTimed -File az -Arguments "upgrade --yes --all" -TimeoutSec 1800
+    Write-CapturedOutput $r.Output
+    switch ($r.Status) {
+        'Completed'    {
+            if ($r.Output -match 'already have the latest') {
+                Write-Log "  [OK]      Azure CLI already current" "Green"; Add-UpdateResult az UpToDate
+            } else {
+                Write-Log "  [OK]      Azure CLI complete" "Green"; Add-UpdateResult az Updated
+            }
+        }
+        'TimedOut'     { Write-Log "  [TIMEOUT] az upgrade exceeded 30 min - killed" "Red"; Add-UpdateResult az TimedOut }
+        'LaunchFailed' { Write-Log "  [FAIL]    az could not launch" "Red"; Add-UpdateResult az Failed }
+    }
+} else { Add-UpdateResult az Skipped "not installed" }
+
+# -- Azure Developer CLI (azd) -------------------------------------------------
+# azd ships via winget/MSI, so 'winget upgrade --all' above usually covers it.
+# This forces it explicitly and stays silent.
+if (Get-Command azd -ErrorAction SilentlyContinue) {
+    Write-Log "  [azd]     Ensuring Azure Developer CLI is current..." "Gray"
+    $r = Invoke-ExternalTimed -File winget `
+        -Arguments "upgrade Microsoft.Azd --silent --disable-interactivity --accept-package-agreements --accept-source-agreements" `
+        -TimeoutSec 900
+    Write-CapturedOutput $r.Output 'No applicable|already|Successfully|Found|upgrade|No installed'
+    switch ($r.Status) {
+        'Completed'    {
+            if ($r.Output -match 'No applicable upgrade|No installed package') {
+                Write-Log "  [OK]      azd already current" "Green"; Add-UpdateResult azd UpToDate
+            } else {
+                Write-Log "  [OK]      azd complete" "Green"; Add-UpdateResult azd Updated
+            }
+        }
+        'TimedOut'     { Write-Log "  [TIMEOUT] azd upgrade stalled - killed" "Red"; Add-UpdateResult azd TimedOut }
+        'LaunchFailed' { Write-Log "  [FAIL]    azd/winget could not launch" "Red"; Add-UpdateResult azd Failed }
+    }
+} else { Add-UpdateResult azd Skipped "not installed" }
+
+
+# -- App-update outcome summary ------------------------------------------------
+# One line per tool so a silent skip or timeout is visible at a glance instead of
+# buried in scroll. Anything not Updated/UpToDate/Skipped is flagged for attention.
+Write-Log "  ---- App update summary ----" "Cyan"
+foreach ($u in $script:updateResults) {
+    $col = switch ($u.Status) {
+        'Updated'  { 'Green' }
+        'UpToDate' { 'DarkGray' }
+        'Skipped'  { 'DarkGray' }
+        'TimedOut' { 'Red' }
+        'Failed'   { 'Red' }
+        default    { 'Yellow' }
+    }
+    Write-Log ("    {0,-14} {1,-9} {2}" -f $u.Tool, $u.Status, $u.Detail) $col
+}
+$updateProblems = @($script:updateResults | Where-Object { $_.Status -in 'TimedOut','Failed' })
+if ($updateProblems.Count) {
+    Write-Log "  [ATTENTION] $($updateProblems.Count) updater(s) timed out or failed: $($updateProblems.Tool -join ', ')" "Red"
 }
 
 
@@ -544,9 +774,23 @@ $contextScript = "C:\Maintenance\update-python-and-context-tools.ps1"
 if ([Security.Principal.WindowsIdentity]::GetCurrent().IsSystem) {
     Write-Log "  [SKIP]    RTK + Headroom - running as SYSTEM (run script manually when logged in)" "Yellow"
 } elseif (Test-Path $contextScript) {
+    # The nested context-tools script prints its OWN phase output via Write-Host,
+    # which goes straight to the console and bypasses Write-Log - so it is NOT
+    # captured in the maintenance log file and cannot be cleanly line-prefixed
+    # through the pipeline. Bracket it with a clear banner (logged + on-console) so
+    # its phases are unambiguously delimited from this script's section output.
     Write-Log "  [context] Updating RTK and Headroom..." "Gray"
+    Write-Log "  +------------------------------------------------------------------+" "DarkCyan"
+    Write-Log "  |  BEGIN external: update-python-and-context-tools.ps1             |" "DarkCyan"
+    Write-Log "  |  (output below is from the nested script - console only,         |" "DarkCyan"
+    Write-Log "  |   its phases are NOT written to this maintenance log file)       |" "DarkCyan"
+    Write-Log "  +------------------------------------------------------------------+" "DarkCyan"
     & $contextScript -SkipPythonUpdate
-    Write-Log "  [OK]      RTK + Headroom complete (exit: $LASTEXITCODE)" "Green"
+    $contextExit = $LASTEXITCODE
+    Write-Log "  +------------------------------------------------------------------+" "DarkCyan"
+    Write-Log "  |  END external: update-python-and-context-tools.ps1  (exit: $contextExit)$(' ' * [Math]::Max(0, 8 - "$contextExit".Length))|" "DarkCyan"
+    Write-Log "  +------------------------------------------------------------------+" "DarkCyan"
+    Write-Log "  [OK]      RTK + Headroom complete (exit: $contextExit)" "Green"
 } else {
     Write-Log "  [SKIP]    $contextScript not found" "DarkGray"
 }
@@ -778,25 +1022,85 @@ if ($Mode -eq "Deep") {
     # --- 11. POWERSHELL MODULE UPDATES ---------------------------------------
     Write-Section "12/20  PowerShell Module Updates (PSGallery)"
     Write-Log "  Checking installed modules for updates..." "Gray"
+    # Modules can be present three ways, and only the first is Update-Module-able:
+    #   1. Install-Module (PSGallery)        -> Update-Module works normally.
+    #   2. MSI / manual / Save-Module copy   -> Update-Module errors "was not
+    #      installed by using Install-Module"; we fall back to Install-Module -Force.
+    #   3. Living under a OneDrive-redirected Documents\...\PowerShell\Modules path
+    #      -> install-tracking metadata is stripped by sync, so even a PSGallery
+    #      install reports as non-updatable AND versions pile up (15.4/15.5/15.6...).
+    #      We can't safely reinstall INTO OneDrive (it re-syncs and re-breaks), so we
+    #      WARN with the exact remediation instead of fighting sync every month.
+    # The fallback reinstalls to the SAME scope the module currently lives in
+    # (AllUsers if under Program Files, else CurrentUser), so we don't silently move
+    # a system module into the user profile or vice versa.
 
-    $modUpdated = 0
-    $modules    = Get-InstalledModule -ErrorAction SilentlyContinue
+    # Detect a module path that sits inside a OneDrive-redirected location.
+    function Test-OneDrivePath {
+        param([string]$Path)
+        if (-not $Path) { return $false }
+        $p = $Path.ToLower()
+        return ($p -match '\\onedrive' -or ($env:OneDrive -and $p.StartsWith($env:OneDrive.ToLower())) -or ($env:OneDriveCommercial -and $p.StartsWith($env:OneDriveCommercial.ToLower())))
+    }
+    # Pick a reinstall scope from where the module module currently resides.
+    function Get-ModuleScope {
+        param([string]$Path)
+        if ($Path -and $Path.ToLower().StartsWith($env:ProgramFiles.ToLower())) { return 'AllUsers' }
+        return 'CurrentUser'
+    }
+
+    $modUpdated   = 0
+    $modReinstall = 0
+    $modOneDrive  = 0
+    $modules      = Get-InstalledModule -ErrorAction SilentlyContinue
     foreach ($mod in $modules) {
         try {
             $latest = Find-Module $mod.Name -ErrorAction SilentlyContinue
-            if ($latest -and [version]$latest.Version -gt [version]$mod.Version) {
-                Write-Log "  Updating: $($mod.Name)  $($mod.Version) -> $($latest.Version)" "Gray"
+            if (-not ($latest -and [version]$latest.Version -gt [version]$mod.Version)) { continue }
+
+            Write-Log "  Updating: $($mod.Name)  $($mod.Version) -> $($latest.Version)" "Gray"
+            try {
                 Update-Module $mod.Name -Force -ErrorAction Stop
                 Write-Log "  [OK]      $($mod.Name) updated" "Green"
                 $modUpdated++
+            } catch {
+                # Standard update path failed. Diagnose and fall back where safe.
+                $modPath = $mod.InstalledLocation
+                if (Test-OneDrivePath $modPath) {
+                    # Reinstalling into a synced folder just re-breaks next sync - warn instead.
+                    Write-Log "  [WARN]    $($mod.Name) lives under a OneDrive-redirected path - skipping auto-update" "Yellow"
+                    Write-Log "            Path: $modPath" "DarkGray"
+                    Write-Log "            Fix once (elevated): Install-Module $($mod.Name) -Scope AllUsers -Force -AllowClobber" "DarkGray"
+                    Write-Log "            then delete the OneDrive copy:  Remove-Item '$modPath' -Recurse -Force" "DarkGray"
+                    $modOneDrive++
+                } elseif ($_.Exception.Message -match 'was not installed by using Install-Module') {
+                    # MSI / manual / Save-Module copy. Reinstall from PSGallery to the same scope.
+                    $scope = Get-ModuleScope $modPath
+                    Write-Log "  [FALLBACK] $($mod.Name) not Install-Module-tracked - reinstalling from PSGallery (-Scope $scope)..." "Yellow"
+                    try {
+                        Install-Module $mod.Name -Scope $scope -Force -AllowClobber -Repository PSGallery -ErrorAction Stop
+                        Write-Log "  [OK]      $($mod.Name) reinstalled to $($latest.Version) ($scope)" "Green"
+                        $modReinstall++
+                    } catch {
+                        Write-Log "  [SKIP]    $($mod.Name) - reinstall failed: $($_.Exception.Message)" "DarkGray"
+                    }
+                } else {
+                    Write-Log "  [SKIP]    $($mod.Name) - $($_.Exception.Message)" "DarkGray"
+                }
             }
         } catch {
             Write-Log "  [SKIP]    $($mod.Name) - $($_.Exception.Message)" "DarkGray"
         }
     }
-    Write-Log "  [OK]     $modUpdated module(s) updated" "Green"
+    Write-Log "  [OK]     $modUpdated updated, $modReinstall reinstalled via fallback, $modOneDrive OneDrive-blocked" "Green"
+    if ($modOneDrive -gt 0) {
+        Write-Log "  [NOTE]   $modOneDrive module(s) skipped because their path is OneDrive-redirected." "Yellow"
+        Write-Log "           PowerShell modules should not live in a synced folder - see per-module fix above." "DarkGray"
+    }
 
-    # Remove superseded module versions
+    # Remove superseded module versions. Wrapped per-module so a module that can't be
+    # enumerated/uninstalled (e.g. OneDrive-redirected, no install metadata) is skipped
+    # quietly rather than aborting the prune for everything after it.
     Write-Log "  Pruning old module versions..." "Gray"
     $modPruned = 0
     Get-InstalledModule -ErrorAction SilentlyContinue | ForEach-Object {
@@ -809,7 +1113,9 @@ if ($Mode -eq "Deep") {
                     Write-Log "  [REMOVED] $($_.Name) v$($_.Version) (superseded)" "Green"
                     $modPruned++
                 } catch {
-                    Write-Log "  [SKIP]    $($_.Name) v$($_.Version) - in use or locked" "DarkGray"
+                    # "in use or locked", or "not installed by Install-Module" for
+                    # MSI/manual/OneDrive copies that Uninstall-Module won't touch.
+                    Write-Log "  [SKIP]    $($_.Name) v$($_.Version) - in use, locked, or not Install-Module-tracked" "DarkGray"
                 }
             }
         }
@@ -980,6 +1286,10 @@ Write-Log "  Duration:    $elapsed minutes" "White"
 Write-Log "  Log saved:   $LogFile" "DarkGray"
 if ($script:auditFindings -gt 0) {
     Write-Log "  SECURITY:    $($script:auditFindings) audit finding(s) - review $AlertFile" "Red"
+}
+$updateProblemsFinal = @($script:updateResults | Where-Object { $_.Status -in 'TimedOut','Failed' })
+if ($updateProblemsFinal.Count) {
+    Write-Log "  UPDATES:     $($updateProblemsFinal.Count) updater(s) need attention: $($updateProblemsFinal.Tool -join ', ')" "Red"
 }
 Write-Log ""
 
