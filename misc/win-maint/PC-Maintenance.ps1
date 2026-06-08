@@ -28,6 +28,13 @@
     the baseline. The baseline is otherwise never auto-refreshed, so an intruder's
     persistence cannot quietly become "known".
 
+    NOTE: baseline keys are version-normalized (see Get-NormPath). A version bump of
+    already-known software (paths/services that embed a version, e.g.
+    ...\OneDrive\26.088.0510.0004\..., Claude_1.11187.4.0_x64__..., or
+    GoogleUpdaterService150.0.7863.0) no longer re-alerts as NEW and does NOT require
+    -ReBaseline. A genuinely new package still alerts every run until -ReBaseline folds
+    it into the known-good snapshot.
+
 .EXAMPLE
     .\PC-Maintenance.ps1 -Mode Quick
     .\PC-Maintenance.ps1 -Mode Deep
@@ -190,31 +197,72 @@ function Resolve-Target {
     return $Target
 }
 
+# Collapse embedded version numbers in a path/string so version bumps of the SAME
+# software stop re-keying as NEW in the baseline diff. Only the numeric version
+# segment is touched - the product name/folder that differentiates one package from
+# another is preserved, so a genuinely new package still keys distinctly and alerts
+# until -ReBaseline. Examples that normalize to a stable form:
+#   ...\Microsoft OneDrive\26.088.0510.0004\OneDrive...  -> ...\Microsoft OneDrive\#\OneDrive...
+#   ...\WindowsApps\Claude_1.11187.4.0_x64__hash\...      -> ...\WindowsApps\Claude_#_x64__hash\...
+#   ...\Google\Chrome\Application\149.0.7827.54\...       -> ...\Google\Chrome\Application\#\...
+# Tradeoff: a binary that mimics a versioned folder pattern blends in slightly more,
+# but the independent remote-access tripwire layer (11a-11c) is unaffected.
+function Get-NormPath {
+    param([string]$Path)
+    if (-not $Path) { return $Path }
+    $p = $Path
+    # WindowsApps / packaged versions: _1.2.3.4_  ->  _#_   (handles Name_1.2.3.4_x64__hash)
+    $p = $p -replace '(_)\d+(\.\d+)+(_)', '${1}#${3}'
+    # Bare version path segments: \26.088.0510.0004\  ->  \#\
+    $p = $p -replace '\\\d+(\.\d+){1,}\\', '\#\'
+    # Trailing version path segment with no closing slash: \149.0.7827.54  ->  \#
+    $p = $p -replace '\\\d+(\.\d+){1,}$', '\#'
+    return $p
+}
+
+# Collapse a trailing version embedded in a SERVICE NAME so versioned service names
+# (e.g. GoogleUpdaterService150.0.7863.0, GoogleUpdaterInternalService150.0.7863.0)
+# stop re-alerting on every version bump. Only a trailing dotted-version run is
+# replaced; the descriptive name prefix is preserved.
+function Get-NormName {
+    param([string]$Name)
+    if (-not $Name) { return $Name }
+    return ($Name -replace '\d+(\.\d+)+$', '#')
+}
+
 # Normalize a service name for baseline keying. Windows user-service instances are
 # named <Template>_<sessionLUIDhex> (e.g. CDPUserSvc_960a9); the LUID changes every
 # logon session, so the raw name re-alerts on every reboot with zero software change.
-# Stripping a trailing _<hex> keys on the template instead, so only a genuinely new
-# user service surfaces. These instances share one Path (svchost.exe -k <group>, or a
-# fixed exe), so collapsing the suffix never hides a distinct binary. Applied to both
-# sides of the diff, so it stays consistent.
+# Stripping a trailing _<hex> keys on the template instead. We ALSO normalize a
+# trailing dotted-version in the name (Get-NormName) and version segments in the path
+# (Get-NormPath) so version bumps of the same software no longer re-key as NEW.
+# Applied to both sides of the diff, so it stays consistent.
 function Get-ServiceKey {
     param([string]$Name, [string]$Path)
     $norm = $Name -replace '_[0-9A-Fa-f]{4,}$', ''
-    return "$norm|$Path"
+    $norm = Get-NormName $norm
+    return "$norm|$(Get-NormPath $Path)"
 }
 
 # Normalize a listener for baseline keying. spoolsv / services / lsass and transient
 # dev tools bind random high ports in the dynamic range (49152-65535) that are
 # reassigned every boot, so Port|Path re-alerts on every run. For dynamic-range ports,
-# key on Path only: a brand-new binary listening still alerts once, but port churn from
-# an already-known binary does not. Below 49152 (well-known / registered) the exact
-# port still matters, so it stays in the key. Tradeoff: a process whose Path cannot be
-# resolved (protected SYSTEM processes report an empty Path) collapses to a single
-# dynamic-range key.
+# key on (normalized) Path only: a brand-new binary listening still alerts once, but
+# port churn from an already-known binary does not. Below 49152 (well-known /
+# registered) the exact port still matters, so it stays in the key. Path is
+# version-normalized so a version bump of the listening binary does not re-alert.
 function Get-ListenerKey {
     param($Port, [string]$Path)
-    if ([int]$Port -ge 49152) { return "DYN|$Path" }
-    return "$Port|$Path"
+    if ([int]$Port -ge 49152) { return "DYN|$(Get-NormPath $Path)" }
+    return "$Port|$(Get-NormPath $Path)"
+}
+
+# Stable autoruns key. Source + Name + version-normalized Target. The OneDrive Run
+# entry and OneDrive Startup tasks embed the version in the Target path, so without
+# normalization each OneDrive update re-alerts; Get-NormPath collapses that.
+function Get-AutorunKey {
+    param([string]$Source, [string]$Name, [string]$Target)
+    return "$Source|$Name|$(Get-NormPath $Target)"
 }
 
 # Point-in-time snapshot of services, autostart entries, and listening ports.
@@ -527,7 +575,35 @@ Write-Log "  [CLEAN]  Removed $($oldLogs.Count) old log file(s)" "Green"
 Write-Section "10/11  Stale Scheduled Tasks - Broken File References"
 # Reports tasks pointing to missing executables.
 # Review flagged items in Autoruns and remove manually if appropriate.
+#
+# TRANSIENT-UPDATE SUPPRESSION: right after an in-place app update (OneDrive is the
+# classic case), the old scheduled task can still point at the previous versioned
+# path for a short window before the installer rewrites it - e.g.
+#   Missing: C:\Program Files\Microsoft OneDrive\26.070.0414.0001\OneDriveLauncher.exe
+# while the new task already points at ...\26.088.0510.0004\OneDriveLauncher.exe.
+# To avoid that false positive, before flagging a missing exe we check whether the
+# SAME task (or another task) has an action whose version-normalized path matches and
+# DOES resolve. If a version-normalized sibling exists on disk, the missing entry is
+# just a stale pointer mid-update - we note it quietly instead of raising [STALE].
 $staleFound = 0
+
+# Pre-build a set of version-normalized paths for every task action whose exe exists,
+# so a missing versioned path can be matched against a present sibling.
+$presentNormTargets = @{}
+Get-ScheduledTask -ErrorAction SilentlyContinue | ForEach-Object {
+    foreach ($action in $_.Actions) {
+        $exe = $action.Execute `
+            -replace '"',            '' `
+            -replace '%SystemRoot%', $env:SystemRoot `
+            -replace '%windir%',     $env:SystemRoot `
+            -replace '%ProgramFiles%', $env:ProgramFiles
+        if ($exe) {
+            $exists = if ($exe -match '[\\/]') { Test-Path $exe } else { [bool](Get-Command $exe -ErrorAction SilentlyContinue) }
+            if ($exists) { $presentNormTargets[(Get-NormPath $exe)] = $true }
+        }
+    }
+}
+
 Get-ScheduledTask -ErrorAction SilentlyContinue | ForEach-Object {
     $task = $_
     foreach ($action in $task.Actions) {
@@ -553,9 +629,16 @@ Get-ScheduledTask -ErrorAction SilentlyContinue | ForEach-Object {
             $exe -notlike "*powershell*" -and
             $exe -notlike "*pwsh*"       -and
             -not $exeExists) {
-            Write-Log "  [STALE]  $($task.TaskPath)$($task.TaskName)" "Yellow"
-            Write-Log "           Missing: $exe" "DarkGray"
-            $staleFound++
+
+            # Transient mid-update pointer? A version-normalized sibling resolves on disk.
+            if ($presentNormTargets.ContainsKey((Get-NormPath $exe))) {
+                Write-Log "  [NOTE]   $($task.TaskPath)$($task.TaskName) - stale versioned path (newer version present, transient post-update)" "DarkGray"
+                Write-Log "           Old: $exe" "DarkGray"
+            } else {
+                Write-Log "  [STALE]  $($task.TaskPath)$($task.TaskName)" "Yellow"
+                Write-Log "           Missing: $exe" "DarkGray"
+                $staleFound++
+            }
         }
     }
 }
@@ -577,6 +660,11 @@ Write-Section "11/11  Remote-Access & Startup Audit"
 # autoruns reflect your profile. If ever run as SYSTEM, HKCU is SYSTEM's hive; the
 # HKLM / all-users / services / ports checks (the high-value targets) are unaffected.
 # On a managed WORK PC, do NOT remove IT-deployed tools - confirm with IT first.
+#
+# Baseline keys are VERSION-NORMALIZED (Get-NormPath / Get-NormName), so a version
+# bump of already-known software does NOT re-alert and does NOT need -ReBaseline.
+# A genuinely new package still alerts every run until -ReBaseline folds it in. The
+# tripwire layer below is independent of the baseline and always fires.
 
 if (-not (Test-Path $BaselineDir)) { New-Item -Path $BaselineDir -ItemType Directory -Force | Out-Null }
 
@@ -635,7 +723,8 @@ foreach ($a in $snapshot.autoruns) {
 
 # -- 11d. Baseline diff: anything NEW since the recorded clean snapshot --------
 # The baseline is created on first run and only rewritten with -ReBaseline, so an
-# intruder's persistence cannot silently be absorbed as "known".
+# intruder's persistence cannot silently be absorbed as "known". Keys are
+# version-normalized so version bumps of known software do not re-alert.
 if ($ReBaseline -or -not (Test-Path $BaselineFile)) {
     $snapshot | ConvertTo-Json -Depth 6 | Set-Content -Path $BaselineFile -ErrorAction SilentlyContinue
     $n    = @($snapshot.services).Count + @($snapshot.autoruns).Count + @($snapshot.listeners).Count
@@ -645,7 +734,7 @@ if ($ReBaseline -or -not (Test-Path $BaselineFile)) {
     $base = Get-Content $BaselineFile -Raw -ErrorAction SilentlyContinue | ConvertFrom-Json -ErrorAction SilentlyContinue
     if ($base) {
         $baseSvc = @{}; foreach ($s in $base.services)  { $baseSvc[(Get-ServiceKey $s.Name $s.Path)] = $true }
-        $baseAut = @{}; foreach ($a in $base.autoruns)  { $baseAut["$($a.Source)|$($a.Name)|$($a.Target)"] = $true }
+        $baseAut = @{}; foreach ($a in $base.autoruns)  { $baseAut[(Get-AutorunKey $a.Source $a.Name $a.Target)] = $true }
         $basePrt = @{}; foreach ($l in $base.listeners) { $basePrt[(Get-ListenerKey $l.Port $l.Path)] = $true }
 
         foreach ($s in $snapshot.services) {
@@ -654,7 +743,7 @@ if ($ReBaseline -or -not (Test-Path $BaselineFile)) {
             }
         }
         foreach ($a in $snapshot.autoruns) {
-            if (-not $baseAut.ContainsKey("$($a.Source)|$($a.Name)|$($a.Target)")) {
+            if (-not $baseAut.ContainsKey((Get-AutorunKey $a.Source $a.Name $a.Target))) {
                 $exe  = Get-ExeFromCommand (Resolve-Target $a.Target)
                 $sig  = Get-SigStatus $exe
                 $note = if ((Test-SuspiciousPath $exe) -and $sig -ne 'Valid') { "  (!) unsigned in user-writable path [sig: $sig]" } else { '' }
