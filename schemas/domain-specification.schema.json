@@ -14,8 +14,8 @@
     "ProjectDescription": { "type": "string" },
     "OrganizationName": {
       "type": "string",
-      "pattern": "^[A-Z][a-zA-Z0-9]*$",
-      "description": "Optional namespace prefix (PascalCase)"
+      "pattern": "^$|^[A-Z][a-zA-Z0-9]*$",
+      "description": "Optional namespace prefix (PascalCase). Empty string means no prefix - the documented leave-blank convention."
     },
     "multiTenant": { "type": "boolean", "default": true },
     "tenantIsolation": {
@@ -137,7 +137,7 @@
         "entity": { "type": "string" },
         "relationship": {
           "type": "string",
-          "enum": ["one-to-many", "many-to-many", "self-referencing", "polymorphic-join"]
+          "enum": ["one-to-many", "one-to-one", "many-to-many", "self-referencing", "polymorphic-join"]
         },
         "cascadeDelete": { "type": "boolean" },
         "selfReferenceKey": { "type": "string" },

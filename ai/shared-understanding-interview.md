@@ -74,6 +74,8 @@ Walk these branches in order. Revisit earlier branches when a later answer chang
 
 > **Heads-up - Phase 2 will open with packaging strategy.** The very first Phase 2 question asks whether the project has a private NuGet feed for shared base contracts (e.g., `EF.*`) or whether the scaffold should generate equivalent packable projects under `src/Packages/<Prefix>.*`. Flag any constraints here (corporate feed policy, prefix conventions) so Phase 2 doesn't re-discover them. Full details: [resource-implementation-schema.md section Discovery Conversation Pattern](resource-implementation-schema.md#discovery-conversation-pattern).
 
+> **Heads-up - the Interfaces branch decides UI topology.** When the Actors-and-roles branch found more than one persona (e.g. a distinct admin/operator role vs the primary end user), the Interfaces branch must decide whether a **separate admin portal** is needed - not just which single UI stack to use. Resolve this before Phase 2 sets the host flags; a second head retrofitted after Phase 4 is expensive. See [Multi-Head UI Decision](#multi-head-ui-decision) below.
+
 ## Branch Recap Format
 
 After each branch, use this exact structure:
@@ -133,3 +135,18 @@ Only then write `.scaffold/domain-specification.yaml`, `.scaffold/UBIQUITOUS-LAN
 ## Application Style Decision
 
 Capture this up front in Phase 1: `applicationStyle: service | cqrs | switch` (default `service`). Explain whether HTTP endpoints should inject `I{Entity}Service`, specific CQRS handlers, or both behind a runtime switch. If `cqrs` or `switch`, preserve DTO/routes unless the domain discovery proves a route change is required.
+
+## Multi-Head UI Decision
+
+The web UI is **not** always a single surface. When the Actors-and-roles branch produced more than one actor persona - especially a distinct admin/operator role alongside the primary end user - resolve the UI topology here, in the Interfaces branch, before Phase 4 fixes the solution layout. Retrofitting a second UI head after Phase 4 is materially more expensive than declaring it now.
+
+Ask explicitly: do the management personas need a **separate admin portal** distinct from the main end-user app, or is one UI with role-gated screens sufficient? Default-suggest **Blazor Server** for an internal/data-dense management head (single deployable, server-owned HttpClient, fastest to scaffold) even when the end-user app is a different stack (e.g. React/Vite or Uno WASM for the public app).
+
+Record a **persona -> UI-surface mapping** in `.scaffold/DESIGN-DECISIONS.md`, for example:
+
+```markdown
+- end-user (primary) -> `{App}` React SPA (public)
+- admin/operator     -> `{App}.Admin` Blazor Server (internal)
+```
+
+Mechanically, a second head means enabling a second per-stack host flag (`includeUnoUI` / `includeBlazorUI` / `includeReactUI`) - see [resource-implementation-schema.md section Discovery Conversation Pattern](resource-implementation-schema.md#discovery-conversation-pattern) (Question 2) and the sibling-layout guidance in [../skills/ui-blazor.md](../skills/ui-blazor.md). No schema change is required; the decision must record which persona drives which head. If the answer is deferred, mark it `deferred` with `Needed Before: Phase 2` (the host flags are set in Phase 2), not later - the topology cannot float into Phase 4.

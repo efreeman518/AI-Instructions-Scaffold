@@ -48,6 +48,8 @@ Follow `solution-structure.md` exactly:
 
 For each entity defined in `.scaffold/resource-implementation.yaml`:
 
+> **Application style first.** The contract shapes below show the `service` style (the default). For `applicationStyle: cqrs` generate command/query request records + one handler per request instead of `I{Entity}Service`; for `switch` generate both. See [Application Style Branch](#application-style-branch) at the end of this file - it is authoritative for which surface each style emits.
+
 **Interfaces:**
 ```csharp
 // Application.Contracts/Services/I{Entity}Service.cs
@@ -197,7 +199,7 @@ The shared base is the **single source of truth** for swapping the production Db
 
 ### 5. No-Op DI Stubs
 
-For every interface, generate a no-op implementation:
+For every interface, generate a no-op implementation. The example below is the `service`-style stub; for `applicationStyle: cqrs` the stubbed surface is the request handlers (one per command/query), and for `switch` it is both - see [Application Style Branch](#application-style-branch).
 
 ```csharp
 // Infrastructure/{Project}.Infrastructure.Stubs/NoOp{Entity}Service.cs
@@ -207,6 +209,17 @@ public class NoOp{Entity}Service : I{Entity}Service
         => Task.FromResult(Result<DefaultResponse<{Entity}Dto>>.Success(new DefaultResponse<{Entity}Dto>()));
 
     // ... all interface methods with safe default returns
+}
+```
+
+For `cqrs` / `switch`, the equivalent stub satisfies the handler contract instead of the service contract - one per request, same safe-default shapes:
+
+```csharp
+// Infrastructure/{Project}.Infrastructure.Stubs/NoOp{Entity}CreateHandler.cs
+public class NoOp{Entity}CreateHandler : IRequestHandler<Create{Entity}Command, Result<DefaultResponse<{Entity}Dto>>>
+{
+    public Task<Result<DefaultResponse<{Entity}Dto>>> HandleAsync(Create{Entity}Command request, CancellationToken ct = default)
+        => Task.FromResult(Result<DefaultResponse<{Entity}Dto>>.Success(new DefaultResponse<{Entity}Dto>()));
 }
 ```
 

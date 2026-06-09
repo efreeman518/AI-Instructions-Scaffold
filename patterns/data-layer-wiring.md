@@ -266,9 +266,11 @@ public class SeedDataTask(
 
 ## Scaffold Migration Strategy
 
-During scaffolding phases, the database schema is evolving rapidly. Use a single clean `InitialCreate` migration - do not accumulate incremental migrations.
+> **Greenfield only (GR-13):** This remove/recreate strategy applies to a fresh `/scaffold` build. `/scaffold-adopt` and `/vertical-slice` run against an established app and MUST preserve existing migration history - add an additive migration (`dotnet ef migrations add <Change>`) instead of removing. Do not run `migrations remove --force` in those flows.
 
-**Rule:** Before creating a migration, remove any existing migrations first:
+During a greenfield scaffold, the database schema is evolving rapidly. Use a single clean `InitialCreate` migration - do not accumulate incremental migrations.
+
+**Rule (greenfield):** Before creating a migration, remove any existing migrations first:
 
 ```powershell
 # Remove all existing migrations

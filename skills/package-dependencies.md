@@ -98,7 +98,7 @@ The goal is a small, owned dependency surface - every package added is one the t
 3. Use central package versions in `Directory.Packages.props` for every feed-supplied `<packagePrefix>.<Layer>`.
 4. After adding packages, restore and update to latest stable versions.
 5. Re-verify with `dotnet restore` and `dotnet build`.
-6. **Private feed auth:** GitHub Packages and other authenticated feeds require a PAT or token. Local dev stores credentials in `nuget.config` (user-level, not committed). CI/CD must pass credentials via environment variable or `dotnet nuget` auth step - see [cicd.md](cicd.md) for workflow setup. A 401 on restore means the feed credential is missing or expired.
+6. **Private feed auth:** GitHub Packages and other authenticated feeds require a PAT or token. Local dev stores credentials in `nuget.config` (user-level, not committed). CI/CD must pass credentials via environment variable or `dotnet nuget` auth step - see [cicd.md](cicd.md) for workflow setup. A 401 on restore means the feed credential is missing or expired. When the dev already has the feed configured with working credentials in the user-global `nuget.config`, author a secret-free repo `nuget.config` (source entry only, no `<packageSourceCredentials>`) so the project file does not shadow those global creds - see the probe-first Step 2 in [../support/execution-gates.md](../support/execution-gates.md) section Shared Base-Type Readiness.
 
 ### When `packageStrategy: local` or `hybrid` (locally-generated layers only)
 

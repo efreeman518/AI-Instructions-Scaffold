@@ -22,8 +22,8 @@ unoProfile: starter           # starter | full
 
 packageStrategy: local        # feed | local | hybrid
 packagePrefix: ""             # required; e.g. "EF", "Contoso", "AcmePay"
-customNugetFeeds: []          # required when packageStrategy: feed or hybrid
-localPackageLayers: []        # required when packageStrategy: local or hybrid; layers generated under src/Packages/<Prefix>.*
+customNugetFeeds: []          # one or more URLs when feed/hybrid; must be [] when local
+localPackageLayers: [Domain, Domain.Contracts, Data, Data.Contracts, Common, Common.Contracts]  # >=1 required when local or hybrid; must be [] when feed; add CQRS when applicationStyle warrants. Generated under src/Packages/<Prefix>.*
 
 applicationStyle: service     # service | cqrs | switch
 
@@ -55,8 +55,8 @@ unoProfile: starter             # starter | full
 
 packageStrategy: local          # feed | local | hybrid
 packagePrefix: ""               # required; e.g. "EF", "Contoso", "AcmePay"
-customNugetFeeds: []            # required when packageStrategy: feed or hybrid
-localPackageLayers: []          # required when packageStrategy: local or hybrid
+customNugetFeeds: []            # one or more URLs when feed/hybrid; must be [] when local
+localPackageLayers: [Domain, Domain.Contracts, Data, Data.Contracts, Common, Common.Contracts]  # >=1 required when local or hybrid; must be [] when feed
 applicationStyle: service       # service | cqrs | switch
 ```
 
@@ -138,7 +138,7 @@ entities:
     properties:
       - { name: Title, type: string, maxLength: 200, required: true }
       - { name: Description, type: string, maxLength: 2000, required: false }
-      - { name: DueDate, type: DateTimeOffset?, required: false }
+      - { name: DueDate, type: "DateTimeOffset?", required: false }
       - { name: Priority, type: enum }
       - { name: Status, type: flags_enum }
       - { name: Amount, type: decimal, precision: 10, scale: 4 }
@@ -149,8 +149,10 @@ entities:
     embedded:                               # cosmosdb only
       - name: Schedule
         properties:
-          - { name: StartDate, type: DateTimeOffset? }
+          - { name: StartDate, type: "DateTimeOffset?" }
 ```
+
+Quote nullable type tokens (`type: "DateTimeOffset?"`) inside YAML flow mappings. A bare trailing `?` is a YAML complex-key indicator and fails `yaml.safe_load`.
 
 ### Compliance Metadata (Optional)
 
@@ -360,6 +362,11 @@ For AI services selection guidance and agent framework concepts, see [skills/ai-
 | `includeLoadTests` | `false` |
 | `includeBenchmarkTests` | `false` |
 | `includeMutationTests` | `false` |
+| `includeAspireTests` | `false` (derived: `comprehensive` enables) |
+| `includePlaywrightUITests` | `false` (derived: `comprehensive` enables) |
+| `includeMobileTests` | `false` (env-gated by `{APP}_MOBILE_TESTS_ENABLED`; needs `includeUnoUI`) |
+
+The discrete booleans are explicit overrides; when omitted, tiers are derived from `testingProfile` per the profile table in [skills/testing.md](../skills/testing.md). `includeE2ETests` is `Test.E2E` (WebApplicationFactory + Testcontainers SQL, multi-endpoint workflows) - not the browser tier; declare browser/WASM UI tests with `includePlaywrightUITests` (`Test.PlaywrightUI`) and the full-mesh tier with `includeAspireTests` (`Test.Aspire`).
 
 ### Optional Integrations
 
@@ -478,7 +485,7 @@ Work through these in order during Phase 2. **Question 1 is asked first and must
    - **No (`local`)** - supply only a package prefix (e.g., `Contoso`). All base-contract layers are added to `localPackageLayers` and generated in Phase 4 under `src/Packages/<Prefix>.*` as packable projects (consumed via `<ProjectReference>`). `customNugetFeeds` stays empty. The developer may publish these to a feed later without restructuring.
 
    `packagePrefix` is required in every mode. `EF` is the canonical example prefix used throughout these instructions, not a default.
-2. **Scaffold mode** - full, lite, or api-only? What optional hosts are needed? For web UI, choose Blazor, Uno WASM, React/Vite SPA, or explicit siblings; do not add a second UI stack by default.
+2. **Scaffold mode** - full, lite, or api-only? What optional hosts are needed? For web UI, choose Blazor, Uno WASM, React/Vite SPA, or explicit siblings; do not add a second UI stack by default. **Exception - multi-head by persona:** if Phase 1 produced a persona -> UI-surface mapping that calls for a distinct admin/operator portal alongside the end-user app (see [shared-understanding-interview.md section Multi-Head UI Decision](shared-understanding-interview.md#multi-head-ui-decision)), enable the second per-stack host flag deliberately and offer explicit siblings under `src/UI/` (e.g. a React end-user app plus a Blazor Server admin head). Multi-head = two of `includeUnoUI` / `includeBlazorUI` / `includeReactUI` set true; record which persona drives which head in `DESIGN-DECISIONS.md`.
 3. **Data store mapping** - for each entity: SQL (default), Cosmos, Table, or Blob? Binary content -> blob, relational -> sql, key-value -> table, document aggregates -> cosmosdb.
 4. **Property details** - add types, maxLength, precision/scale to every property. Resolve ambiguous Phase 1 kinds.
 5. **Relationship config** - join entities for many-to-many, cascade behavior, FK naming.

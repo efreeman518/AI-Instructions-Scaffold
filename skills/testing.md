@@ -48,6 +48,8 @@ public class {Entity}WorkflowTests { ... }
 
 Rule: start balanced, then add hosted UI and performance suites when slices stabilize. `Test.Aspire` (the full-AppHost-graph mesh tier) is opt-in - it needs Docker and boots the whole graph, so it runs behind a CI toggle rather than on every push.
 
+The `resource-implementation.yaml` test booleans map to these tiers: `comprehensive` implies `includeAspireTests` + `includePlaywrightUITests` (plus Load/Benchmarks/Mutation) when those flags are omitted. Setting a flag explicitly overrides the profile default. `includeMobileTests` (`Test.Mobile`, Uno native Appium) is never on by default - it requires `includeUnoUI` and is env-gated by `{APP}_MOBILE_TESTS_ENABLED`. Do not confuse `includeE2ETests` (`Test.E2E`, WebApplicationFactory + Testcontainers SQL) with `includePlaywrightUITests` (`Test.PlaywrightUI`, browser-driven) - they are distinct tiers.
+
 ## Project Layout
 
 ```text

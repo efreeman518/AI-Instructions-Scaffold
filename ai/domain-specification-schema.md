@@ -100,6 +100,11 @@ Apply enum freely when the values are genuinely interchangeable labels with no s
   children:
     - { name: Comments, entity: Comment, relationship: one-to-many, cascadeDelete: true }
   ```
+- `one-to-one` - parent owns exactly one child (1:1 ownership). Materializes as a unique FK on the child, a single (non-collection) navigation on the parent, and cascade delete. Prefer this over `one-to-many` plus an "at most one" entity rule.
+  ```yaml
+  children:
+    - { name: Detail, entity: TodoItemDetail, relationship: one-to-one, cascadeDelete: true }
+  ```
 - `many-to-many` - peer association. Join entity details are Phase 2.
   ```yaml
   children:

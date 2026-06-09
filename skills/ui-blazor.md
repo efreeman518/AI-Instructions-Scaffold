@@ -841,6 +841,8 @@ When a page edits an aggregate root whose children are synced by the server `Upd
 
 ## Coexistence With Uno
 
+A second UI head is most often an **admin/operator portal** distinct from the primary end-user app - the canonical multi-head case. Blazor Server is the default suggestion for that internal/data-dense management head even when the end-user app is React/Vite or Uno WASM. Decide this in Phase 1 from the persona -> UI-surface mapping, not after Phase 4 fixes the layout: see [shared-understanding-interview.md section Multi-Head UI Decision](../ai/shared-understanding-interview.md#multi-head-ui-decision). Mechanically it means enabling a second host flag (`includeBlazorUI` alongside `includeReactUI`/`includeUnoUI`).
+
 Both clients can ship side-by-side under `src/UI/`:
 
 ```

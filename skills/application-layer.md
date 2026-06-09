@@ -151,7 +151,7 @@ Flow pattern:
 
 ## CQRS Application Style
 
-When `.scaffold/resource-implementation.yaml` sets `applicationStyle: cqrs` or `switch`, add `{Project}.Application.Cqrs` alongside services:
+When `.scaffold/resource-implementation.yaml` sets `applicationStyle: cqrs` or `switch`, generate `{Project}.Application.Cqrs` (under `switch` it sits alongside the service projects; under pure `cqrs` it replaces them - see *Service vs CQRS* below):
 
 - `Features/{Entity}/{Entity}Requests.cs` contains one command/query record per endpoint operation and implements `ICommand<TResponse>` or `IQuery<TResponse>`.
 - `Features/{Entity}/{Entity}Handlers.cs` contains one `IRequestHandler<TRequest,TResponse>` implementation per request. No handler implements `I{Entity}Service`.
@@ -285,5 +285,7 @@ catch (Exception ex)
 ## Service vs CQRS
 
 The application layer supports three scaffold styles: `service`, `cqrs`, and `switch`. `service` keeps use-case flow inside `I{Entity}Service` implementations. `cqrs` keeps use-case flow inside command/query handlers under `Application.Cqrs/Features/{Entity}` and maps endpoints directly to specific handlers. `switch` emits both endpoint sets and selects one through `Application:Style` / `<APP>_APPLICATION_STYLE`. CQRS avoids central request dispatchers, request buses, and generic `Send()` entrypoints so route-to-handler flow remains explicit and handler registration stays reviewable.
+
+A pure `cqrs` scaffold emits **only** the CQRS path - omit `Application.Services`, `I{Entity}Service`, the service no-op stubs, and the service endpoints entirely. They appear only under `service` (and alongside the CQRS surface under `switch`). The Phase-4 [Application Style Branch](../ai/contract-scaffolding.md#application-style-branch) is authoritative for which surface each style generates.
 
 CQRS validation uses project-owned validators plus a handler decorator. Do not add FluentValidation or other third-party validation packages for the CQRS path.

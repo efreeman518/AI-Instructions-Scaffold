@@ -67,7 +67,14 @@ Feed-supplied layers require package read access before Phase 4 restore/build ca
 - Auth method: `NUGET_AUTH_TOKEN` environment variable (recommended) or credential provider
 - `packagePrefix` matches the feed (e.g., `EF`, `Contoso`)
 
-**Step 2:** Generate `nuget.config` with the feed helper:
+**Step 2:** Generate `nuget.config`. First probe for working global credentials so the repo file does not shadow them.
+
+**Step 2a - probe the user-global config.** Open the user-global `nuget.config` (`%APPDATA%\NuGet\nuget.config` on Windows; `~/.nuget/NuGet/NuGet.Config` on Linux/Mac) and look for a `<packageSource>` whose `value` is the **same feed URL**.
+
+- **Found (the dev already restores from this feed):** author a **secret-free** repo `nuget.config` - copy the global source key into `<packageSources>` and add the prefix entry to `<packageSourceMapping>`, but emit **no** `<packageSourceCredentials>` block. NuGet resolves the PAT from the global store for local restore; CI injects it via the `NUGET_AUTH_TOKEN` secret. Skip Step 3 (the token is already present globally). This avoids the failure mode where a repo credential block shadows working global creds and local restore fails unless `NUGET_AUTH_TOKEN` is also set in every shell.
+- **Not found (no global creds for this feed):** fall through to Step 2b and write the `%NUGET_AUTH_TOKEN%` credential block.
+
+**Step 2b - write the credential-bearing config** (only when Step 2a found no global creds). Use the feed helper:
 
 ```powershell
 python .instructions/scripts/configure-ef-packages-feed.py --root . --feed-url https://nuget.pkg.github.com/{owner}/index.json --username {username} --prefix {packagePrefix}
@@ -104,7 +111,7 @@ Manual equivalent (substitute `{packagePrefix}` for your prefix, e.g., `EF`):
 </configuration>
 ```
 
-**Step 3:** Set the auth token via environment variable:
+**Step 3:** Set the auth token via environment variable (Step 2b path only - skip when Step 2a reused working global credentials):
 
 ```powershell
 # PowerShell - session-scoped (recommended for local dev)
@@ -149,6 +156,7 @@ Configure these in your AI client (VS Code `settings.json` or Claude Desktop con
 Phase 3 must populate the **Tooling & Environment Readiness** section of `.scaffold/implementation-plan.md`. Before closing Phase 3:
 
 - [ ] Artifact consistency check in `.scaffold/implementation-plan.md` is complete: language, domain spec, resource mapping, decisions, and Phase 4 tasks agree
+- [ ] `HANDOFF.md` `enabledFeatures` flags equal the host toggles in `.scaffold/resource-implementation.yaml` (`includeApi`, `includeGateway`, `includeScheduler`, `includeFunctionApp`, `includeUnoUI`, `includeBlazorUI`, `includeReactUI`, `includeNotifications`, `includeIaC`, ...). Any mismatch means a flag flipped without a re-sync - run the Gate-time Amendment Protocol below before proceeding to Phase 4
 - [ ] No `[OPEN QUESTION: ...]` marker blocks Phase 4 contract scaffolding (**GR-10**). Run a literal-string scan across `.scaffold/domain-specification.yaml`, `.scaffold/UBIQUITOUS-LANGUAGE.md`, `.scaffold/DESIGN-DECISIONS.md`, and `.scaffold/implementation-plan.md`; classify any remaining marker as **blocking Phase 4** (halt) or **non-blocking deferred** (record in `HANDOFF.md` section Open Questions and proceed).
 - [ ] All CLIs required by resource YAML technology choices are identified with install commands
 - [ ] MCP server discovery completed (npm search, MCP registry) for project-specific libraries
@@ -157,6 +165,19 @@ Phase 3 must populate the **Tooling & Environment Readiness** section of `.scaff
 - [ ] `dotnet restore` exits 0 (with `NUGET_AUTH_TOKEN` set when `packageStrategy: feed` or `hybrid`)
 - [ ] Developer reviews `.scaffold/UBIQUITOUS-LANGUAGE.md` and `.scaffold/DESIGN-DECISIONS.md` for completeness against `.scaffold/domain-specification.yaml`
 - [ ] Developer reviews `.scaffold/implementation-plan.md` against `ai/implementation-plan.md` schema
+
+### Gate-time Amendment Protocol
+
+Phase 2 is "closed" once `.scaffold/resource-implementation.yaml` validates - but a host or topology flag can still flip at a later pre-code gate (Phase 1->2, 2->3, or 3->4). The canonical example: enabling a Blazor admin head (`includeBlazorUI: true`) because the multi-head UI decision surfaced late (see [../ai/shared-understanding-interview.md](../ai/shared-understanding-interview.md) section Multi-Head UI Decision). When that happens, the canonical artifacts drift out of sync and Phase 4 scaffolds against a stale layout.
+
+When any host/topology flag changes at a pre-code gate, **re-sync all four canonical artifacts before continuing** - do not let Phase 4 start until they agree:
+
+- [ ] `.scaffold/resource-implementation.yaml` - the changed feature flag(s) are set (this is the canonical source of truth for hosting topology)
+- [ ] `.scaffold/DESIGN-DECISIONS.md` - add a new decision row for the change and update the decision dependency graph / affected-decisions list (see [../templates/design-decisions-template.md](../templates/design-decisions-template.md))
+- [ ] `.scaffold/implementation-plan.md` - update the solution layout, Phase 4/5 steps, test plan, tooling readiness, and risks the new host introduces (see [../ai/implementation-plan.md](../ai/implementation-plan.md))
+- [ ] `HANDOFF.md` - update `enabledFeatures`, `hostGates`, and `resumeCommand`; these mirror the resource YAML and must match it exactly (HANDOFF already requires `enabledFeatures` to stay in sync - see [HANDOFF.md](HANDOFF.md))
+
+Then re-run the `HANDOFF.md enabledFeatures == resource YAML` consistency check above. A flag that flips without this re-sync is a Phase 4 defect, not a Phase 5 surprise.
 
 ---
 
@@ -239,8 +260,10 @@ dotnet test --filter "TestCategory=Unit"
 
 Scaffold migration (remove old, create fresh baseline - see [../patterns/data-layer-wiring.md](../patterns/data-layer-wiring.md)):
 
+> **Flow guard (GR-13):** The remove/recreate path below is greenfield `/scaffold` only. In `/scaffold-adopt` and `/vertical-slice` (brownfield, established app) do **not** run `migrations remove --force` - preserve existing migration history and add an additive migration instead: `dotnet ef migrations add <Change> --project ... --startup-project ... --context {App}DbContextTrxn`.
+
 ```powershell
-# Remove any existing migrations first
+# Greenfield /scaffold only: remove any existing migrations first
 dotnet ef migrations remove --force `
   --project src/Infrastructure/{Project}.Infrastructure.Data `
   --startup-project src/Host/{Host}.Api
@@ -252,7 +275,7 @@ dotnet ef migrations add InitialCreate `
   --context {App}DbContextTrxn
 ```
 
-> **Scaffold rule:** During scaffolding, always start fresh. Do not accumulate incremental migrations until the baseline is established and the project is in production.
+> **Scaffold rule (GR-13):** During a greenfield scaffold, always start fresh. Do not accumulate incremental migrations until the baseline is established and the project is in production. Brownfield/slice flows are additive - see the flow guard above.
 
 ## 5b - App Core + Runtime/Edge (TDD for app/API, tests-after for runtime)
 

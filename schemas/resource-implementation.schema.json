@@ -101,10 +101,29 @@
     "tokenRelay": { "type": "boolean", "default": true },
     "tenantIdType": { "type": "string", "default": "Guid" },
     "includeArchitectureTests": { "type": "boolean", "default": false },
-    "includeE2ETests": { "type": "boolean", "default": false },
+    "includeE2ETests": {
+      "type": "boolean",
+      "default": false,
+      "description": "Test.E2E tier (WebApplicationFactory + Testcontainers SQL): multi-endpoint workflows against real SQL. Distinct from includePlaywrightUITests (browser/WASM UI)."
+    },
     "includeLoadTests": { "type": "boolean", "default": false },
     "includeBenchmarkTests": { "type": "boolean", "default": false },
     "includeMutationTests": { "type": "boolean", "default": false },
+    "includeAspireTests": {
+      "type": "boolean",
+      "default": false,
+      "description": "Test.Aspire mesh tier (full AppHost graph over HTTP via DistributedApplicationTestingBuilder). Derived from testingProfile when omitted: comprehensive enables it. Needs Docker; typically CI-gated."
+    },
+    "includePlaywrightUITests": {
+      "type": "boolean",
+      "default": false,
+      "description": "Test.PlaywrightUI tier (browser-driven UI against a hosted stack). Derived from testingProfile when omitted: comprehensive enables it."
+    },
+    "includeMobileTests": {
+      "type": "boolean",
+      "default": false,
+      "description": "Test.Mobile tier (Uno native Appium). Off by default and additionally env-gated by {APP}_MOBILE_TESTS_ENABLED; requires includeUnoUI."
+    },
     "azureRegion": { "type": "string", "default": "eastus2" },
     "iacEnvironments": {
       "type": "array",
