@@ -27,6 +27,8 @@ Each store the app uses gets a **standalone Testcontainer fixture** under `Test/
 
 > **Naming:** name each fixture for the store it owns (`SqlContainerFixture`, `AzuriteContainerFixture`, `RedisContainerFixture`). They are standalone - they do **not** wrap or depend on the Aspire host.
 
+> **Cleanup is owned by `DisposeAsync` + the Testcontainers reaper - never hand-sweep Docker.** Each fixture's `StopAsync` -> `DisposeAsync` removes its own container deterministically. As a backstop, Testcontainers' Resource Reaper (Ryuk) stamps every container it starts with a per-run `org.testcontainers.session-id` label and removes only those when the test process exits - so a crashed run still cleans up by **exact session ownership**. Do **not** add `docker rm`/`docker container prune` sweeps to fixtures or test code: a sweep by image name or generic label would also delete other projects', other sessions', and intentional persistent containers. The reaper already owns this correctly.
+
 ---
 
 ### File: `Test/Test.Integration/Infrastructure/SqlContainerFixture.cs`
@@ -607,6 +609,7 @@ Skip this template when the project does not have a projection service / read-mo
 - [ ] Tenant query filter test exists when `enableMultiTenant: true`; M:N test exists when entity uses a junction.
 - [ ] Every test class has a class-level `<summary>` declaring tier (component) + store.
 - [ ] Running `Test.Integration` boots **no** Aspire graph (no `DistributedApplicationTestingBuilder` log lines).
+- [ ] No fixture or test performs a manual `docker rm`/`docker container prune` sweep; per-run cleanup is left to each fixture's `DisposeAsync` plus the Testcontainers reaper (`org.testcontainers.session-id`).
 
 ---
 

@@ -39,7 +39,7 @@ Use this when adding a new entity to an **already-scaffolded** solution. Skip fu
 1. Create entity + enum/flags in `Domain.Model`
 2. Create EF configuration in `Infrastructure.Data`
 3. Add `DbSet<{Entity}>` to both DbContexts
-4. Create repository interface + implementations (Trxn + Query)
+4. Repositories (per `repositoryContractStyle`, default `hybrid`): a **generic-coverable** entity (join / append-only / simple CRUD) needs **no** per-entity repo - it resolves the already-registered open-generic `IRepositoryTrxn<{Entity}>` / `IRepositoryQuery<{Entity}>`. A **bespoke** entity (multi-include loads, `UpdateFromDto`, paged `Search`, polymorphic/hierarchy queries) gets a per-entity interface + impl (Trxn and/or Query); a split aggregate may use the generic Trxn plus a bespoke Query that extends `IRepositoryQuery<{Entity}>`. Under `per-entity` style, always create both. See [repository-template.md](../templates/repository-template.md) -> Generic Repository Pair.
 5. **If child collections: create `{Entity}Updater.cs` under `Infrastructure.Repositories/Updaters/`** - DbContext extension method using `CollectionUtility.SyncCollectionWithResult`. Repository's `UpdateFromDto` delegates here.
 6. Create DTO + SearchFilter in `Application.Models`
 7. Create mapper in `Application.Mappers` (canonical `Projection` + compiled `ToDto` + `ToEntity`; child collections inlined in `Projection` - EF can't translate child `.ToDto()` calls)
@@ -99,14 +99,14 @@ For entity `{Entity}`:
 | Domain (optional) | `src/Domain/{Project}.Domain.Model/Rules/{Entity}Rules.cs` | [domain-rules-template.md](../templates/domain-rules-template.md) | if rules/state machine/policy matrix used |
 | Domain (optional) | `src/Domain/{Project}.Domain.Model/Rules/{Entity}*TransitionRule.cs` | [domain-rules-template.md](../templates/domain-rules-template.md) | if state transitions are constrained |
 | Data | `src/Infrastructure/{Project}.Infrastructure.Data/EntityConfigurations/{Entity}Configuration.cs` | [ef-configuration-template.md](../templates/ef-configuration-template.md) | yes |
-| Data | `src/Infrastructure/{Project}.Infrastructure.Repositories/{Entity}RepositoryTrxn.cs` | [repository-template.md](../templates/repository-template.md) | yes |
-| Data | `src/Infrastructure/{Project}.Infrastructure.Repositories/{Entity}RepositoryQuery.cs` | [repository-template.md](../templates/repository-template.md) | yes |
+| Data | `src/Infrastructure/{Project}.Infrastructure.Repositories/{Entity}RepositoryTrxn.cs` | [repository-template.md](../templates/repository-template.md) | bespoke writes only (else generic pair) |
+| Data | `src/Infrastructure/{Project}.Infrastructure.Repositories/{Entity}RepositoryQuery.cs` | [repository-template.md](../templates/repository-template.md) | bespoke reads only (else generic pair) |
 | Data (optional) | `src/Infrastructure/{Project}.Infrastructure.Repositories/Updaters/{Entity}Updater.cs` | [updater-template.md](../templates/updater-template.md) | if child collections |
 | App | `src/Application/{Project}.Application.Models/{Entity}/{Entity}Dto.cs` | [data-mapping-template.md](../templates/data-mapping-template.md) | yes |
 | App | `src/Application/{Project}.Application.Models/{Entity}/{Entity}SearchFilter.cs` | [data-mapping-template.md](../templates/data-mapping-template.md) | yes |
 | App | `src/Application/{Project}.Application.Contracts/Services/I{Entity}Service.cs` | [service-template.md](../templates/service-template.md) | yes |
-| App | `src/Application/{Project}.Application.Contracts/Repositories/I{Entity}RepositoryTrxn.cs` | [repository-template.md](../templates/repository-template.md) | yes |
-| App | `src/Application/{Project}.Application.Contracts/Repositories/I{Entity}RepositoryQuery.cs` | [repository-template.md](../templates/repository-template.md) | yes |
+| App | `src/Application/{Project}.Application.Contracts/Repositories/I{Entity}RepositoryTrxn.cs` | [repository-template.md](../templates/repository-template.md) | bespoke writes only (`per-entity`: always) |
+| App | `src/Application/{Project}.Application.Contracts/Repositories/I{Entity}RepositoryQuery.cs` | [repository-template.md](../templates/repository-template.md) | bespoke reads only (`per-entity`: always) |
 | App | `src/Application/{Project}.Application.Contracts/Mappers/{Entity}Mapper.cs` | [data-mapping-template.md](../templates/data-mapping-template.md) | yes |
 | App | `src/Application/{Project}.Application.Services/Services/{Entity}Service.cs` | [service-template.md](../templates/service-template.md) | yes |
 | App (optional) | `src/Application/{Project}.Application.Services/Validators/{Entity}Validator.cs` | - | if custom validator used |
@@ -216,8 +216,7 @@ Skill: [ui-react.md](../skills/ui-react.md).
 
 ### DI and Routing
 
-- [ ] `I{Entity}RepositoryTrxn` -> `{Entity}RepositoryTrxn` registered
-- [ ] `I{Entity}RepositoryQuery` -> `{Entity}RepositoryQuery` registered
+- [ ] Repository wiring matches `repositoryContractStyle`: a generic-coverable entity resolves the open-generic `IRepositoryTrxn<{Entity}>` / `IRepositoryQuery<{Entity}>` (registered once - no per-entity registration); a bespoke entity has `I{Entity}Repository* -> {Entity}Repository*` registered (`per-entity` style: both registered for every entity)
 - [ ] `I{Entity}Service` -> `{Entity}Service` registered
 - [ ] `Map{Entity}Endpoints()` wired in API builder extensions
 - [ ] If `applicationStyle` is `cqrs` or `switch`: request/handler/registration files are colocated under `Application.Cqrs/Features/{Entity}`

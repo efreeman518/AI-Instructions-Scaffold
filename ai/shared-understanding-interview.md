@@ -122,6 +122,7 @@ If a child branch exposes a parent conflict, pause and reopen the parent branch.
 Before writing Phase 1 outputs, confirm:
 
 - [ ] Each branch is `confirmed`, `defaulted`, or `deferred`.
+- [ ] `applicationStyle` and `projectNamePrefix` are confirmed (or explicitly defaulted) and recorded in `.scaffold/DESIGN-DECISIONS.md`.
 - [ ] Every entity, state, event, command/action, role, policy, and value object has a language entry.
 - [ ] Every rejected synonym or ambiguous term is recorded.
 - [ ] Every non-obvious design choice has a decision record with dependencies.
@@ -135,6 +136,19 @@ Only then write `.scaffold/domain-specification.yaml`, `.scaffold/UBIQUITOUS-LAN
 ## Application Style Decision
 
 Capture this up front in Phase 1: `applicationStyle: service | cqrs | switch` (default `service`). Explain whether HTTP endpoints should inject `I{Entity}Service`, specific CQRS handlers, or both behind a runtime switch. If `cqrs` or `switch`, preserve DTO/routes unless the domain discovery proves a route change is required.
+
+## Project Naming Decision
+
+Capture this up front in Phase 1, alongside `ProjectName`: `projectNamePrefix: solution-name | none` (default `solution-name`). It decides whether every generated project, folder, and root namespace is prefixed with the solution name - the reference app does this (`TaskFlow.Domain.Model`, `TaskFlow.Api`), but it is **not** required.
+
+Ask the developer explicitly - do not assume the reference-app convention:
+
+> Should generated projects be prefixed with the solution name (`{Project}.Domain.Model`, `{Host}.Api` - the TaskFlow convention), or use bare names (`Domain.Model`, `Api`)?
+
+- `solution-name` (default) - prefix on. Backward-compatible with every template and the reference app.
+- `none` - bare project names and namespaces; `OrganizationName` is not applied. Note the trade-off: bare top-level namespaces (`Domain.Model`, `Application.Services`) are generic and can collide when the assembly is consumed alongside other solutions.
+
+Either way the solution file is `{SolutionName}.slnx`. Record the choice as a decision in `.scaffold/DESIGN-DECISIONS.md` (it is structural and hard to reverse after Phase 4 creates the projects). Token mechanics: [placeholder-tokens.md - Derivation Rules](placeholder-tokens.md#derivation-rules).
 
 ## Multi-Head UI Decision
 

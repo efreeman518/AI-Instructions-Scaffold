@@ -79,6 +79,30 @@ src/
 
 Reference patterns: [../patterns/expected-output-index.md](../patterns/expected-output-index.md).
 
+### Project-Name Prefix (`projectNamePrefix`)
+
+The `{Project}.` / `{Host}.` prefix shown above is the **default** (`projectNamePrefix: solution-name`, set in Phase 1) and matches the TaskFlow reference app. When Phase 1 records `projectNamePrefix: none`, the prefix tokens collapse to empty and the layout uses bare project names, folders, and root namespaces:
+
+```
+src/
+|-- Domain/
+|   |-- Domain.Model/              # was {Project}.Domain.Model
+|   `-- Domain.Shared/
+|-- Application/
+|   |-- Application.Contracts/
+|   `-- Application.Services/
+|-- Infrastructure/
+|   |-- Infrastructure.Data/
+|   `-- Infrastructure.Repositories/
+|-- Host/
+|   |-- Bootstrapper/              # was {Host}.Bootstrapper
+|   `-- Api/                       # was {Host}.Api
+...
+`-- {SolutionName}.slnx            # solution file name is NOT collapsed
+```
+
+The `{SolutionName}.slnx` file keeps its full name either way, and `{App}`-derived types render without the prefix (`DbContextTrxn` / `DbContextQuery`). `OrganizationName` is not applied under `none`. Test, `src/Packages/`, and `Aspire/` project names already omit the prefix and are unchanged by this setting. Caveat: bare top-level namespaces (`Domain.Model`, `Application.Services`) are generic and can collide if these assemblies are consumed alongside other solutions - this is an accepted Phase 1 trade-off, recorded in `.scaffold/DESIGN-DECISIONS.md`. Token mechanics: [../ai/placeholder-tokens.md - Derivation Rules](../ai/placeholder-tokens.md#derivation-rules).
+
 ### Required Root Files (Cross-Platform Hygiene)
 
 The scaffold drops `.gitattributes`, `.gitignore`, and `.editorconfig` at repo root on first generation.

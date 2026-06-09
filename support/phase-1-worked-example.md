@@ -29,6 +29,26 @@ give a recap and ask you to confirm or correct it. Final outputs are
 .scaffold/domain-specification.yaml, .scaffold/UBIQUITOUS-LANGUAGE.md, and .scaffold/DESIGN-DECISIONS.md.
 ```
 
+Before the branches, the AI settles the two up-front structural decisions that fix the solution layout - `applicationStyle` and `projectNamePrefix`. Both have defaults, but the AI asks rather than assumes, because changing them after Phase 4 creates projects is expensive.
+
+```text
+AI
+Two quick structural choices before we dig into the domain:
+1. Endpoint style - service-injected (`ITaskItemService`), CQRS handlers, or a runtime switch? Default: service.
+2. Project naming - prefix every project with the solution name (`TaskFlow.Domain.Model`, `TaskFlow.Api` - the reference-app convention), or bare names (`Domain.Model`, `Api`)? Default: solution-name prefix.
+
+DEV
+1. Service is fine.
+2. Use the solution-name prefix - I want it to match the reference app.
+
+AI
+Recording the structural decisions:
+- D-000a applicationStyle -> service; depends on: none.
+- D-000b projectNamePrefix -> solution-name (projects + namespaces prefixed with `TaskFlow`); depends on: none. Solution file: `TaskFlow.slnx`.
+
+(Had you chosen bare names, projects and root namespaces would drop the prefix - `Domain.Model`, `Api`, `DbContextTrxn` - and `OrganizationName` would not be applied.)
+```
+
 ---
 
 ## Branch - Actors and Roles
@@ -184,6 +204,7 @@ Trimmed YAML fragment showing how the conversation lands as schema:
 
 ```yaml
 ProjectName: TaskFlow
+projectNamePrefix: solution-name
 multiTenant: true
 tenantIsolation: row-level
 authProvider: EntraID
@@ -223,6 +244,7 @@ domainRules:
 
 | Pattern | Where it shows up |
 |---|---|
+| Up-front structural decisions asked, not assumed (`applicationStyle`, `projectNamePrefix`) | Setup, before the branches |
 | Small batches (3-7 questions per branch) | Every branch above |
 | Branch recap + confirmation before moving on | End of Actors and Entities branches |
 | AI flags naming conflicts immediately, doesn't silently rename | "Task vs TaskItem" exchange in Entities |

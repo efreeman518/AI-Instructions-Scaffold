@@ -26,6 +26,7 @@ customNugetFeeds: []          # one or more URLs when feed/hybrid; must be [] wh
 localPackageLayers: [Domain, Domain.Contracts, Data, Data.Contracts, Common, Common.Contracts]  # >=1 required when local or hybrid; must be [] when feed; add CQRS when applicationStyle warrants. Generated under src/Packages/<Prefix>.*
 
 applicationStyle: service     # service | cqrs | switch
+repositoryContractStyle: hybrid  # per-entity | hybrid | generic-only
 
 includeApi: true
 includeGateway: false
@@ -58,6 +59,7 @@ packagePrefix: ""               # required; e.g. "EF", "Contoso", "AcmePay"
 customNugetFeeds: []            # one or more URLs when feed/hybrid; must be [] when local
 localPackageLayers: [Domain, Domain.Contracts, Data, Data.Contracts, Common, Common.Contracts]  # >=1 required when local or hybrid; must be [] when feed
 applicationStyle: service       # service | cqrs | switch
+repositoryContractStyle: hybrid # per-entity | hybrid | generic-only
 ```
 
 ### Package Strategy Reference
@@ -79,6 +81,23 @@ Canonical layer names (must match `support/ef-packages-reference.md`): `Domain`,
 | `switch` | Generate both service and CQRS endpoint sets. Runtime config `Application:Style` selects `Service` or `Cqrs`; `<APP>_APPLICATION_STYLE` may override host/test runs. |
 
 When `applicationStyle` is `cqrs` or `switch`, include `CQRS` in the feed/local package layer set. In `packageStrategy: local`, generate `src/Packages/<packagePrefix>.CQRS` and consume it via `<ProjectReference>`; do not add a private feed.
+
+### Repository Contract Style
+
+`repositoryContractStyle` controls whether every entity gets a bespoke `I{Entity}RepositoryTrxn` / `I{Entity}RepositoryQuery` pair, or whether CRUD-only / append-only / join entities share a generic repository pair. Default: `hybrid`.
+
+| `repositoryContractStyle` | Effect |
+|---|---|
+| `per-entity` | One `I{Entity}RepositoryTrxn` + `I{Entity}RepositoryQuery` per entity, registered individually. Explicit but verbose - every entity carries two interfaces even when they only re-expose generic CRUD under a typed name. |
+| `hybrid` (default) | Generic open-generic pair `IRepositoryTrxn<TEntity>` / `IRepositoryQuery<TEntity>` for entities with **no bespoke read/write logic**; a bespoke `I{Entity}Repository*` only where read/write logic earns it. A bespoke read contract **extends** `IRepositoryQuery<TEntity>` so generic get/list stay inherited and only the bespoke method (e.g. paged `Search`) is added. |
+| `generic-only` | Never emit per-entity repository interfaces. Entities resolve the generic pair; bespoke reads are expressed as CQRS query objects / specifications under `Features/{Entity}` (natural fit when `applicationStyle: cqrs`). |
+
+**An interface earns its place only when it adds logic beyond `RepositoryBase`.** Classify each entity in Phase 4:
+
+- **Generic-coverable** (use the generic pair): join entities, append-only logs, simple CRUD - the repository needs only get-by-id, list-by-predicate, and the generic CRUD already on `RepositoryBase` / `IRepositoryBase`.
+- **Bespoke** (emit a per-aggregate contract): multi-include aggregate loads, child-collection sync (`UpdateFromDto`), paged/projected `Search`, polymorphic or hierarchy queries, multi-key lookups.
+
+A single aggregate may split: a pure-CRUD write side uses `IRepositoryTrxn<TEntity>` while a search-bearing read side keeps a bespoke `I{Entity}RepositoryQuery : IRepositoryQuery<TEntity>`. The generic pair is backed by real shared-package types (`IRepositoryTrxn<TEntity>` / `IRepositoryQuery<TEntity>` over `RepositoryTrxn` / `RepositoryQuery`) - see [../support/ef-packages-reference.md](../support/ef-packages-reference.md) and the wiring in [../templates/repository-template.md](../templates/repository-template.md). For `cqrs`, prefer query objects/specs under `Features/{Entity}` over adding repository query methods.
 
 ## Decision Dependency Inputs
 
@@ -258,6 +277,7 @@ Options: Azure Service Bus, Event Grid, Event Hubs. See [skills/messaging.md](..
 | `includeBlazorUI` | `false` | |
 | `includeReactUI` | `false` | |
 | `applicationStyle` | `service` | `service`, `cqrs`, `switch` |
+| `repositoryContractStyle` | `hybrid` | `per-entity`, `hybrid`, `generic-only` (see [Repository Contract Style](#repository-contract-style)) |
 | `includeNotifications` | `false` | |
 | `includeFlowEngine` | `false` | Enables `EF.FlowEngine` (durable JSON workflow orchestration). Generates a dedicated FE DbContext + registration partial + workflow seeding + admin endpoints + test project. See [../skills/flowengine.md](../skills/flowengine.md). |
 | `flowEngineDbStrategy` | `same-db-separate-schema` | `same-db-separate-schema` (Variant A - preserves atomic outbox; default), `separate-db` (Variant B/C - outbox best-effort). See [../support/ef-packages-reference.md](../support/ef-packages-reference.md) section FlowEngine Data-Layout Variants. |
@@ -364,9 +384,9 @@ For AI services selection guidance and agent framework concepts, see [skills/ai-
 | `includeMutationTests` | `false` |
 | `includeAspireTests` | `false` (derived: `comprehensive` enables) |
 | `includePlaywrightUITests` | `false` (derived: `comprehensive` enables) |
-| `includeMobileTests` | `false` (env-gated by `{APP}_MOBILE_TESTS_ENABLED`; needs `includeUnoUI`) |
+| `includeMobileTests` | `false` (needs `includeUnoUI`; generate in balanced+ when Uno is in scope) |
 
-The discrete booleans are explicit overrides; when omitted, tiers are derived from `testingProfile` per the profile table in [skills/testing.md](../skills/testing.md). `includeE2ETests` is `Test.E2E` (WebApplicationFactory + Testcontainers SQL, multi-endpoint workflows) - not the browser tier; declare browser/WASM UI tests with `includePlaywrightUITests` (`Test.PlaywrightUI`) and the full-mesh tier with `includeAspireTests` (`Test.Aspire`).
+These booleans control **generation** (whether the test project is scaffolded), and follow the early capability pick: the UI/host flags chosen in Question 2 plus `testingProfile` decide which tiers exist. The [Capability-Gated Test Tiers](../skills/testing.md#capability-gated-test-tiers-the-early-decision-drives-the-rest) table in `skills/testing.md` is the single source of truth for the mapping (e.g. `includeMobileTests`/`WasmUI` require `includeUnoUI`; `Test.Aspire` requires `useAspire`; `api-only` -> none). For a **generated** tier, runtime is default-on with a local false-only opt-out (`{APP}_RUN_ASPIRE_TESTS`, `{APP}_WASM_TESTS_ENABLED`, `{APP}_MOBILE_TESTS_ENABLED`) and self-marks `Inconclusive` when prerequisites are missing. `includeE2ETests` is `Test.E2E` (WebApplicationFactory + Testcontainers SQL, multi-endpoint workflows) - not the browser tier; declare DOM-browser UI tests with `includePlaywrightUITests` (`Test.PlaywrightUI`, category `PlaywrightUI`), Skia-canvas Uno tests as the `WasmUI` category in the same project, and the full-mesh tier with `includeAspireTests` (`Test.Aspire`, category `Aspire`).
 
 ### Optional Integrations
 
@@ -492,7 +512,7 @@ Work through these in order during Phase 2. **Question 1 is asked first and must
 6. **External dependencies** - declare a scaffold mode for each (emulator, lazy-optional, no-op stub, deployment-only). Think about what needs to run locally vs. what can be deferred.
 7. **Messaging & events** - which events need Service Bus topics? Which are in-process channel dispatches?
 8. **AI services** - if enabled: which entities need search indexes? Which decisions need agents? What models?
-9. **Testing profile** - minimal, balanced, or comprehensive? Which optional test types (E2E, architecture, load)?
+9. **Testing profile & surfaces** - minimal, balanced, or comprehensive? Which optional test types (E2E, architecture, load)? **Test surfaces are derived from the hosts/UI chosen in Question 2, not asked independently:** Uno -> `WasmUI` (Skia canvas bridge) + `Test.Mobile`; Blazor/React -> `Test.PlaywrightUI` (DOM); `useAspire` + comprehensive (or explicit `includeAspireTests`) -> `Test.Aspire` mesh; `api-only` / no UI -> none of these. Record the resulting tier set; the [Capability-Gated Test Tiers](../skills/testing.md#capability-gated-test-tiers-the-early-decision-drives-the-rest) table is authoritative for the mapping.
 
 ---
 
@@ -507,6 +527,8 @@ Before moving to Phase 3 (Implementation Plan), verify all of the following:
 - [ ] At least one host is enabled (`includeApi`, `includeGateway`, etc.)
 - [ ] If `many-to-many` relationship exists, `joinEntity` is specified
 - [ ] `testingProfile` is set (`minimal`, `balanced`, or `comprehensive`)
+- [ ] `repositoryContractStyle` is set (`per-entity`, `hybrid`, or `generic-only`); for `hybrid`/`generic-only`, each entity is classified generic-coverable vs bespoke
+- [ ] Test tiers are consistent with the selected hosts/UI: no UI -> no `Test.PlaywrightUI`/`WasmUI`/`Test.Mobile`; no Uno -> no `WasmUI`/`Test.Mobile`; `useAspire: false` or profile below `comprehensive` (without explicit `includeAspireTests`) -> no `Test.Aspire` mesh
 - [ ] `packageStrategy` is set (`feed`, `local`, or `hybrid`)
 - [ ] `packagePrefix` is set and non-empty (used to name packages/projects under the chosen prefix, e.g., `<Prefix>.Domain`)
 - [ ] If `packageStrategy: feed` - `customNugetFeeds` has at least one entry; `localPackageLayers` is `[]`

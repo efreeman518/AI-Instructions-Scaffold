@@ -37,7 +37,7 @@ Walk these sources in order. Earlier sources establish the vocabulary; later sou
 
 | Pass | Source | Extracts |
 |---|---|---|
-| 1 | `*.slnx` / `*.sln` | Project list, layer assignment (Domain/Application/Infrastructure/Host/Test) |
+| 1 | `*.slnx` / `*.sln` | Project list, layer assignment (Domain/Application/Infrastructure/Host/Test), project-name prefix convention (`projectNamePrefix`) |
 | 2 | `src/Domain/*Domain.Model/Entities/*.cs` | Entities, properties, types, navigations, aggregate root candidates |
 | 3 | `src/Domain/*Domain.Model/Enums/*.cs` | Lifecycle states, status flags, role enumerations |
 | 4 | `src/Domain/*Domain.Model/Rules/*.cs` | Invariants, state-transition rules, policy matrices |
@@ -87,6 +87,7 @@ When the developer's answer remains ambiguous and a safe default is not availabl
 - **DI registrations are design decisions.** A `services.AddFusionCache(...)` call is a `D-###` decision ("caching strategy: FusionCache + Redis backplane"), even if no markdown ever documented it. Record it with `inferred-from: src/Host/{Project}.Bootstrapper/RegisterServices.cs:NN`.
 - **Missing-but-expected features become deferred decisions.** If the scaffold's canonical patterns expect a gateway, multi-tenancy filter, or observability wiring and none is present, record a `D-###` decision with status `deferred` and `inferred-from: absence`. Do not invent the feature.
 - **Schema relationships are authoritative for relationship type.** EF `WithMany(...).WithOne(...)` says 1:N; junction tables with composite keys say M:N. Ignore developer claims that contradict the schema.
+- **`projectNamePrefix` is read from existing project names, never defaulted.** Inspect the Pass-1 project list. If layer projects carry the solution-name prefix (`{Solution}.Domain.Model`, `{Solution}.Api`), record `projectNamePrefix: solution-name`. If they are bare (`Domain.Model`, `Api`), record `projectNamePrefix: none`. `inferred-from` the `.slnx` project list. Mixed/partial prefixing (some layers prefixed, some bare) is recorded as the observed fact plus an `[OPEN QUESTION]` for the canonical convention going forward - do not silently pick one. Token mechanics: [placeholder-tokens.md - Derivation Rules](placeholder-tokens.md#derivation-rules).
 - **State machines are inferred from enums + transitions enforced in services.** If `OrderStatus` exists but no transition rule is enforced anywhere, record the state machine as "implicit / unguarded" and surface it for developer confirmation.
 
 ## Decision Confirmation Loop

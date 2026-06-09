@@ -25,6 +25,7 @@ Every `[TestClass]` carries a 3-6 line class-level `<summary>` answering:
 1. **What is exercised** (one line).
 2. **Tooling tier + why this tier** (what a lighter tier would miss).
 3. **Non-obvious quirks** (only when applicable - retry loops, warm-up waits, fixture reuse).
+4. **Manual run command** (required for infra-dependent tiers - `Aspire`, `WasmUI`, `MobileUI`, `Integration`, `E2E`): the exact `dotnet test ... --filter ...` line plus any opt-out var or prerequisite (start Docker, run `eng/test/start-local-test-stack.ps1`), so a developer reproduces the run without hunting docs.
 
 Method-level docs are **not** the convention - Given/When/Then names encode scenarios. Add per-method comments only for non-obvious quirks.
 
@@ -46,9 +47,30 @@ public class {Entity}WorkflowTests { ... }
 | `balanced` | Minimal + Integration (component) + Architecture + Test.Support |
 | `comprehensive` | Balanced + Aspire mesh + PlaywrightUI + Load + Benchmarks + Mutation |
 
-Rule: start balanced, then add hosted UI and performance suites when slices stabilize. `Test.Aspire` (the full-AppHost-graph mesh tier) is opt-in - it needs Docker and boots the whole graph, so it runs behind a CI toggle rather than on every push.
+Rule: start balanced, then add hosted UI and performance suites when slices stabilize. Separate two switches that are easy to conflate (see [Capability-Gated Test Tiers](#capability-gated-test-tiers-the-early-decision-drives-the-rest)): **generation** (does the test project exist?) is driven by the early Phase 2 capability pick + `testingProfile`; **runtime gating** (does a generated tier run, or self-skip?) is default-on for a selected tier, with a local false-only opt-out.
 
-The `resource-implementation.yaml` test booleans map to these tiers: `comprehensive` implies `includeAspireTests` + `includePlaywrightUITests` (plus Load/Benchmarks/Mutation) when those flags are omitted. Setting a flag explicitly overrides the profile default. `includeMobileTests` (`Test.Mobile`, Uno native Appium) is never on by default - it requires `includeUnoUI` and is env-gated by `{APP}_MOBILE_TESTS_ENABLED`. Do not confuse `includeE2ETests` (`Test.E2E`, WebApplicationFactory + Testcontainers SQL) with `includePlaywrightUITests` (`Test.PlaywrightUI`, browser-driven) - they are distinct tiers.
+The `resource-implementation.yaml` test booleans drive **generation**: `comprehensive` implies `includeAspireTests` + `includePlaywrightUITests` (plus Load/Benchmarks/Mutation) when those flags are omitted. Setting a flag explicitly overrides the profile default. `includeMobileTests` (`Test.Mobile`, Uno native Appium) and the Skia-canvas `WasmUI` bridge tier require `includeUnoUI`; generate them in balanced+ when Uno is in scope. Do not confuse `includeE2ETests` (`Test.E2E`, WebApplicationFactory + Testcontainers SQL) with `includePlaywrightUITests` (`Test.PlaywrightUI`, browser-driven) - they are distinct tiers.
+
+## Capability-Gated Test Tiers (the early decision drives the rest)
+
+The early Phase 2 capability pick - `scaffoldMode` plus the `include*UI` / `useAspire` host flags ([resource-implementation-schema.md](../ai/resource-implementation-schema.md) Question 2) - determines which tiers exist **at all**. An `api-only` / no-UI scaffold has none of the rows below: no project, no category, no env var, no setup-script branch, no VS Code task. Do not default these on; a tier appears only because a capability was selected early.
+
+| Early Phase 2 pick | Tier (project / category) | Local opt-out var | Stack-script branch + VS Code tasks |
+|---|---|---|---|
+| `api-only` / no UI | none of PlaywrightUI / WasmUI / Mobile | - | - |
+| `includeBlazorUI` / `includeReactUI` (+ comprehensive or `includePlaywrightUITests`) | `Test.PlaywrightUI` / `PlaywrightUI` (DOM) | none (generation-gated) | Playwright install |
+| `includeUnoUI`, Skia renderer (+ comprehensive or `includePlaywrightUITests`) | `Test.PlaywrightUI` / `WasmUI` (canvas bridge) | `{APP}_WASM_TESTS_ENABLED` | Build WASM, Playwright install; tasks: Build WASM, Test: WASM |
+| `includeUnoUI` (+ balanced or `includeMobileTests`) | `Test.Mobile` / `MobileUI` (Appium) | `{APP}_MOBILE_TESTS_ENABLED` | Android SDK + emulator + Appium; tasks: Build Android APK, Test: Mobile |
+| `useAspire: true` (+ comprehensive or `includeAspireTests`) | `Test.Aspire` / `Aspire` (mesh) | `{APP}_RUN_ASPIRE_TESTS` | AppHost start; task: Test: Aspire |
+
+This table is the single source of truth. Phase 2 records the selected tiers (Question 9), [../ai/contract-scaffolding.md](../ai/contract-scaffolding.md) generates exactly those projects, and the [local test stack](../templates/local-test-stack-template.md) script / VS Code tasks expose only their branches.
+
+**For a tier the early decision generated:**
+
+- **Runs by default.** It is discoverable in Test Explorer and runs under `--filter "TestCategory!=Load"`. The `{APP}_*_TESTS` var is a **local convenience** to silence it (treat any value other than a case-insensitive `false` as "run") - not an enable flag the developer must know to turn the tier on.
+- **Self-skips, never red.** Degrade to `Assert.Inconclusive` when the external prerequisite is missing (Docker/AppHost, WASM host/browser, emulator/Appium). The message names the missing prerequisite and the fix (start Docker, run `eng/test/start-local-test-stack.ps1`, or set the opt-out). No vague "skipped".
+- **CI lanes set the opt-out.** Fast lanes that must not pay Docker/emulator cost set `{APP}_RUN_ASPIRE_TESTS=false` (etc.). `--filter "TestCategory!=Load"` stays safe everywhere because absent-infra tiers self-skip.
+- The mesh preflight helper shape is in [../templates/test-templates-aspire.md](../templates/test-templates-aspire.md) (Opt-out + preflight). Mirror it for `WasmUI` and `Test.Mobile`.
 
 ## Project Layout
 
@@ -66,6 +88,8 @@ Test/
   Test.Benchmarks/
   Test.Mutation/
 ```
+
+When any of `Test.Aspire`, the `WasmUI` bridge tier, or `Test.Mobile` is in scope, generate one re-runnable session bootstrap, `eng/test/start-local-test-stack.ps1` (process-env only - no permanent PATH edits), plus `.vscode/tasks.json` entries. It builds the WASM target, installs Playwright browsers, starts the Aspire AppHost, waits for endpoints, discovers the Android SDK, starts/verifies Appium + an emulator, and prints exact endpoints and rerun commands. Full shape: [../templates/local-test-stack-template.md](../templates/local-test-stack-template.md). Heavy tiers still self-skip (`Inconclusive`) if a prerequisite is missing - the script just provides them.
 
 > A nested `Test.Integration.{Project}.FlowEngine` project also exists when `includeFlowEngine: true` - a deliberate exception to the flat `Test.<X>` peer naming, because it is a distinct workflow-definition guard suite with its own template ([flowengine-test-template.md](../templates/flowengine-test-template.md)) and no shared fixtures.
 
@@ -140,15 +164,30 @@ Prefer specific MSTest asserts over generic `Assert.IsTrue`.
 
 ## Categories and Command Split
 
-Use these categories: `Unit`, `Endpoint`, `Integration`, `E2E`, `PlaywrightUI`, `Architecture`, `Load`, `Benchmark`, `Mutation`.
+Use these categories: `Unit`, `Endpoint`, `Integration`, `Aspire`, `E2E`, `PlaywrightUI`, `WasmUI`, `MobileUI`, `Architecture`, `Load`, `Benchmark`, `Mutation`.
+
+Category boundaries that matter:
+
+- **`Aspire`** is the mesh tier (`Test.Aspire`), distinct from **`Integration`** (component, `Test.Integration`). Never tag mesh tests `Integration` - that would boot the full graph on a `--filter TestCategory=Integration` run.
+- **`PlaywrightUI`** is DOM-based browser UI (MudBlazor/React/managed-DOM Uno). **`WasmUI`** is the Skia-canvas Uno bridge tier. **`MobileUI`** is Appium. None of these is `E2E` (`E2E` is WAF + Testcontainers SQL).
 
 ```powershell
+# Canonical "all normal tests" - excludes Load (NBomber). Heavy tiers (Aspire/WasmUI/MobileUI)
+# self-mark Inconclusive when Docker/emulator/Appium is absent, so this is safe to run anywhere.
+rtk dotnet test .\{SolutionName}.slnx --filter "TestCategory!=Load"
+
+# Scoped runs
 rtk dotnet test --filter "TestCategory=Endpoint"
 rtk dotnet test --filter "TestCategory=Integration"
+rtk dotnet test --filter "TestCategory=Aspire"
 rtk dotnet test --filter "TestCategory=E2E"
 rtk dotnet test --filter "TestCategory=PlaywrightUI"
+rtk dotnet test --filter "TestCategory=WasmUI"
+rtk dotnet test --filter "TestCategory=MobileUI"
 rtk dotnet test src/Test/Test.Mutation/Test.Mutation.csproj --filter "TestCategory=Mutation"
 ```
+
+> `Test.Benchmarks` uses BenchmarkDotNet `[Benchmark]`, not `[TestMethod]`, so `dotnet test` discovers nothing there - it never pollutes the `TestCategory!=Load` run. `Test.Mutation` samples are ordinary fast MSTest and may run under the canonical filter; Stryker itself is the separate runner.
 
 ## Test Class Field Declarations
 
@@ -278,7 +317,7 @@ The Aspire mesh host lives in `Test.Aspire` - see [../templates/test-templates-a
 2. **Set scoped flags (e.g., `TASKFLOW_ASPIRE_TESTING`, `TASKFLOW_INCLUDE_FUNCTIONS`) before `CreateAsync`** - only for things AppHost reads via `Environment.GetEnvironmentVariable`. **Save and restore originals** in cleanup for hermeticity.
 3. **Pass parameters via `configureBuilder`, not env-var mutation.** AppHost binds `Parameters:*` through `IConfiguration` - write them into `hostSettings.Configuration` so test isolation stays clean.
 4. **Conditional Functions inclusion.** Detect `func.exe` once in fixture before startup. Set the include flag there, not per test class. Tests that require Functions call `Assert.Inconclusive` when the resource is absent.
-5. **Timeout mandatory.** `[Timeout]` on every Aspire integration test method (`300000` for full multi-service, `120000` for single-service).
+5. **Timeout mandatory.** `[Timeout]` on every Aspire integration test method (`300000` for full multi-service, `120000` for single-service). The fixture's build/start/health-gate deadline is **separate** and configurable via `{APP}_ASPIRE_STARTUP_TIMEOUT_SECONDS` (default 600 s) - cold SQL + storage containers (first image pull, post-prune) routinely exceed a hardcoded 5 min.
 6. **`local.settings.json` override trap.** Hardcoded DB connection strings in Functions `local.settings.json` beat Aspire injection. Remove them (keep safe Azurite-style values only).
 7. **Keep `using Aspire.Hosting.Testing;`** in every file calling `CreateHttpClient()` or `GetConnectionStringAsync()` (they are extension methods).
 
@@ -434,6 +473,9 @@ public static async Task Cleanup(TestContext context)
 - [ ] `[AssemblyInitialize]` does not throw; infrastructure failures mark dependent tests `Inconclusive`.
 - [ ] `Test.Integration` (component) references no `AppHost`/`Aspire.Hosting.Testing`; tests instantiate one class vs one standalone Testcontainer and guard on `StartupError` (Inconclusive on failure).
 - [ ] `Test.Aspire` (mesh) starts the graph lazily via `EnsureStartedAsync` (`[ClassInitialize]`); `AspireMeshLifecycle.[AssemblyCleanup]` stops it once, bounded by `.WaitAsync(CleanupTimeout)`.
+- [ ] Mesh tests carry `[TestCategory("Aspire")]` (not `Integration`); startup deadline reads `{APP}_ASPIRE_STARTUP_TIMEOUT_SECONDS`.
+- [ ] Aspire/WasmUI/Mobile tiers are default-on with false-only opt-out and self-mark `Inconclusive` (precise message) when prerequisites are missing.
+- [ ] `dotnet test --filter "TestCategory!=Load"` is documented as the canonical local "all normal tests" run.
 - [ ] Mesh tests are `[DoNotParallelize]`; no endpoint-contract tests in either integration project.
 - [ ] Every test class has a class-level `<summary>` (scope / tier + why / quirks).
 - [ ] Aspire host passes `Parameters:*` via `configureBuilder.hostSettings.Configuration`, not env vars.

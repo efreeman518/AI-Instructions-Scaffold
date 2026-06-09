@@ -6,11 +6,11 @@ When generating code from templates and skill files, substitute these placeholde
 
 | Token | Source | Notes |
 |-------|--------|-------|
-| `{Project}` | `ProjectName` | Primary project and namespace prefix. |
-| `{ProjectName}` | `ProjectName` | Markdown/document templates that should display the full project name. Prefer `{Project}` for code templates. |
-| `{Org}` | `OrganizationName` | Optional org prefix. If present, full namespace becomes `{Org}.{Project}`. |
-| `{App}` | Derived from `{Project}` | Application namespace prefix. Used in `{App}DbContextTrxn` and `{App}DbContextQuery`. |
-| `{Host}` | Derived from `{Project}` or `{Org}.{Project}` | Host project prefix. Used in `{Host}.Api`, `{Host}.Gateway`, `{Host}.Scheduler`. |
+| `{Project}` | `ProjectName` | Primary project and namespace prefix. Renders empty as a name prefix when `projectNamePrefix: none` (see Derivation Rule 8). |
+| `{ProjectName}` | `ProjectName` | Markdown/document templates that should display the full project name. Always the literal `ProjectName`, never collapsed. Prefer `{Project}` for code templates. |
+| `{Org}` | `OrganizationName` | Optional org prefix. If present (and `projectNamePrefix: solution-name`), full namespace becomes `{Org}.{Project}`. Not applied when `projectNamePrefix: none`. |
+| `{App}` | Derived from `{Project}` | Application type prefix. Used in `{App}DbContextTrxn` and `{App}DbContextQuery`. Renders empty when `projectNamePrefix: none` (-> `DbContextTrxn` / `DbContextQuery`). |
+| `{Host}` | Derived from `{Project}` or `{Org}.{Project}` | Host project prefix. Used in `{Host}.Api`, `{Host}.Gateway`, `{Host}.Scheduler`. Renders empty as a name prefix when `projectNamePrefix: none`. |
 | `{Entity}` | Entity `name` | Entity class, file, and method name. |
 | `{entity}` | Entity `name` with lower first character | Local variables, parameters, route values. |
 | `{Entities}` | Pluralized entity name | Display and feature grouping name. |
@@ -22,7 +22,7 @@ When generating code from templates and skill files, substitute these placeholde
 | `{Children}` | Child collection name | Use when the collection name differs from `{ChildEntity}s`. |
 | `{Feature}` | Defaults to `{Entities}` | Uno feature folder/service grouping. |
 | `{Gateway}` | Same as `{Host}` | Compose gateway project name as `{Gateway}.Gateway`. |
-| `{SolutionName}` | Derived from `{Org}.{Project}` or `{Project}` | `.slnx` file name and solution prefix. |
+| `{SolutionName}` | Derived from `{Org}.{Project}` or `{Project}` | `.slnx` file name and solution prefix. **Always** derived this way - never collapsed by `projectNamePrefix`, so the solution file stays `{Project}.slnx` even when project names are bare. |
 | `{entra-tenant-id}` | `authProvider` config | Azure Entra tenant GUID. |
 | `{api-client-id}` | `authProvider` config | API app registration client ID. |
 | `{Agent}` | Agent `name` | Agent class/service prefix. |
@@ -55,6 +55,9 @@ When generating code from templates and skill files, substitute these placeholde
 5. **Pluralization** - use standard English pluralization rules. `TodoItem` -> `TodoItems`, `Category` -> `Categories`, `Reminder` -> `Reminders`.
 6. **Route segments** - for URL paths, use the lowercase/kebab-case form. Multi-word entities: `TodoItem` -> `todo-item`, `TeamMember` -> `team-member`.
 7. **Aspire project references** - In `AppHost/AppHost.cs`, `builder.AddProject<Projects.X>()` uses the C# identifier form of the `.csproj` path, where dots and hyphens become underscores. For example: project `TaskFlow.Api` -> `Projects.TaskFlow_Api`. This is automatic - just be aware when reading or writing AppHost code.
+8. **`projectNamePrefix`** (Phase 1 `domain-specification.yaml`, default `solution-name`) - decides whether `{Project}`, `{Host}`, `{Gateway}`, and `{App}` carry the prefix when used as a **name prefix** (project name, folder, root namespace, or type-name prefix).
+   - `solution-name` (default): every rule above applies unchanged. Layout matches the reference app - `{Project}.Domain.Model`, `{Host}.Api`, `{Gateway}.Gateway`, `{App}DbContextTrxn`.
+   - `none`: as a name prefix, `{Project}.`, `{Host}.`, and `{Gateway}.` render as empty and `{App}` renders as empty. Projects, folders, and root namespaces become bare: `Domain.Model`, `Application.Services`, `Infrastructure.Data`, `Api`, `Bootstrapper`, `DbContextTrxn`, `DbContextQuery`. `OrganizationName` / `{Org}` is **not** applied. **Unaffected by `none`:** `{SolutionName}` (the `.slnx` is still `{Project}.slnx`, or `{Org}.{Project}.slnx` if an org was given) and `{ProjectName}` in document templates. Caveat: bare top-level namespaces are generic and can collide when an assembly is consumed alongside other solutions - acceptable per the Phase 1 decision, but record it.
 
 ---
 

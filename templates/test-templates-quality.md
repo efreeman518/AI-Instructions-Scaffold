@@ -64,7 +64,7 @@ public class ApplicationDependencyTests : BaseTest
 
 ## E2E Tests (Playwright)
 
-> **Uno WASM vs MudBlazor:** The template below uses standard HTML selectors (MudBlazor / server-rendered Blazor). For Uno WASM targets, use the boot-once shared-page pattern and coordinate-click helpers in [../skills/testing-quality.md](../skills/testing-quality.md) section Hosted Browser UI.
+> **Uno WASM vs MudBlazor:** The template below uses standard HTML selectors (MudBlazor / server-rendered Blazor). For Uno WASM with the managed-DOM renderer, use the boot-once shared-page pattern and coordinate-click helpers in [../skills/testing-quality.md](../skills/testing-quality.md) section Hosted Browser UI. For Uno WASM that renders to a **Skia canvas** (no per-control DOM), use the state bridge in [uno-wasm-test-bridge-template.md](uno-wasm-test-bridge-template.md) and tag tests `[TestCategory("WasmUI")]`.
 >
 > **Data-assertion rule:** Never assert specific row counts, page counts, or seeded titles (e.g. `"Showing 1 to 10 of 14"`, `"Build dashboard UI"`). These break against shared dev databases with accumulating test data. Assert structural UI strings only: headers, labels, empty-state text.
 >
@@ -78,7 +78,7 @@ public class ApplicationDependencyTests : BaseTest
 [assembly: Parallelize(Workers = 4, Scope = ExecutionScope.MethodLevel)]
 
 [TestClass]
-[TestCategory("E2E")]
+[TestCategory("PlaywrightUI")]
 public class {Entity}CrudTests : PageTest
 {
     private static readonly string BaseUrl =
@@ -177,8 +177,10 @@ dotnet build src/UI/{Project}.Uno/{Project}.Uno.csproj -p:TargetFrameworkOverrid
 ```
 
 - Mark tests `[TestCategory("MobileUI")]`.
-- Default `TASKFLOW_MOBILE_TESTS_ENABLED` / `{APP}_MOBILE_TESTS_ENABLED` to `false`; when disabled, tests should log setup guidance and return without touching Appium.
+- **Generated only when `includeUnoUI` was selected; then runs by default with a local false-only opt-out** (see [Capability-Gated Test Tiers](../skills/testing.md#capability-gated-test-tiers-the-early-decision-drives-the-rest)): treat only a case-insensitive `{APP}_MOBILE_TESTS_ENABLED=false` as opt-out. When opted out, or when no emulator/device is online or Appium is not listening, mark `Assert.Inconclusive` with a precise setup message (run `eng/test/start-local-test-stack.ps1`) - never red, never a silent skip. Do not require an enable flag set to `true`.
 - Android smoke acceptance: App launches, native surface renders, screenshot is non-empty, and page source can be captured for triage.
+- Prefer screenshots and page-source artifacts for verification - canvas-rendered Uno controls may not expose rich accessibility nodes.
+- Put a class-header comment with the exact manual run command and prerequisites (start `eng/test/start-local-test-stack.ps1`; opt out with `{APP}_MOBILE_TESTS_ENABLED=false`), per the [class-doc convention](../skills/testing.md#test-class-documentation-convention).
 - iOS simulator/device execution is macOS-only. Windows may compile shared test code and record iOS execution as blocked unless a Mac host or macOS CI runner exists.
 
 ---

@@ -15,7 +15,13 @@
     "OrganizationName": {
       "type": "string",
       "pattern": "^$|^[A-Z][a-zA-Z0-9]*$",
-      "description": "Optional namespace prefix (PascalCase). Empty string means no prefix - the documented leave-blank convention."
+      "description": "Optional namespace prefix (PascalCase) applied to host/UI projects. Empty string means no prefix - the documented leave-blank convention."
+    },
+    "projectNamePrefix": {
+      "type": "string",
+      "enum": ["solution-name", "none"],
+      "default": "solution-name",
+      "description": "Whether generated project names, folders, and root namespaces carry the solution-name prefix. 'solution-name' (default, matches the TaskFlow reference app) -> {Project}.Domain.Model, {Host}.Api. 'none' -> bare names and namespaces (Domain.Model, Api, DbContextTrxn); OrganizationName is not applied. The solution file is always named {SolutionName}.slnx regardless of this setting. Confirmed in Phase 1; see ai/placeholder-tokens.md Derivation Rules."
     },
     "multiTenant": { "type": "boolean", "default": true },
     "tenantIsolation": {

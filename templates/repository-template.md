@@ -2,6 +2,8 @@
 
 > **When to read:** Phase 5a, when generating the Trxn (mutations) + Query (reads) repository pair for an EF-backed entity, plus their interfaces.
 > **Skip if:** Entity has no mutations (read-only projection); persistence is non-EF (Cosmos/Table/Blob - use `azure-data-storage.md`); repository pair already exists.
+>
+> **Read [Generic Repository Pair](#generic-repository-pair-repositorycontractstyle-hybrid--generic-only) FIRST.** Under `repositoryContractStyle: hybrid`/`generic-only` (the default is `hybrid`), CRUD-only / append-only / join entities use the shared open-generic pair and get **no** per-entity repository - the bespoke per-entity classes below are only for entities with real read/write logic (multi-include loads, `UpdateFromDto` child sync, paged `Search`, polymorphic/hierarchy/multi-key queries).
 
 | | |
 |---|---|
@@ -186,6 +188,102 @@ public interface I{Entity}RepositoryQuery
 }
 ```
 
+## Generic Repository Pair (`repositoryContractStyle: hybrid` / `generic-only`)
+
+> **When to use:** an entity with **no bespoke read/write logic** - join entities, append-only logs,
+> simple CRUD. Resolve the shared generic pair instead of generating the per-entity classes above.
+
+`IRepositoryBase` already exposes generic-method CRUD/query (`Create<T>(ref T)`, `Delete<T>(T)`,
+`GetEntityAsync<T>(...)`, `QueryPageProjectionAsync<T,TProject>(...)`, `SaveChangesAsync(...)`), so the
+generic contracts add only entity-typed convenience. They belong in `<packagePrefix>.Data.Contracts` /
+`<packagePrefix>.Data` (canonical `EF.*` shown):
+
+```csharp
+// EF.Data.Contracts - open-generic contracts
+public interface IRepositoryTrxn<TEntity> : IRepositoryBase where TEntity : class
+{
+    Task<TEntity?> GetAsync(Guid id, CancellationToken ct = default);                // tracked
+}
+public interface IRepositoryQuery<TEntity> : IRepositoryBase where TEntity : class
+{
+    Task<TEntity?> GetAsync(Guid id, CancellationToken ct = default);                // no-tracking
+    Task<IReadOnlyList<TEntity>> ListAsync(Expression<Func<TEntity, bool>> predicate, CancellationToken ct = default);
+}
+
+// EF.Data - generic impls over RepositoryBase (audit id = string, tenant id = Guid?)
+public class RepositoryTrxn<TEntity, TDbContext>(TDbContext db)
+    : RepositoryBase<TDbContext, string, Guid?>(db), IRepositoryTrxn<TEntity>
+    where TEntity : EntityBase where TDbContext : DbContextBase<string, Guid?>
+{
+    public async Task<TEntity?> GetAsync(Guid id, CancellationToken ct = default)
+        => await GetEntityAsync<TEntity>(true, filter: e => e.Id == id, cancellationToken: ct)
+            .ConfigureAwait(ConfigureAwaitOptions.None);
+}
+public class RepositoryQuery<TEntity, TDbContext>(TDbContext db)
+    : RepositoryBase<TDbContext, string, Guid?>(db), IRepositoryQuery<TEntity>
+    where TEntity : EntityBase where TDbContext : DbContextBase<string, Guid?>
+{
+    public async Task<TEntity?> GetAsync(Guid id, CancellationToken ct = default)
+        => await GetEntityAsync<TEntity>(false, filter: e => e.Id == id, cancellationToken: ct)
+            .ConfigureAwait(ConfigureAwaitOptions.None);
+    public async Task<IReadOnlyList<TEntity>> ListAsync(Expression<Func<TEntity, bool>> predicate, CancellationToken ct = default)
+        => await DB.Set<TEntity>().AsNoTracking().Where(predicate).ToListAsync(ct)
+            .ConfigureAwait(ConfigureAwaitOptions.None);
+}
+```
+
+> **Delivery:** these belong in the `<packagePrefix>.Data` / `<packagePrefix>.Data.Contracts` packages.
+> In the EF.Packages reference app they are staged in `src/Packages/EF.Data2` + `EF.Data.Contracts2`
+> (declared in the destination namespaces `EF.Data` / `EF.Data.Contracts` so the upstream merge is
+> zero-churn) - see [../support/ef-packages-reference.md](../support/ef-packages-reference.md). When
+> `packageStrategy: local`/`hybrid` and the feed does not yet supply them, generate them under
+> `src/Packages/<packagePrefix>.Data2` and add to `localPackageLayers`.
+
+### Open-generic DI registration (closed-over-context subclass)
+
+`RepositoryBase` needs the concrete `TDbContext`, so the generic impls carry two type parameters and
+cannot be registered as a one-arg open generic directly. Generate a one-arg subclass per app that
+closes over each context, then register the open generic against it - once, serving every
+generic-coverable entity:
+
+```csharp
+// Infrastructure.Repositories/{App}GenericRepositories.cs
+public sealed class {App}RepositoryTrxn<TEntity>({App}DbContextTrxn db)
+    : RepositoryTrxn<TEntity, {App}DbContextTrxn>(db) where TEntity : EntityBase { }
+public sealed class {App}RepositoryQuery<TEntity>({App}DbContextQuery db)
+    : RepositoryQuery<TEntity, {App}DbContextQuery>(db) where TEntity : EntityBase { }
+
+// Bootstrapper/RegisterServices.Database.cs
+services.AddScoped(typeof(IRepositoryTrxn<>), typeof({App}RepositoryTrxn<>));
+services.AddScoped(typeof(IRepositoryQuery<>), typeof({App}RepositoryQuery<>));
+```
+
+Consumers (services, CQRS handlers) inject `IRepositoryTrxn<{Entity}>` / `IRepositoryQuery<{Entity}>`
+and call `GetAsync(id)`, `ListAsync(predicate)`, `Create(ref e)`, `Delete(e)`, `SaveChangesAsync(...)`.
+
+### Split aggregate: bespoke read extends the generic pair
+
+When an aggregate's write side is pure CRUD but its read side needs paged `Search`, fold the write
+side into the generic pair and write a slim bespoke query repo that **extends** the generic so
+get/list stay inherited (recommended shape for new code):
+
+```csharp
+public interface I{Entity}RepositoryQuery : IRepositoryQuery<{Entity}>
+{
+    Task<PagedResponse<{Entity}Dto>> Search{Entity}sAsync(SearchRequest<{Entity}SearchFilter> request, CancellationToken ct = default);
+}
+public class {Entity}RepositoryQuery({App}DbContextQuery db)
+    : RepositoryQuery<{Entity}, {App}DbContextQuery>(db), I{Entity}RepositoryQuery   // inherits GetAsync/ListAsync
+{ /* Search{Entity}sAsync via QueryPageProjectionAsync */ }
+
+services.AddScoped<I{Entity}RepositoryQuery, {Entity}RepositoryQuery>();             // alongside the open-generic pair
+```
+
+**Reference-app proof:** `TaskItemTag` (pure join) resolves the generic pair on both sides with no
+per-entity class; `Tag` / `Comment` / `ChecklistItem` fold their pure-CRUD write side into the generic
+pair (bespoke Trxn interfaces deleted) and keep a bespoke `Search`-bearing query repo. See
+`../AI-Instructions-ReferenceApp/src/Packages/EF.Data2` + `src/Infrastructure/TaskFlow.Infrastructure.Repositories/TaskFlowGenericRepositories.cs`.
+
 ## Critical: Query Repos MUST Use QueryPageProjectionAsync
 
 **Anti-pattern (manual paging):**
@@ -258,7 +356,7 @@ The 2-param overload retries on `DbUpdateConcurrencyException` using the specifi
 - **UpdateFromDto** delegates to `DB.UpdateFromDto(entity, dto, relatedDeleteBehavior)` - a DbContext extension method (see updater-template.md)
 - Projectors (`{Entity}Mapper.Projection` by default, `{Entity}Mapper.ProjectorSearch` for intentional lean grid shapes) used in query repo for efficient SQL translation
 - No `SaveChangesAsync` override on query repo - read-only by design
-- Entity-specific repositories for complex queries; `GenericRepositoryTrxn/Query` for simple CRUD
+- Entity-specific repositories only for bespoke read/write logic; the open-generic `IRepositoryTrxn<T>`/`IRepositoryQuery<T>` pair (see [Generic Repository Pair](#generic-repository-pair-repositorycontractstyle-hybrid--generic-only)) covers simple CRUD / join / append-only entities under `repositoryContractStyle: hybrid`/`generic-only`
 - Use `ConfigureAwait(ConfigureAwaitOptions.None)` in repository methods (library code)
 
 ---

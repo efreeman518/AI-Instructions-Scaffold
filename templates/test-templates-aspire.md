@@ -54,8 +54,15 @@ namespace Test.Aspire;
 /// </summary>
 internal static class AspireTestHost
 {
-    /// <summary>Per-call deadline applied via <c>.WaitAsync(DefaultTimeout, ct)</c>. Sized for slow CI cold-starts.</summary>
-    internal static readonly TimeSpan DefaultTimeout = TimeSpan.FromMinutes(5);
+    /// <summary>
+    /// Per-call deadline applied via <c>.WaitAsync(DefaultTimeout, ct)</c>. Sized for slow cold-starts -
+    /// SQL + storage containers on a cold Docker (first image pull, post-prune) can exceed 5 min.
+    /// Override with the {APP}_ASPIRE_STARTUP_TIMEOUT_SECONDS env var; defaults to 600 s.
+    /// </summary>
+    internal static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(
+        int.TryParse(Environment.GetEnvironmentVariable("{APP}_ASPIRE_STARTUP_TIMEOUT_SECONDS"), out var s) && s > 0
+            ? s
+            : 600);
 
     /// <summary>Cleanup deadline. StopAsync should return promptly; the bound prevents a stuck shutdown.</summary>
     private static readonly TimeSpan CleanupTimeout = TimeSpan.FromMinutes(1);
@@ -204,6 +211,67 @@ public class AspireMeshLifecycle
 4. **Per-call `.WaitAsync(DefaultTimeout, ct)`** on every async Aspire call. Not a single umbrella CTS.
 5. **`WaitForResourceHealthyAsync(name, ct)` before talking to a resource.** Running != ready.
 6. **`[AssemblyCleanup]` lives in `AspireMeshLifecycle`** - bound `StopAsync` with `.WaitAsync(CleanupTimeout)` and catch `TimeoutException` so a stuck teardown does not hang CI.
+7. **Distinct `Aspire` category** - tag every mesh test `[TestCategory("Aspire")]`, never `Integration`. The component tier owns `Integration`; sharing the category would boot the whole graph on a `--filter TestCategory=Integration` run, defeating the split.
+8. **Configurable startup timeout** - `DefaultTimeout` reads `{APP}_ASPIRE_STARTUP_TIMEOUT_SECONDS` (default 600 s) so cold containers (first image pull, post-prune) do not time out at a hardcoded 5 min.
+9. **Default-on, false-only opt-out** - the mesh tier is discoverable and runs by default so Test Explorer surfaces it. Honour `{APP}_RUN_ASPIRE_TESTS=false` and a missing-Docker/AppHost preflight by marking dependent tests `Assert.Inconclusive` with a precise message - never red. Fast CI lanes set the opt-out; they do not rely on an enable flag.
+10. **Test containers are ephemeral; the SDK owns teardown.** The AppHost gates `ContainerLifetime.Persistent` + `WithDataVolume` on `!IsAspireTesting()` (see [../skills/aspire.md](../skills/aspire.md), Rules), so the graph this fixture boots uses **ephemeral** containers. `AspireApp.StopAsync()`/`DisposeAsync()` in `AspireTestHost.StopAsync` removes **exactly** the containers this run started. **Never** add a `docker rm` sweep filtered by image, name prefix, or the generic `com.microsoft.dotnet.aspire.container.name` label - that deletes other projects' and sessions' containers, including intentional persistent stacks. The mesh tier needs no Docker cleanup beyond `DisposeAsync`.
+
+### Cleanup: ephemeral-by-default, per-run label only as a fallback
+
+The default needs no Docker commands at all - ephemeral test containers are torn down by `DisposeAsync` (non-negotiable 10). Only if a project **must** keep persistent lifetime under test (rare - e.g. a slow Cosmos preview emulator it reuses across runs) do you add explicit cleanup, and it must be scoped to this run's exact ownership, never a generic sweep:
+
+1. Generate one run id in the test host.
+2. Pass it to the AppHost through `hostSettings.Configuration` (the same channel as `Parameters:sql-password` in `StartAsync`), e.g. `hostSettings.Configuration["Parameters:test-run-id"] = runId;`.
+3. In the AppHost, under `IsAspireTesting()`, stamp each test-owned container: `c.WithContainerRuntimeArgs("--label", $"{app}.aspire.test-run-id={runId}")`.
+4. In `AspireMeshLifecycle.[AssemblyCleanup]`, **after** `StopAsync`/`DisposeAsync`, remove only the matching run: `docker ps -aq --filter "label={app}.aspire.test-run-id=<runId>"` -> `docker rm -f`.
+
+Do **not** sweep old stopped containers unless the developer explicitly asks for machine-level Docker cleanup. Removing by exact run id leaves other projects, prior sessions, and intentional persistent containers untouched.
+
+### Opt-out + preflight (default-on, Inconclusive on missing prereqs)
+
+The mesh tier is default-on so Test Explorer discovers it. It must degrade to `Inconclusive` - never red - when the opt-out is set or Docker/AppHost is unavailable. Put the decision in one helper and call it from each mesh class's `[ClassInitialize]` before `EnsureStartedAsync`:
+
+```csharp
+internal static class MeshPreflight
+{
+    /// <summary>Returns a reason to skip (Inconclusive), or null when the mesh tier should run.</summary>
+    public static string? SkipReason()
+    {
+        if (string.Equals(Environment.GetEnvironmentVariable("{APP}_RUN_ASPIRE_TESTS"), "false",
+                StringComparison.OrdinalIgnoreCase))
+            return "{APP}_RUN_ASPIRE_TESTS=false - mesh tier opted out.";
+
+        if (!DockerAvailable())
+            return "Docker Desktop is not running. Start Docker, then run " +
+                   "eng/test/start-local-test-stack.ps1, or set {APP}_RUN_ASPIRE_TESTS=false to skip.";
+
+        return null;
+    }
+
+    private static bool DockerAvailable()
+    {
+        try
+        {
+            using var p = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+                "docker", "info") { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false });
+            p!.WaitForExit(5000);
+            return p.HasExited && p.ExitCode == 0;
+        }
+        catch { return false; }
+    }
+}
+
+// In each mesh test class:
+[ClassInitialize]
+public static async Task ClassInit(TestContext context)
+{
+    var skip = MeshPreflight.SkipReason();
+    if (skip is not null) { Assert.Inconclusive(skip); return; }
+    await AspireTestHost.EnsureStartedAsync(context);
+}
+```
+
+`Assert.Inconclusive` in `[ClassInitialize]` marks the class's tests inconclusive without failing the run. The message is precise and actionable - no vague "skipped".
 
 ---
 
@@ -231,9 +299,13 @@ namespace Test.Aspire;
 /// two Aspire resources participate ({app}api for the request, TableStorage1 for verification), both must
 /// be Healthy. The polling helper tolerates eventual consistency between request completion and table
 /// visibility.
+/// Manual run (Docker Desktop must be running; start the local stack first - see
+/// eng/test/start-local-test-stack.ps1):
+///   rtk dotnet test src/Test/Test.Aspire/Test.Aspire.csproj --filter TestCategory=Aspire
+/// Set {APP}_RUN_ASPIRE_TESTS=false to skip the mesh tier (e.g. in fast CI lanes).
 /// </summary>
 [TestClass]
-[TestCategory("Integration")]
+[TestCategory("Aspire")]
 [DoNotParallelize]
 public class ApiAuditPipelineTests
 {
@@ -388,6 +460,10 @@ Aspire's emulators (Service Bus, Azurite) are best-effort under `DistributedAppl
 - [ ] Every async Aspire call has its own `.WaitAsync(DefaultTimeout, ct)`; tests gate on `WaitForResourceHealthyAsync`.
 - [ ] `Parameters:*` passed via `configureBuilder.hostSettings.Configuration`; env vars scoped + restored.
 - [ ] Multi-resource pipeline tests assert against the **downstream persistent effect** (audit row, projection document), not the bus/queue.
+- [ ] Every mesh test carries `[TestCategory("Aspire")]` (not `Integration`); `--filter TestCategory=Integration` boots **no** graph.
+- [ ] `DefaultTimeout` reads `{APP}_ASPIRE_STARTUP_TIMEOUT_SECONDS` (default 600 s).
+- [ ] Mesh classes preflight via `MeshPreflight.SkipReason()` -> `Assert.Inconclusive` on `{APP}_RUN_ASPIRE_TESTS=false` or missing Docker (never red).
+- [ ] Test-booted containers are **ephemeral** (AppHost gates persistent lifetime + data volume on `!IsAspireTesting()`); cleanup is `DisposeAsync` only - no `docker rm` sweep by image, name prefix, or the generic `com.microsoft.dotnet.aspire.container.name` label.
 - [ ] Running `Test.Aspire` boots the graph **once**; running `Test.Integration` boots **no** graph.
 
 ---

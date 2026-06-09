@@ -35,9 +35,14 @@ public abstract class {App}DbContextBase(DbContextOptions options)
 ```csharp
 private static void AddDatabaseServices(IServiceCollection services, IConfiguration config)
 {
-    // Repository registrations (scoped, per-entity, Trxn + Query pairs)
-    services.AddScoped<I{Entity}RepositoryQuery, {Entity}RepositoryQuery>();
-    services.AddScoped<I{Entity}RepositoryTrxn, {Entity}RepositoryTrxn>();
+    // Repository registrations. Under repositoryContractStyle: hybrid/generic-only, register the
+    // open-generic pair ONCE (serves every generic-coverable entity via the closed-over-context
+    // subclasses) and add bespoke repos only where read/write logic earns a per-aggregate contract.
+    services.AddScoped(typeof(IRepositoryTrxn<>), typeof({App}RepositoryTrxn<>));
+    services.AddScoped(typeof(IRepositoryQuery<>), typeof({App}RepositoryQuery<>));
+    services.AddScoped<I{Entity}RepositoryQuery, {Entity}RepositoryQuery>();   // bespoke only
+    services.AddScoped<I{Entity}RepositoryTrxn, {Entity}RepositoryTrxn>();     // bespoke only
+    // (repositoryContractStyle: per-entity - omit the open generics and register a pair per entity.)
 
     // Interceptors
     services.AddTransient<AuditInterceptor<string, Guid?>>();
@@ -223,7 +228,7 @@ public class LoadCacheStartup(
     IConfiguration config,
     ILogger<LoadCacheStartup> logger,
     IFusionCacheProvider cache,
-    IGenericRepositoryQuery repoQuery) : IStartupTask
+    IRepositoryQuery<{Entity}> repoQuery) : IStartupTask
 {
     public async Task ExecuteAsync(CancellationToken cancellationToken = default)
     {

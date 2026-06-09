@@ -124,14 +124,18 @@ React/Vite SPAs should use the normal Playwright page fixture unless the app has
 
 If using Node Playwright and a shell wrapper mangles `npx`, invoke the local CLI directly with `node node_modules/@playwright/test/cli.js`.
 
-### Uno WASM: DOM/Click Strategy
+### Uno WASM: DOM/Click Strategy (managed-DOM renderer)
 
-Uno WASM often needs coordinate-click interaction.
+Uno WASM with the **managed-DOM renderer** often needs coordinate-click interaction.
 
 - Query Uno elements by attributes like `xamltype` or `xamlautomationid`.
 - Compute center with `getBoundingClientRect()`.
 - Use `page.mouse.click(x, y)` (or down/up) with retry loop.
 - Filter target text with known prefix (for example `E2E-`) to avoid collisions.
+
+### Uno WASM: Canvas Test Bridge (Skia renderer)
+
+If the app paints to a single Skia `<canvas>`, there are no per-control DOM nodes - DOM/text/role selectors and coordinate-clicking all fail structurally. Scaffold a browser-only test bridge that publishes app state to `globalThis.__{app}TestState` (query-string gated, default-off, real Gateway local auth) and have Playwright wait on state. Tag these `[TestCategory("WasmUI")]`. Full pattern: [../templates/uno-wasm-test-bridge-template.md](../templates/uno-wasm-test-bridge-template.md). Detect the renderer with `document.querySelectorAll('[xamltype]').length` - `0` plus a lone `<canvas>` means Skia.
 
 ### Uno WASM: Slow Router After Many Navigations
 
@@ -159,6 +163,15 @@ await expect(dialog).toBeVisible({ timeout: 15_000 });
 ### Playwright Config Output Location
 
 Set `outputDir` under `Test/Test.PlaywrightUI`, not under app project directories.
+
+## Visual Studio & VS Code Test Explorer
+
+All test projects must be registered in the `.slnx` so both Test Explorers discover them. Generate a short test README (or top-of-class comments) stating the local workflow. **Only include the env vars, tasks, and stack steps for tiers this scaffold actually generated** - an `api-only` / no-UI scaffold has no Aspire/WASM/Mobile rows, so do not document their env vars or tasks (see [Capability-Gated Test Tiers](testing.md#capability-gated-test-tiers-the-early-decision-drives-the-rest)).
+
+- **Start the stack once per session.** When the scaffold has Aspire/WASM/mobile tiers, run `eng/test/start-local-test-stack.ps1` ([../templates/local-test-stack-template.md](../templates/local-test-stack-template.md)) before those tests - it starts the AppHost and provisions browsers/emulator/Appium.
+- **Filter by category in Test Explorer:** among the tiers present, plus exclude `Load`. The canonical local run is `dotnet test --filter "TestCategory!=Load"`.
+- **Opt out with false-only env vars** when you do not want a *generated* heavy tier locally - only the vars for present tiers exist: `{APP}_RUN_ASPIRE_TESTS=false` (if Aspire), `{APP}_WASM_TESTS_ENABLED=false` (if Uno WASM), `{APP}_MOBILE_TESTS_ENABLED=false` (if Uno mobile). Default (unset) runs the tier; it self-marks `Inconclusive` if its prerequisite is missing (see [Capability-Gated Test Tiers](testing.md#capability-gated-test-tiers-the-early-decision-drives-the-rest)).
+- **Generate `.vscode/tasks.json`** with tasks for the present tiers only (start stack, build WASM, install Playwright Chromium, build Android APK, run all non-load, run Aspire/WASM/Mobile). Task definitions are in the [local test stack template](../templates/local-test-stack-template.md).
 
 ## Verification Checklist
 

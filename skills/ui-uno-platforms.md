@@ -132,6 +132,16 @@ Do **not** change the launch port to work around a stuck process - find and kill
 
 After any rebuild, `WasmAppHost` serves a new `package_<hash>/` directory. The old hash is instantly stale. Always open a **new browser tab** to the HTTPS origin - never reload an existing tab. Existing tabs will 404 all their `package_*` asset requests until a full address-bar navigation occurs.
 
+### Serve Fresh WASM Output
+
+A standalone WASM server (the one Playwright targets) must serve static assets from the **current** `bin/<config>/net{X}.0-browserwasm/wwwroot` output, not a stale `bin/<config>/browser-wasm/wwwroot` folder left by an older Uno/SDK build. When both exist, builds and test runs disagree about which assets are live and Playwright loads yesterday's app. Build the WASM target explicitly before browser tests, then point the server at the fresh output:
+
+```powershell
+rtk dotnet build src/UI/{Project}.Uno/{Project}.Uno.csproj -f net{X}.0-browserwasm -p:EnableUnoWasm=true
+```
+
+If a `browser-wasm/` sibling lingers, delete it so it cannot win asset resolution. The local test stack script ([../templates/local-test-stack-template.md](../templates/local-test-stack-template.md)) does this build step for you.
+
 ---
 
 ## Playwright Testing Against Uno WASM
@@ -169,7 +179,16 @@ Set `--timeout=120000` on any suite containing Uno WASM cold-start:
 "test:full": "npx playwright test --retries=0 --max-failures=4 --timeout=120000"
 ```
 
-### Coordinate-Click for Invisible Elements
+### Renderer Decides the Strategy
+
+Uno WASM ships two renderers and they need different test strategies:
+
+- **Managed/native DOM renderer** - controls map to DOM elements with `xamltype` / `xamlautomationid`. Use the coordinate-click approach below.
+- **Skia canvas renderer** - the app paints into a single `<canvas>` with **no per-control DOM**. DOM/text/role selectors return nothing and coordinate-clicking by scanning DOM text is impossible. Use the WASM canvas test bridge instead (see below); do not try to coordinate-click a canvas.
+
+Detect once: in the running app's console run `document.querySelectorAll('[xamltype]').length`. `0` with a lone `<canvas>` present means Skia.
+
+### Coordinate-Click for Invisible Elements (managed-DOM renderer)
 
 Standard Playwright visibility checks and `.click()` fail on Uno's canvas/shadow DOM. Use `getBoundingClientRect()` via `page.evaluate()` and `page.mouse.click()`. Retry in a loop since elements render asynchronously:
 
@@ -191,6 +210,10 @@ for (let attempt = 0; attempt < 20; attempt++) {
 ```
 
 Filter by a known text prefix (e.g. `"E2E-"`) to avoid hitting status chips or other `<p>` elements that overlap the target.
+
+### Canvas Test Bridge (Skia renderer)
+
+When the app paints to a Skia canvas, there is nothing to coordinate-click. Scaffold a **browser-only test bridge** that publishes app state to `globalThis.__{app}TestState` and let Playwright wait on state, not DOM. The bridge is query-string gated (`?{app}TestMode=true`), default-off, browser-target only, and uses **real** Gateway local auth (no injected token). Full shape, contract, and a state-polling Playwright test: [../templates/uno-wasm-test-bridge-template.md](../templates/uno-wasm-test-bridge-template.md). Tag these tests `[TestCategory("WasmUI")]`.
 
 ### Slow Router After Many Navigations
 
@@ -219,10 +242,10 @@ appium driver doctor uiautomator2
 appium
 ```
 
-Run mobile UI tests as opt-in tests. Do not make device tests part of the default `dotnet test` gate unless the runner guarantees an emulator/device and Appium server.
+`Test.Mobile` exists only when `includeUnoUI` was selected in Phase 2 (see [Capability-Gated Test Tiers](testing.md#capability-gated-test-tiers-the-early-decision-drives-the-rest)). When it is generated, it **runs by default** with a local false-only opt-out: discoverable in Test Explorer, self-marking `Assert.Inconclusive` - never red - when no emulator/device is online, Appium is not listening, or `{APP}_MOBILE_TESTS_ENABLED=false`. The `Inconclusive` message must name the missing prerequisite and the fix (run `eng/test/start-local-test-stack.ps1`). Do not require an enable flag to turn the tier on.
 
 ```powershell
-$env:{APP}_MOBILE_TESTS_ENABLED = "true"
+$env:{APP}_MOBILE_TESTS_ENABLED = "false"   # opt OUT; default (unset) runs the suite
 $env:{APP}_MOBILE_PLATFORM = "Android"
 $env:{APP}_ANDROID_APP_PATH = "src/UI/{Project}.Uno/bin/Debug/$(LatestStableTfm)-android/{package-id}-Signed.apk"
 dotnet test src/Test/Test.Mobile/Test.Mobile.csproj --filter TestCategory=MobileUI
@@ -294,6 +317,24 @@ If the app crashes before app code runs, collect logcat and classify the failure
 - `No assemblies found ... Assuming this is part of Fast Deployment`: APK was built/installed with fast-deployment assumptions. Fix the Android packaging properties above.
 - `System.MethodAccessException` inside `Uno.UI.Xaml.Controls.NativeWindowWrapper`: check the NuGet asset graph first. A browserwasm-only restore can omit Android Skia runtime packages even when the Android build later succeeds.
 
+### APK Selection, Install, and Boot Readiness
+
+Hard-won rules for the install path - a test harness or setup script should encode these:
+
+- **Pick the current APK, not a stale one.** A build can leave multiple signed APKs: the root `bin/Debug/{tfm}-android/{package-id}-Signed.apk` and per-RID copies under `bin/Debug/{tfm}-android/{rid}/`. Stale RID-folder APKs can advertise an old launch activity and silently install yesterday's build. Prefer the **root `{tfm}-android` signed APK when it is the newest**; fall back to a RID-folder APK only when it is genuinely newer (compare write times). Default local RID for the emulator is `android-x64`.
+- **Embedded assemblies for sideload.** Manual `adb install` needs a complete APK (`EmbedAssembliesIntoApk=true`, above). That makes the APK much larger - plan emulator storage accordingly (next bullet).
+- **`INSTALL_FAILED_INSUFFICIENT_STORAGE` is usually the AVD, not the APK.** The fix is the emulator's data partition, not the APK path. Use an AVD with at least a 10 GB data partition and wipe emulator data once. Do not chase APK-path theories when this is the error.
+- **Install once per test process.** Install the app one time per run; do not reinstall before every test. Use Appium's reset behaviour or explicit `pm clear <package-id>` for fresh-onboarding state, not a reinstall loop.
+- **Detect "already installed" tolerantly.** `adb shell pm path <package-id>` may return only `package:/data/app/.../base.apk` without echoing the package id. Treat **any** valid `package:` line as installed.
+- **Wait for the package manager, not just boot.** After a wipe or first boot of a Play Store AVD, `sys.boot_completed=1` can arrive before package services are stable. Poll `adb shell cmd package list packages` (or retry the install once on transient failure) before installing.
+
+```powershell
+# Prefer the newest valid signed APK (root over stale RID folders).
+$apk = Get-ChildItem "src/UI/{Project}.Uno/bin/Debug/$(LatestStableTfm)-android" -Recurse -Filter '*-Signed.apk' |
+       Sort-Object LastWriteTime -Descending | Select-Object -First 1
+adb install --no-incremental -r $apk.FullName
+```
+
 ### Emulator Host Networking
 
 Apps running on the Android emulator that call local backend services must use `10.0.2.2` in place of `localhost` / `127.0.0.1`. Gate this with a compile-time check so WASM/desktop builds continue to use `localhost`:
@@ -315,9 +356,12 @@ adb shell "echo TEST | nc 10.0.2.2 <PORT>"
 
 .NET for Android generates a CRC-based Java class name for activities (e.g., `crc64<hash>.MainActivity`) that differs from the C# class name. Do not guess it from source.
 
-When launching via `adb shell am start -n`, first discover the registered activity:
+When launching via `adb shell am start -n`, first resolve the registered launch activity. Prefer `resolve-activity --brief` (one clean line); fall back to `dumpsys` parsing:
 
 ```bash
+# Preferred: prints "<package-id>/<activity>" directly.
+adb shell cmd package resolve-activity --brief <package-id> | tail -n 1
+# Fallback:
 adb shell dumpsys package <package-id> | grep -A 3 "MAIN"
 ```
 

@@ -20,8 +20,16 @@ Run the shared understanding interview before finalizing this YAML. See [shared-
 ```yaml
 ProjectName: ""
 ProjectDescription: ""
-OrganizationName: ""       # optional namespace prefix
+OrganizationName: ""               # optional namespace prefix (host/UI projects only)
+projectNamePrefix: solution-name   # solution-name (default) | none
 ```
+
+`projectNamePrefix` controls whether generated project names, folders, and root namespaces carry the solution-name prefix. Confirm it with the developer in Phase 1 (see [shared-understanding-interview.md - Project Naming Decision](shared-understanding-interview.md#project-naming-decision)).
+
+- `solution-name` (default) - matches the TaskFlow reference app: `{Project}.Domain.Model`, `{Host}.Api`, `{App}DbContextTrxn`.
+- `none` - bare project names and namespaces: `Domain.Model`, `Api`, `DbContextTrxn`; `OrganizationName` is not applied.
+
+Either way the solution file is named `{SolutionName}.slnx`. Token mechanics: [placeholder-tokens.md - Derivation Rules](placeholder-tokens.md#derivation-rules).
 
 ## Entities
 
@@ -365,6 +373,7 @@ Before moving to Phase 2 (Resource Definition), verify all of the following:
 - [ ] State machine `states` list matches `transitions` from/to values (no orphaned states or transitions)
 - [ ] Every event `raisedBy` references a defined entity
 - [ ] `ProjectName` is set and valid (PascalCase, no spaces)
+- [ ] `projectNamePrefix` is set (`solution-name` or `none`), confirmed with the developer, and recorded in `.scaffold/DESIGN-DECISIONS.md`
 - [ ] At least one entity is defined
 - [ ] If `aiCapabilities` is defined: every referenced entity exists, every `agentWorkflows` entry references defined entities, and `searchableFields` reference defined properties
 - [ ] `.scaffold/UBIQUITOUS-LANGUAGE.md` contains every entity, state, event, command/action, role, policy, and value object name from this file

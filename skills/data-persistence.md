@@ -132,8 +132,9 @@ Keep full registration details in [bootstrapper.md](bootstrapper.md):
 See [repository-template.md](../templates/repository-template.md) for write/query repository implementations and interfaces.
 
 Key rules:
+- **A per-entity repository interface earns its place only when it adds logic beyond `RepositoryBase`/`IRepositoryBase`.** Under `repositoryContractStyle: hybrid`/`generic-only` (default `hybrid`), CRUD-only / append-only / join entities use the shared open-generic `IRepositoryTrxn<T>`/`IRepositoryQuery<T>` pair and get **no** per-entity repository - see [repository-template.md](../templates/repository-template.md) section Generic Repository Pair. Emit a bespoke per-aggregate repo only for multi-include loads, `UpdateFromDto` child sync, paged/projected `Search`, or polymorphic/hierarchy/multi-key queries.
 - Write repo: `{Entity}RepositoryTrxn` with includes and `UpdateFromDto` delegation to DbContext extension.
-- Query repo: `{Entity}RepositoryQuery` with paged search using EF-safe projector expressions.
+- Query repo: `{Entity}RepositoryQuery` with paged search using EF-safe projector expressions; under `hybrid`/`generic-only` it extends `IRepositoryQuery<{Entity}>` so generic get/list stay inherited.
 - Use transactional repo for writes, query repo for read/projection.
 
 ### Updater Pattern

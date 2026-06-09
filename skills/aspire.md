@@ -94,12 +94,17 @@ if (!builder.ExecutionContext.IsPublishMode)
     // Keep the fixed local port + password parameter OUT of the publish manifest:
     // create the parameter inside the run-mode branch so azd never prompts for it.
     var sqlPassword = builder.AddParameter("sql-password", LocalSqlSettings.SharedSaPassword, secret: true);
-    sql = sql.RunAsContainer(c => c
-        .WithHostPort(38433)            // first-class on SqlServerServerResource (Aspire 9.3+)
-        .WithPassword(sqlPassword)
-        .WithLifetime(ContainerLifetime.Persistent)
-        .WithDataVolume("{project}-sql-data")
-        .WithImageTag("2025-latest"));
+    sql = sql.RunAsContainer(c =>
+    {
+        c.WithHostPort(38433)            // first-class on SqlServerServerResource (Aspire 9.3+)
+         .WithPassword(sqlPassword)
+         .WithImageTag("2025-latest");
+        // Persistent lifetime + named volume are a local `dotnet run` convenience. Under test
+        // (IsAspireTesting()) leave the container ephemeral so DisposeAsync owns teardown - see Rules below.
+        if (!IsAspireTesting())
+            c.WithLifetime(ContainerLifetime.Persistent)
+             .WithDataVolume("{project}-sql-data");
+    });
 }
 var projectDb = sql.AddDatabase("{project}db");
 
@@ -360,11 +365,14 @@ Aspire resolves `AddParameter` values in this priority order (highest wins):
 - **Never put `Parameters:sql-password` (or any credential parameter) in any AppHost `appsettings` file.** It overrides everything silently. Keep those files as `{}` or omit the `Parameters` key entirely.
 - **Define passwords as a single shared constant** (e.g., `LocalSqlSettings.SharedSaPassword`). Use that constant as the `AddParameter` default and in test fixture setup. Change in one place only.
 - **Persistent SQL volumes lock in the SA password at volume creation time.** If you change the password constant, you must delete the named volume (e.g., `taskflow-sql-data`) before the next run - the container will re-initialize with the new password.
-- **Killing the AppHost process does not stop Docker/Podman containers.** Clean up persistent containers explicitly:
+- **Gate persistent lifetime + data volume on `!IsAspireTesting()`.** Apply `.WithLifetime(ContainerLifetime.Persistent)` and `.WithDataVolume(...)` only in local `dotnet run` (see the canonical example above). Under `IsAspireTesting()` the container must stay **ephemeral** so that `DistributedApplication.DisposeAsync()` in the mesh fixture's teardown removes exactly the containers that run started - no machine-wide cleanup, no leaked SQL/Redis container holding a port, and no risk to another project's or session's containers. This is what lets the test tier avoid any `docker rm` sweep entirely. The `IsAspireTesting()` helper already exists (the same one that gates opt-in resources - see [../skills/testing.md](../skills/testing.md), Opt-In Graph Scope).
+- **Killing the AppHost process does not stop Docker/Podman containers.** Persistent containers are intentional - clean them up **deliberately, by this project's resource name/volume**, never by a generic Aspire label:
   ```bash
-  docker ps --filter label=com.microsoft.dotnet.aspire.container.name --format "{{.ID}}" | xargs docker rm -f
+  docker rm -f {project}-sql {project}-redis     # by name (RunAsContainer resource names)
+  docker volume rm {project}-sql-data {project}-redis-data   # only if discarding state
   ```
-  Or remove by name/label from the Aspire dashboard or `docker rm -f <container-name>`.
+  Or remove them from the Aspire dashboard.
+  > **Never sweep by the generic Aspire label.** `docker ps --filter label=com.microsoft.dotnet.aspire.container.name ... | xargs docker rm -f` matches **every** project's and **every** session's Aspire containers on the machine - including other developers' work and intentional persistent stacks. Scope cleanup to this project's resource names. Test-owned containers are handled separately and automatically - see the ephemeral-under-test rule above.
 
 ### Pattern: Shared Constant + Clean appsettings
 
