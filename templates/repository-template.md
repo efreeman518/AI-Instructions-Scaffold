@@ -232,12 +232,11 @@ public class RepositoryQuery<TEntity, TDbContext>(TDbContext db)
 }
 ```
 
-> **Delivery:** these belong in the `<packagePrefix>.Data` / `<packagePrefix>.Data.Contracts` packages.
-> In the EF.Packages reference app they are staged in `src/Packages/EF.Data2` + `EF.Data.Contracts2`
-> (declared in the destination namespaces `EF.Data` / `EF.Data.Contracts` so the upstream merge is
-> zero-churn) - see [../support/ef-packages-reference.md](../support/ef-packages-reference.md). When
-> `packageStrategy: local`/`hybrid` and the feed does not yet supply them, generate them under
-> `src/Packages/<packagePrefix>.Data2` and add to `localPackageLayers`.
+> **Delivery:** these ship in the `<packagePrefix>.Data` / `<packagePrefix>.Data.Contracts` packages
+> (canonical example: EF.Data / EF.Data.Contracts) - see
+> [../support/ef-packages-reference.md](../support/ef-packages-reference.md). When
+> `packageStrategy: local`/`hybrid`, they are part of the generated `<packagePrefix>.Data` /
+> `<packagePrefix>.Data.Contracts` projects.
 
 ### Open-generic DI registration (closed-over-context subclass)
 
@@ -282,7 +281,8 @@ services.AddScoped<I{Entity}RepositoryQuery, {Entity}RepositoryQuery>();        
 **Reference-app proof:** `TaskItemTag` (pure join) resolves the generic pair on both sides with no
 per-entity class; `Tag` / `Comment` / `ChecklistItem` fold their pure-CRUD write side into the generic
 pair (bespoke Trxn interfaces deleted) and keep a bespoke `Search`-bearing query repo. See
-`../AI-Instructions-ReferenceApp/src/Packages/EF.Data2` + `src/Infrastructure/TaskFlow.Infrastructure.Repositories/TaskFlowGenericRepositories.cs`.
+`../AI-Instructions-ReferenceApp/src/Infrastructure/TaskFlow.Infrastructure.Repositories/TaskFlowGenericRepositories.cs`
+(closed-over-context subclasses; the generic impls they extend come from the EF.Data package).
 
 ## Critical: Query Repos MUST Use QueryPageProjectionAsync
 

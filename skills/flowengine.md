@@ -10,7 +10,7 @@ Durable, JSON-defined workflow orchestration. Load when `includeFlowEngine: true
 - [aspire.md](aspire.md)
 - [../support/ef-packages-reference.md](../support/ef-packages-reference.md) section Workflow Engine and section FlowEngine Data-Layout Variants
 
-Package version: track `EF.FlowEngine` latest stable. Surface area assumed below is **1.0.104+** (interface-composition DbContext, `WorkflowDefinitionJsonOptions.Default`, `AddWorkflowJsonSeeding`, `AddAzureOpenAIAgentClient` factory overload).
+Package version: track `EF.FlowEngine` latest stable. The surface assumed below: interface-composition DbContext, `WorkflowDefinitionJsonOptions.Default`, `AddWorkflowJsonSeeding`, `AddAzureOpenAIAgentClient` factory overload.
 
 ## Non-Negotiables
 
@@ -56,7 +56,7 @@ using Microsoft.EntityFrameworkCore;
 namespace {Project}.Data;
 
 // Separate FE DbContext, NOT a subclass of {Project}DbContextBase.
-// Declares all three FE roles via interface composition (1.0.104+).
+// Declares all three FE roles via interface composition.
 public sealed class {Project}FlowEngineDbContext(DbContextOptions<{Project}FlowEngineDbContext> options)
     : DbContext(options),
       IFlowEngineStateDbContext,

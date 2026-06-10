@@ -107,7 +107,7 @@ namespace Test.Integration.Infrastructure;
 /// </summary>
 internal static class AzuriteContainerFixture
 {
-    // Pin the image explicitly - the parameterless AzuriteBuilder() ctor is obsolete in Testcontainers.Azurite 4.x.
+    // Pin the image explicitly - the parameterless AzuriteBuilder() ctor is [Obsolete], so pass the image tag.
     private static readonly AzuriteContainer Azurite =
         new AzuriteBuilder("mcr.microsoft.com/azure-storage/azurite:3.33.0").Build();
 

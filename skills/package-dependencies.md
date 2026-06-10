@@ -28,14 +28,16 @@ In instruction docs:
 
 - Use the `<latest-stable>` placeholder in xml/json snippets (e.g., `Sdk="Aspire.AppHost.Sdk/<latest-stable>"`, `<TargetFramework>$(LatestStableTfm)</TargetFramework>`).
 - Do **not** write a hard-coded `Version="9.2.0"` or `net9.0` into a template - it goes stale silently and contradicts this rule on every PR diff.
+- Do **not** cite versions in prose either ("first-class since Aspire 9.3", "fixed in EF 1.0.104", "MudBlazor 9.x point releases"). Describe the current behavior as present truth - the baseline tracks latest, so the current API is the only one that matters.
+- Do **not** add version-history or backwards-compat framing ("resolved in X", "pre-X bug", "obsolete in X", "verified <date>", "regression guard for the old behavior"). State what the API does now; drop how it got there. ("Legacy" is fine only when it names a non-version concept - the `.sln` format, the `datetime` SQL type - never a package version.)
 
 **Documented exceptions only.** A pinned version is permitted **only** when accompanied by a one-line reason inline (NU1605/NU1011 conflict, breaking-change quarantine, vendor compatibility note). Any pin without justification is a bug - replace with `<latest-stable>`.
 
 SDK upgrade discipline:
 
-- Treat major-version SDK bumps (e.g., Aspire 9 -> 13, .NET N -> N+1) as **deliberate, scheduled tasks**, not routine work.
-- Consult the vendor's official upgrade guide via MS Learn before bumping (e.g., `learn.microsoft.com/dotnet/aspire/get-started/upgrade-to-aspire-13`).
-- A file-naming or convention change introduced by a future SDK version (e.g., AppHost.cs in Aspire 13) MAY be adopted on the prior SDK if it is purely cosmetic and back-compatible - call out the rationale in the relevant skill file.
+- Treat major-version SDK bumps (e.g., a major Aspire bump, or .NET N -> N+1) as **deliberate, scheduled tasks**, not routine work.
+- Consult the vendor's official upgrade guide via MS Learn before bumping.
+- A file-naming or convention change introduced by a newer SDK MAY be adopted on the current SDK if it is purely cosmetic and compatible - call out the rationale in the relevant skill file.
 
 ## Minimize Third-Party Dependencies (Mandatory)
 

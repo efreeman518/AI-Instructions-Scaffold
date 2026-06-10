@@ -17,13 +17,13 @@ Host/Aspire/
 
 ### AppHost Entry File: `AppHost.cs` (not `Program.cs`)
 
-The AppHost project's entry file is **`AppHost.cs`** - the Aspire 13 convention. Use this name even on Aspire 9.x SDKs; it is purely a file rename and is back-compatible:
+The AppHost project's entry file is **`AppHost.cs`**, not `Program.cs`:
 
 - Top-level statements emit an implicit `class Program` regardless of file name, so reflective lookups like `Type.GetType("Program, AppHost", ...)` and `WebApplicationFactory<Program>` keep working.
 - No code references need updating. `.csproj` only needs editing if it has explicit `<Compile>` items (default item-includes do not).
 - "`Program.cs` in the AppHost project" reads as a generic ASP.NET Core entry point - `AppHost.cs` correctly signals an Aspire orchestrator. Humans grep by file name; align it with intent.
 
-> **Single-file AppHost** (a single `apphost.cs` lowercase with `#:sdk` / `#:package` directives, no `.csproj`) is a separate Aspire 13 prototype-only feature. Not adopted; not supported in Visual Studio.
+> **Single-file AppHost** (a single `apphost.cs` lowercase with `#:sdk` / `#:package` directives, no `.csproj`) is a separate prototype-only feature. Not adopted; not supported in Visual Studio.
 
 ---
 
@@ -96,7 +96,7 @@ if (!builder.ExecutionContext.IsPublishMode)
     var sqlPassword = builder.AddParameter("sql-password", LocalSqlSettings.SharedSaPassword, secret: true);
     sql = sql.RunAsContainer(c =>
     {
-        c.WithHostPort(38433)            // first-class on SqlServerServerResource (Aspire 9.3+)
+        c.WithHostPort(38433)            // first-class on SqlServerServerResource
          .WithPassword(sqlPassword)
          .WithImageTag("2025-latest");
         // Persistent lifetime + named volume are a local `dotnet run` convenience. Under test
@@ -143,11 +143,11 @@ Call `.WithExternalHttpEndpoints()` only on the public surface (typically Gatewa
 
 The fixed local SQL port and the `sql-password` parameter live INSIDE the `RunAsContainer` / run-mode branch. Creating `AddParameter("sql-password", ...)` there (not at the top level) keeps it out of the publish manifest, so `azd` does not prompt for a SQL password it does not need (Azure SQL uses managed-identity auth - see below). Tests and dev tooling that depend on the fixed `38433` port and `sql-password` parameter still work because both exist in run mode.
 
-### Version-Specific API Facts (verified May 2026)
+### Aspire API Facts
 
-- **`AddAzureSqlServer(...)`** auto-assigns a user-assigned managed identity as the SQL admin and grants each deployed app container `db_owner` during provisioning (Aspire 9.3+). The deploying principal is also granted `db_owner`. **Consequence:** no manual `CREATE USER ... FROM EXTERNAL PROVIDER` in the pipeline when provisioning and migration run under the same OIDC identity. Use `AddAzureSqlServer` (not `AddSqlServer`) for `deployTarget: ContainerApps` - `AddSqlServer` publishes a SQL container into ACA instead of provisioning Azure SQL.
-- **`AddAzureCosmosDB(...)`** provisions a SERVERLESS account by default (Aspire 9.4+). No SKU/capability config needed; `.WithDefaultAzureSku()` is the opt-in for provisioned throughput.
-- **`AddAzureRedis(...).RunAsContainer()` is obsolete in Aspire 13** - use `AddAzureManagedRedis`. If the app uses FusionCache, omitting Redis on publish degrades it to L1-only with no `IDistributedCache` (a valid cost lever). If you omit Redis, guard every `.WithReference(redis, "Redis1")` with a null check so the model still builds.
+- **`AddAzureSqlServer(...)`** auto-assigns a user-assigned managed identity as the SQL admin and grants each deployed app container `db_owner` during provisioning. The deploying principal is also granted `db_owner`. **Consequence:** no manual `CREATE USER ... FROM EXTERNAL PROVIDER` in the pipeline when provisioning and migration run under the same OIDC identity. Use `AddAzureSqlServer` (not `AddSqlServer`) for `deployTarget: ContainerApps` - `AddSqlServer` publishes a SQL container into ACA instead of provisioning Azure SQL.
+- **`AddAzureCosmosDB(...)`** provisions a SERVERLESS account by default. No SKU/capability config needed; `.WithDefaultAzureSku()` is the opt-in for provisioned throughput.
+- **Use `AddAzureManagedRedis`** for Azure Redis (not `AddAzureRedis(...).RunAsContainer()`). If the app uses FusionCache, omitting Redis on publish degrades it to L1-only with no `IDistributedCache` (a valid cost lever). If you omit Redis, guard every `.WithReference(redis, "Redis1")` with a null check so the model still builds.
 
 ---
 
@@ -201,7 +201,7 @@ sb.AddTopic("domain-events", ["api", "other-subscriber"]);
 sb.AddQueue("commands"); // optional queue
 ```
 
-> **API note (Aspire 9.3.0+):** Use `AddTopic(name, subscriptions[])` - the chained `.AddServiceBusTopic().AddServiceBusSubscription()` API does not exist. Queues use `AddQueue(name)`.
+> **API note:** Use `AddTopic(name, subscriptions[])` - the chained `.AddServiceBusTopic().AddServiceBusSubscription()` API does not exist. Queues use `AddQueue(name)`.
 
 Services like `AddSqlServer`, `AddRedis`, `AddPostgres`, `AddRabbitMQ` already run local containers by default.
 
@@ -466,7 +466,7 @@ Substitute `<latest-stable>` and the TFM at scaffold time. Do not hard-code vers
 >
 > The Azure Storage/Service Bus/Cosmos/Functions hosting packages are typically already referenced for the emulator wiring; confirm they are present before adding the publish branch.
 
-> **SDK upgrade discipline.** A major Aspire SDK bump (e.g., 9 -> 13) is a **deliberate, scheduled task**, not routine work. Aspire 13 tightens a few APIs (e.g., `IDistributedApplicationTestingBuilder` inheritance), and existing code may need adjustments. Consult the official upgrade guide (`learn.microsoft.com/dotnet/aspire/get-started/upgrade-to-aspire-13`) and the version-specific compatibility pages before bumping. The `AppHost.cs` filename convention is back-compatible and may be adopted independently of the SDK bump.
+> **SDK upgrade discipline.** A major Aspire SDK bump is a **deliberate, scheduled task**, not routine work. Major bumps can tighten APIs (e.g., `IDistributedApplicationTestingBuilder` inheritance), so existing code may need adjustments. Consult the official Aspire upgrade guide on MS Learn and the version-specific compatibility pages before bumping.
 
 If using dev tunnels, add `Aspire.Hosting.DevTunnels`.
 

@@ -9,10 +9,10 @@ Workflow JSONs are the production wiring of FlowEngine. They are loaded from dis
 | Stage | Silent failure mode |
 |---|---|
 | File present in build output | csproj `<Content>` glob excludes the file -> seeding has nothing to seed -> `StartAsync(workflowId)` returns "not found" at runtime. |
-| JSON deserializes to `WorkflowDefinition` | Missing `JsonStringEnumConverter` -> `NodeKind` deserializes as default -> workflow runs but nodes are wrong. Resolved in FE 1.0.104 by `WorkflowDefinitionJsonOptions.Default`. |
+| JSON deserializes to `WorkflowDefinition` | Missing `JsonStringEnumConverter` -> `NodeKind` deserializes as default -> workflow runs but nodes are wrong. `WorkflowDefinitionJsonOptions.Default` supplies the required converters. |
 | Definition passes FE validation | Invalid edges or missing required fields -> registry rejects on first start, not at deploy. |
 | Definition round-trips through `IWorkflowRegistry` | Registry write/read mismatch -> workflow appears in dev tests but the registry returns stale data in prod. |
-| `WorkflowDefinitionBuilder.FromJson(json).Build()` hydrates | Empty builder bug (pre-1.0.104) -> silent zero-node workflow. Fixed in 1.0.104; assertion stays as regression guard. |
+| `WorkflowDefinitionBuilder.FromJson(json).Build()` hydrates | A builder that fails to hydrate -> silent zero-node workflow. The assertion guards against it. |
 
 The five-tier test below covers every stage. Generate one class per workflow JSON declared in `Workflows/`.
 
@@ -93,7 +93,7 @@ public class {WorkflowPascalName}WorkflowTests
         Assert.AreEqual(def.Nodes.Count, hydrated.Nodes.Count);
     }
 
-    // Tier 5 - Builder.FromJson hydration (regression guard for the pre-1.0.104 empty-builder bug).
+    // Tier 5 - Builder.FromJson hydration (guards against a silent empty-builder result).
     [TestMethod]
     public void Workflow_Builder_FromJson_Hydrates_Nodes()
     {
@@ -102,8 +102,7 @@ public class {WorkflowPascalName}WorkflowTests
 
         Assert.IsTrue(
             built.Nodes.Count > 0,
-            "WorkflowDefinitionBuilder.FromJson(json).Build() produced zero nodes. " +
-            "Pre-1.0.104 regression - upgrade EF.FlowEngine.");
+            "WorkflowDefinitionBuilder.FromJson(json).Build() produced zero nodes.");
     }
 }
 ```
@@ -162,6 +161,6 @@ The exact `Include` path depends on the solution layout; adjust the `..\..` segm
 | 2 - Deserialize | JSON schema drift, enum converter regressions | One JSON parse |
 | 3 - Validate | Bad edges, missing required fields | One validator pass |
 | 4 - Registry round-trip | Registry serialization mismatch | One in-memory write/read |
-| 5 - Builder hydration | FE 1.0.104 regression guard | One builder run |
+| 5 - Builder hydration | Silent empty-builder hydration | One builder run |
 
 All five run in the unit-test tier - no SQL, no Aspire, no real registry. Add to `Test.Integration.{Project}.FlowEngine` for the project naming convention; the tier semantics are pure unit-test.

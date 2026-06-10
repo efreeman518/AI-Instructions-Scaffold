@@ -208,7 +208,7 @@ For phase gates and validation commands, see [execution-gates.md](execution-gate
 | Schema changes not reflected in TestContainer | Previous schema persists | `EnsureDeletedAsync()` before `EnsureCreatedAsync()` |
 | ProblemDetails stack traces leak in CI | Debug diagnostics enabled in all builds | Wrap diagnostic customization in `#if DEBUG` |
 | StructureValidator not found | Missing static validator namespace import | Add `using {Namespace}.Application.Services.Validation;` |
-| WASM build `DirectoryNotFoundException` (`unoresizetizer`) | Resizetizer 1.12.1 manifest-path issue | See fix snippet in `skills/ui-uno-platforms.md` -> *UnoSplashScreen WASM Build Failure* |
+| WASM build `DirectoryNotFoundException` (`unoresizetizer`) | Resizetizer manifest-path issue | See fix snippet in `skills/ui-uno-platforms.md` -> *UnoSplashScreen WASM Build Failure* |
 | `NotSupportedException` deserializing `Result<T>` in tests | `Result<T>` lacks parameterless constructor | Use `JsonDocument` parsing instead of `ReadFromJsonAsync<Result<T>>()`. Search endpoints serialize just the `PagedResponse<T>` value, not the wrapper. |
 | Aspire dashboard never opens / blank terminal | Missing `Properties/launchSettings.json` in AppHost | Create launchSettings.json with OTLP endpoints - see [aspire.md](../skills/aspire.md) -> Preflight |
 | `MSB4057` "GetTargetPath" target missing | Uno.Sdk project referenced from AppHost | Comment out Uno ProjectReference and AddProject - run Uno WASM separately |

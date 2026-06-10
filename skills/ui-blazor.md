@@ -491,11 +491,11 @@ public interface I{Project}ApiClient
 - `[Multipart]` on the Refit method **and** `[AliasAs]` on every parameter - Refit's default name mangler emits PascalCase which the model binder fails to match.
 - Stream the file (`OpenReadStream`) instead of buffering to a byte array - large uploads OOM the circuit otherwise.
 
-## MudBlazor 9.x API Gotchas
+## MudBlazor API Gotchas
 
-These are changes from MudBlazor 7/8 -> 9.x that bite on scaffold and are cheap to avoid up-front:
+These MudBlazor API points bite on scaffold and are cheap to avoid up-front:
 
-| Construct | Old | **9.x (use this)** |
+| Construct | Avoid | **Use this** |
 |---|---|---|
 | Confirm dialog | `DialogService.ShowMessageBox(title, message, yesText:, cancelText:)` | `DialogService.ShowMessageBoxAsync(new MessageBoxOptions { Title, Message, YesText, CancelText })` |
 | Expansion panel initial state | `IsInitiallyExpanded="true"` | `Expanded="true"` |
@@ -503,7 +503,7 @@ These are changes from MudBlazor 7/8 -> 9.x that bite on scaffold and are cheap 
 
 The MudBlazor analyzer emits `MUD0002 Illegal Attribute` warnings for several of these - treat them as errors during scaffolding.
 
-**Version drift on `ShowMessageBoxAsync`.** Some MudBlazor 9.x point releases ship without the `ShowMessageBoxAsync` extension (or expose only the legacy synchronous `ShowMessageBox` that has been pulled in others). Before relying on it, grep the installed package: `dotnet list package | findstr MudBlazor` then check `IDialogService` for the method. If absent, **ship a `ConfirmDialog.razor` scaffold component** and route every confirm prompt through `DialogService.ShowAsync<ConfirmDialog>(...)`:
+**API drift on `ShowMessageBoxAsync`.** Some MudBlazor releases ship without the `ShowMessageBoxAsync` extension (or expose only the synchronous `ShowMessageBox`). Before relying on it, grep the installed package: `dotnet list package | findstr MudBlazor` then check `IDialogService` for the method. If absent, **ship a `ConfirmDialog.razor` scaffold component** and route every confirm prompt through `DialogService.ShowAsync<ConfirmDialog>(...)`:
 
 ```razor
 @* Components/Dialogs/ConfirmDialog.razor *@
@@ -833,7 +833,7 @@ When a page edits an aggregate root whose children are synced by the server `Upd
 - [ ] `MainLayout.razor` wires all four Mud providers, `FloatService.StateHasChanged` bound in `OnInitialized`, cleared in `Dispose`
 - [ ] Refit interface uses `DefaultRequest<T>` for POST/PUT bodies, `DefaultResponse<T>` for single-item returns, `SearchRequest<T>`/`PagedResponse<T>` for search
 - [ ] `SearchRequest.PageIndex` passed 1-based to the API
-- [ ] MudBlazor 9.x: `ShowMessageBoxAsync` (not `ShowMessageBox`), `Expanded` (not `IsInitiallyExpanded`), `<MudChip T="...">`
+- [ ] MudBlazor: `ShowMessageBoxAsync` (not `ShowMessageBox`), `Expanded` (not `IsInitiallyExpanded`), `<MudChip T="...">`
 - [ ] Gateway `CorsSettings.AllowedOrigins` includes the Blazor dev URLs
 - [ ] Pages: Dashboard, {Entity}List (server paging + filters), {Entity}Page (new/edit), Settings, Error
 - [ ] Blazor UI calls the Gateway only - never the API host directly
