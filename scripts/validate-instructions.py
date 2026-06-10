@@ -32,6 +32,11 @@ Checks:
     (required keys, declared keys, enum values). Structural line-parse checks
     run with stdlib only; when pyyaml + jsonschema are installed (e.g. in CI),
     full schema validation runs as well.
+  - EF package API integrity: the types and members documented in
+    support/ef-packages-reference.md exist in the installed NuGet package
+    assemblies. Catches docs/package drift before a golden-path run surfaces it
+    as a build failure. Skips gracefully when dotnet is not on PATH or when the
+    packages are not in the local NuGet cache (expected in CI without feed).
 
 Exit code 0 if all checks pass, 1 otherwise. Output groups failures by file.
 """
@@ -39,7 +44,10 @@ Exit code 0 if all checks pass, 1 otherwise. Output groups failures by file.
 from __future__ import annotations
 
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 # Force UTF-8 stdout/stderr so ASCII-converted diagnostics stay stable on
@@ -588,6 +596,129 @@ def check_golden_path_schemas(findings: Findings) -> None:
                 findings.err(gp_path, f"{label}: full schema validation failed - {exc.message} (path: {'/'.join(str(p) for p in exc.absolute_path)})")
 
 
+# --- EF package API integrity ------------------------------------------------
+# Verifies that the types/members documented in ef-packages-reference.md
+# actually exist in the installed package assemblies.
+# Skips gracefully when dotnet is not on PATH or packages are not in the
+# local NuGet cache (expected in CI without feed access).
+
+EF_PACKAGES_REL = "support/ef-packages-reference.md"
+
+# (package_id, fully_qualified_type, member_name, "prop"|"static")
+EF_API_CLAIMS: list[tuple[str, str, str, str]] = [
+    ("EF.Domain.Contracts", "EF.Domain.Contracts.DomainError",  "Error",        "prop"),
+    ("EF.Domain.Contracts", "EF.Domain.Contracts.DomainError",  "Code",         "prop"),
+    ("EF.Domain.Contracts", "EF.Domain.Contracts.DomainError",  "Message",      "prop"),
+    ("EF.Domain.Contracts", "EF.Domain.Contracts.DomainError",  "Create",       "static"),
+    ("EF.Domain.Contracts", "EF.Domain.Contracts.DomainResult", "IsSuccess",    "prop"),
+    ("EF.Domain.Contracts", "EF.Domain.Contracts.DomainResult", "IsFailure",    "prop"),
+    ("EF.Domain.Contracts", "EF.Domain.Contracts.DomainResult", "ErrorMessage", "prop"),
+    ("EF.Domain.Contracts", "EF.Domain.Contracts.DomainResult", "Errors",       "prop"),
+    ("EF.Domain.Contracts", "EF.Domain.Contracts.DomainResult", "Failure",      "static"),
+    ("EF.Domain.Contracts", "EF.Domain.Contracts.DomainResult", "Success",      "static"),
+    ("EF.Common.Contracts", "EF.Common.Contracts.Result",       "IsSuccess",    "prop"),
+    ("EF.Common.Contracts", "EF.Common.Contracts.Result",       "IsFailure",    "prop"),
+    ("EF.Common.Contracts", "EF.Common.Contracts.Result",       "ErrorMessage", "prop"),
+    ("EF.Common.Contracts", "EF.Common.Contracts.Result",       "Failure",      "static"),
+    ("EF.Common.Contracts", "EF.Common.Contracts.Result",       "Success",      "static"),
+]
+
+
+def _semver_key(p: Path) -> tuple[int, ...]:
+    try:
+        return tuple(int(x) for x in p.name.split("."))
+    except ValueError:
+        return (0,)
+
+
+def _find_cached_dll(package_id: str) -> Path | None:
+    """Return the DLL for the latest cached version of package_id, or None."""
+    cache = Path.home() / ".nuget" / "packages" / package_id.lower()
+    if not cache.exists():
+        return None
+    for ver_dir in sorted(cache.iterdir(), key=_semver_key, reverse=True):
+        for tfm in ("net10.0", "net9.0", "net8.0"):
+            dll = ver_dir / "lib" / tfm / f"{package_id}.dll"
+            if dll.exists():
+                return dll
+    return None
+
+
+def check_ef_package_api(findings: Findings) -> None:
+    if not shutil.which("dotnet"):
+        return  # dotnet not on PATH - skip silently
+
+    dll_map: dict[str, Path] = {}
+    for pkg_id, *_ in EF_API_CLAIMS:
+        if pkg_id in dll_map:
+            continue
+        dll = _find_cached_dll(pkg_id)
+        if dll is None:
+            return  # packages not cached - skip silently (expected in CI)
+        dll_map[pkg_id] = dll
+
+    # Detect SDK major version for TargetFramework.
+    sdk_proc = subprocess.run(["dotnet", "--version"], capture_output=True, text=True)
+    tfm = f"net{sdk_proc.stdout.strip().split('.')[0]}.0" if sdk_proc.returncode == 0 else "net10.0"
+
+    # Generate a self-contained C# console app that loads the assemblies and
+    # checks each documented member. Assembly.LoadFile is metadata-safe for
+    # GetType/GetProperties/GetMethods without loading transitive dependencies.
+    load_lines = "\n".join(
+        f'    asms[@"{str(dll).replace(chr(34), chr(34)+chr(34))}"] = Assembly.LoadFile(@"{str(dll).replace(chr(34), chr(34)+chr(34))}");'
+        for dll in dll_map.values()
+    )
+    check_lines = "\n".join(
+        f'    Check(asms[@"{str(dll_map[pkg_id]).replace(chr(34), chr(34)+chr(34))}"], "{type_fqn}", "{member}", "{kind}");'
+        for pkg_id, type_fqn, member, kind in EF_API_CLAIMS
+    )
+    cs_check_method = (
+        "static void Check(Assembly asm, string typeFqn, string member, string kind)\n"
+        "{\n"
+        "    var t = asm.GetType(typeFqn);\n"
+        "    if (t == null) { Console.WriteLine(\"FAIL:\" + typeFqn + \" type not found\"); return; }\n"
+        "    bool found = kind == \"prop\"\n"
+        "        ? Array.Exists(t.GetProperties(), p => p.Name == member)\n"
+        "        : Array.Exists(t.GetMethods(BindingFlags.Public | BindingFlags.Static), m => m.Name == member);\n"
+        "    Console.WriteLine(found ? \"OK:\" + typeFqn + \".\" + member : \"FAIL:\" + typeFqn + \".\" + member + \" (\" + kind + \" not found)\");\n"
+        "}"
+    )
+    cs_source = "\n".join([
+        "using System;",
+        "using System.Collections.Generic;",
+        "using System.Reflection;",
+        "var asms = new Dictionary<string, Assembly>();",
+        load_lines,
+        cs_check_method,
+        check_lines,
+    ])
+    csproj = (
+        "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup>"
+        f"<OutputType>Exe</OutputType><TargetFramework>{tfm}</TargetFramework>"
+        "<Nullable>enable</Nullable><ImplicitUsings>disable</ImplicitUsings>"
+        "</PropertyGroup></Project>"
+    )
+
+    ref_path = INSTRUCTIONS_ROOT / EF_PACKAGES_REL
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        (tmp_path / "Check.cs").write_text(cs_source, encoding="utf-8")
+        (tmp_path / "Check.csproj").write_text(csproj, encoding="utf-8")
+        proc = subprocess.run(
+            ["dotnet", "run", "--project", str(tmp_path)],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+        )
+        if proc.returncode != 0:
+            findings.warn(ref_path, f"EF package API check could not run ({proc.stderr.strip()[:120]})")
+            return
+        for line in proc.stdout.splitlines():
+            if line.startswith("FAIL:"):
+                findings.err(
+                    ref_path,
+                    f"EF package API mismatch: {line[5:]} - update {EF_PACKAGES_REL} to match installed packages",
+                )
+
+
 def main() -> int:
     findings = Findings()
 
@@ -603,6 +734,7 @@ def main() -> int:
     check_payload_shape(findings)
     check_phase5_load_set(findings)
     check_golden_path_schemas(findings)
+    check_ef_package_api(findings)
 
     print(f"validated {len(md_files)} markdown file(s) under {INSTRUCTIONS_ROOT}")
     if APP_ROOT != INSTRUCTIONS_ROOT:

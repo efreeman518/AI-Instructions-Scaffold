@@ -297,6 +297,16 @@ def run_gate_cmd(cmd: list[str], cwd: Path) -> tuple[bool, str]:
     return proc.returncode == 0, tail
 
 
+def find_solution(target: Path) -> Path | None:
+    """Find .slnx or .sln; solution lives under src/ (canonical) with root as fallback."""
+    for search_root in [target / "src", target]:
+        for pattern in ["*.slnx", "*.sln"]:
+            matches = sorted(search_root.glob(pattern))
+            if matches:
+                return matches[0]
+    return None
+
+
 def gate(phase: str, target: Path) -> tuple[bool, list[str]]:
     notes: list[str] = []
     ok = True
@@ -312,7 +322,9 @@ def gate(phase: str, target: Path) -> tuple[bool, list[str]]:
         notes.append("plan exists + HANDOFF advanced" if ok else "phase 3 gate failed")
         return ok, notes
 
-    build_ok, build_tail = run_gate_cmd(["dotnet", "build"], target)
+    slnx = find_solution(target)
+    build_cmd = ["dotnet", "build"] + ([str(slnx)] if slnx else [])
+    build_ok, build_tail = run_gate_cmd(build_cmd, target)
     notes.append(f"dotnet build: {'PASS' if build_ok else 'FAIL'}\n{build_tail if not build_ok else ''}")
     ok = build_ok
 
@@ -324,7 +336,8 @@ def gate(phase: str, target: Path) -> tuple[bool, list[str]]:
 
     test_filter = "TestCategory=Unit" if phase == "5a" else "TestCategory=Unit|TestCategory=Endpoint"
     if build_ok:
-        test_ok, test_tail = run_gate_cmd(["dotnet", "test", "--filter", test_filter], target)
+        test_cmd = ["dotnet", "test", "--filter", test_filter] + ([str(slnx)] if slnx else [])
+        test_ok, test_tail = run_gate_cmd(test_cmd, target)
         notes.append(f"dotnet test --filter \"{test_filter}\": {'PASS' if test_ok else 'FAIL'}\n{test_tail if not test_ok else ''}")
         ok = ok and test_ok
     return ok, notes
@@ -347,6 +360,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--max-turns-p5b", type=int, dest="max_turns_p5b")
     p.add_argument("--timeout-minutes", type=int, default=60)
     p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--gate-only", action="store_true",
+                   help="skip agent sessions; re-run only the gate checks against an existing --target workspace")
     return p.parse_args()
 
 
@@ -444,13 +459,22 @@ def main() -> int:
     overall_ok = True
 
     for phase in phases:
-        log(f"phase {phase}: starting {args.agent} session")
-        started = time.monotonic()
-        exit_code, meta = DRIVERS[args.agent](prompts[phase], target, args, phase, report_dir)
-        duration = int(time.monotonic() - started)
-        gate_ok, gate_notes = gate(phase, target)
-        status = "PASS" if (exit_code == 0 and gate_ok) else "FAIL"
-        log(f"phase {phase}: agent exit {exit_code}, gate {'PASS' if gate_ok else 'FAIL'} ({duration}s)")
+        if args.gate_only:
+            started = time.monotonic()
+            gate_ok, gate_notes = gate(phase, target)
+            duration = int(time.monotonic() - started)
+            status = "PASS" if gate_ok else "FAIL"
+            exit_code = 0 if gate_ok else 1
+            meta = {"gate_only": True}
+            log(f"phase {phase}: gate-only {'PASS' if gate_ok else 'FAIL'} ({duration}s)")
+        else:
+            log(f"phase {phase}: starting {args.agent} session")
+            started = time.monotonic()
+            exit_code, meta = DRIVERS[args.agent](prompts[phase], target, args, phase, report_dir)
+            duration = int(time.monotonic() - started)
+            gate_ok, gate_notes = gate(phase, target)
+            status = "PASS" if (exit_code == 0 and gate_ok) else "FAIL"
+            log(f"phase {phase}: agent exit {exit_code}, gate {'PASS' if gate_ok else 'FAIL'} ({duration}s)")
         report_lines += [f"## Phase {phase} - {status}",
                          f"- agent exit code: {exit_code}, duration: {duration}s",
                          f"- metadata: {json.dumps(meta, default=str)}",

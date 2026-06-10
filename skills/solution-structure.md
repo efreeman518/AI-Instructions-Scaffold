@@ -6,7 +6,7 @@ Define the canonical clean-architecture layout and dependency direction used by 
 
 ## Non-Negotiables
 
-1. Use `.slnx` as the solution format (not legacy `.sln`).
+1. Use `.slnx` as the solution format (not legacy `.sln`). Place it at **`src/{SolutionName}.slnx`** - inside `src/`, not at the repo root. The repo root holds only cross-cutting files (`.gitignore`, `.editorconfig`, `CLAUDE.md`, `AGENTS.md`, `HANDOFF.md`, `infra/`, `docs/`).
 2. Maintain dependency flow: Domain -> Application -> Infrastructure -> Bootstrapper -> Hosts.
 3. Domain projects never reference Application or Infrastructure.
 4. Use central package management via `Directory.Packages.props`.
@@ -294,7 +294,7 @@ Use this repo as the **authoritative source of truth** for all EF.* types, APIs,
 
 ## Verification
 
-- [ ] `.slnx` exists and is the active solution format
+- [ ] `src/{SolutionName}.slnx` exists at `src/` root (not the repo root) and is the active solution format
 - [ ] `dotnet build` succeeds from `src/`
 - [ ] `Directory.Packages.props` is present and controls package versions
 - [ ] `global.json` uses `latestFeature` roll-forward
