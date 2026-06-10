@@ -20,13 +20,9 @@ All instruction files live under `.instructions/` in the project root. All file 
 
 ## Pre-Flight
 
-Before reading any source files:
+Run every checkbox in `.instructions/ai/adopt-codebase.md` section Pre-Flight before reading any source files. Do not proceed on a red build.
 
-- [ ] Verify the solution builds clean: `dotnet build`
-- [ ] Locate the solution file (`*.slnx` preferred; `*.sln` accepted) at project root
-- [ ] Identify the layer assignment of every project (Domain / Application / Infrastructure / Host / Test)
-- [ ] Confirm developer acceptance of the code-as-authority rule
-- [ ] Decide replace / merge / abort if `.scaffold/` artifacts already exist
+- [ ] Decide replace / merge / abort if `.scaffold/` artifacts already exist (merge semantics: `.instructions/ai/adopt-codebase.md` section Merge Decision Protocol)
 
 ## Execution Order
 

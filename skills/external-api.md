@@ -80,6 +80,8 @@ public class {ServiceName}AuthHandler(IOptions<{ServiceName}Settings> settings) 
 
 ## DI + Refit + Resilience
 
+Resilience defaults, what-not-to-wrap guidance, and the never-stack-pipelines rule: [resilience.md](resilience.md).
+
 ```csharp
 public static class ServiceCollectionExtensions
 {
@@ -205,7 +207,7 @@ When an external provider posts callbacks into your system:
 
 ## Stubbing Unresolved External APIs
 
-When an external API is not yet configured (no credentials, no base URL, or provider not chosen):
+When an external API is not yet configured (no credentials, no base URL, or provider not chosen). Canonical stub shapes, safe-default table, and `// TODO: [CONFIGURE]` placement: [../templates/no-op-stub-template.md](../templates/no-op-stub-template.md).
 
 1. **Generate a compilable stub** - implement `I{ServiceName}Service` as a no-op that returns `DomainResult.Success()` with placeholder data
 2. **Mark all integration points** with `// TODO: [CONFIGURE] {ServiceName} - replace stub with real implementation`

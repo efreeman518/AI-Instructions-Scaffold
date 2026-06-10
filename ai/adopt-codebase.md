@@ -28,8 +28,19 @@ Same three files as a greenfield Phase 1. Create `.scaffold/` at project root if
 
 - [ ] Solution builds: `dotnet build` exits 0. A non-building solution makes inference unreliable - fix or branch from a known-good commit first.
 - [ ] Locate the solution file: `*.slnx` (preferred) or `*.sln` at project root.
+- [ ] Identify the layer assignment of every project (Domain / Application / Infrastructure / Host / Test) by directory convention and project references.
 - [ ] Confirm with the developer: "I'm going to derive Phase-1 artifacts from the existing code. Code wins on any conflict with prior intent. OK to proceed?"
-- [ ] If `.scaffold/` already contains any of the three artifacts, ask whether to **replace** (full regenerate), **merge** (treat code as authoritative for facts, preserve developer narrative for rationale), or **abort**.
+- [ ] If `.scaffold/` already contains any of the three artifacts, ask whether to **replace** (full regenerate), **merge** (see Merge Decision Protocol below), or **abort**.
+
+## Merge Decision Protocol
+
+When the developer chooses **merge**, apply these rules per artifact:
+
+- **Code-derived facts overwrite artifact facts.** Entities, properties, types, relationship types, and DI-visible decisions in the existing artifacts are replaced by what inspection finds. The Inference Rules above govern what counts as a fact.
+- **Developer narrative is preserved verbatim.** Rationale text, decision context, and rejected-synonym reasoning in the existing artifacts carry forward unchanged unless the developer rewrites them.
+- **Contradicted decisions are superseded, never rewritten.** When code contradicts an existing `D-###`, mark that entry superseded with a forward link and add a new code-inferred `D-###` (`inferred-from: file:line`). This matches the supersede rule in [../README.md](../README.md) section Phase-1 Artifact Lifecycle.
+- **Artifact-only entries are removed or annotated.** Entities and terms present in the artifacts but absent from code are removed from `domain-specification.yaml`; their language entries move to Rejected Synonyms or gain a `removed - absent from code` note so the history stays visible.
+- **Deferred decisions persist** unless code contradicts them - an undecided entry is not stale just because adoption ran.
 
 ## Inspection Order
 

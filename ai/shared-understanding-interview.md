@@ -128,6 +128,9 @@ Before writing Phase 1 outputs, confirm:
 - [ ] Every non-obvious design choice has a decision record with dependencies.
 - [ ] No open decision blocks Phase 2 resource mapping.
 - [ ] No unresolved `[OPEN QUESTION: ...]` marker blocks Phase 2 (**GR-10**). Any remaining uncertainty is recorded as a non-blocking deferred decision with `Needed Before` set, and is mirrored in `HANDOFF.md` section Open Questions.
+- [ ] At most three `[OPEN QUESTION: ...]` markers remain (the GR-10 working cap from Clarification Quality Rules above).
+- [ ] Every deferred branch names the phase that revisits it (`Needed Before`).
+- [ ] Every defaulted value maps to a canonical default in [resource-implementation-schema.md](resource-implementation-schema.md) section Canonical Defaults, with the assumption stated inline.
 - [ ] Each success criterion is measurable in business terms, not implementation terms.
 - [ ] Developer has reviewed the final recap.
 

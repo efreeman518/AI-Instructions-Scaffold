@@ -33,7 +33,7 @@ Phase 2-5 content. Everything below assumes a C#/.NET/Azure target and reference
 
 ### `skills/`
 
-All files. Each is a stack-specific how-to (EF data persistence, ASP.NET Core API, Bootstrapper DI, Aspire wiring, multi-tenant, caching, security, identity, observability, configuration-secrets, gateway, messaging, gRPC, external-api, AI integration, AI search, agent, Blazor, React/Vite UI, Uno UI shell/MVUX/platforms, function-app, background-services, notifications, FlowEngine, IaC, CI/CD, testing, testing-quality, domain-model, application-layer, solution-structure, package-dependencies).
+All files. Each is a stack-specific how-to (EF data persistence, ASP.NET Core API, Bootstrapper DI, Aspire wiring, multi-tenant, caching, resilience, security, identity, observability, configuration-secrets, gateway, messaging, gRPC, external-api, AI integration, AI search, agent, Blazor, React/Vite UI, Uno UI shell/MVUX/platforms, function-app, background-services, notifications, FlowEngine, IaC, CI/CD, testing, testing-quality, domain-model, application-layer, solution-structure, package-dependencies).
 
 ### `templates/`
 

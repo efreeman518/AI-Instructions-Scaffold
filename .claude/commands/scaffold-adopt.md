@@ -24,10 +24,7 @@ You are executing the brownfield adoption workflow - a code-driven replacement f
 
 ## Pre-Flight
 
-- Verify `dotnet build` passes on the existing solution.
-- Locate the solution file (`*.slnx` preferred; `*.sln` accepted) at project root.
-- Identify the layer assignment of every project (Domain / Application / Infrastructure / Host / Test) by directory convention and project references.
-- Confirm developer acceptance of the code-as-authority rule before reading any source files.
+Run every checkbox in `.instructions/ai/adopt-codebase.md` section Pre-Flight before reading any source files. Do not proceed on a red build.
 
 ## Rules
 

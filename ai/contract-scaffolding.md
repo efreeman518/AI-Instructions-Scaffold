@@ -234,15 +234,7 @@ public class NoOp{Entity}CreateHandler : IRequestHandler<Create{Entity}Command, 
 }
 ```
 
-**No-Op method bodies must return safe defaults - never `throw new NotImplementedException()`.** This holds even for entities the scaffold contracts but does not activate (`TryAddSingleton`/`TryAddScoped` fallback wiring). Throwing inside a No-Op breaks the final-scaffold checklist and converts a silently inactive entity into a runtime crash if anything ever does resolve it. Use these safe-default shapes:
-
-- `Result<T>` -> `Result<T>.Success(default!)` or a constructed empty payload
-- `Task` -> `Task.CompletedTask`
-- `Task<T>` -> `Task.FromResult(default(T)!)`
-- `IEnumerable<T>` / `IList<T>` -> `Array.Empty<T>()` / `new List<T>()`
-- `bool` -> `false`
-
-Throwing is permitted **only** when no safe default exists for the return shape (e.g., a non-nullable abstract type with no parameterless ctor) - in which case the file becomes part of the scaffold-skipped surface allowed by `support/final-scaffold-checklist.md`.
+**No-Op method bodies must return safe defaults - never `throw new NotImplementedException()`.** Canonical stub shapes, the safe-default table, the never-throw rule and its narrow exception, and the three required `// TODO: [CONFIGURE]` placement points: [../templates/no-op-stub-template.md](../templates/no-op-stub-template.md).
 
 Register in `RegisterServices.cs`:
 ```csharp

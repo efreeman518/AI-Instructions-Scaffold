@@ -27,6 +27,11 @@ Checks:
     real file. The table references targets by backtick short-name, not by
     markdown link, so check_links does not cover them - a renamed or deleted
     skill/template would otherwise drift silently.
+  - Golden-path schema integrity: the expected Phase 1 / Phase 2 YAML blocks in
+    support/golden-path-sample.md stay consistent with schemas/*.schema.json
+    (required keys, declared keys, enum values). Structural line-parse checks
+    run with stdlib only; when pyyaml + jsonschema are installed (e.g. in CI),
+    full schema validation runs as well.
 
 Exit code 0 if all checks pass, 1 otherwise. Output groups failures by file.
 """
@@ -461,6 +466,128 @@ def check_phase5_load_set(findings: Findings) -> None:
         findings.warn(skill_path, "Phase 5 load-set check matched 0 file tokens - table format may have changed")
 
 
+# --- Golden-path schema integrity --------------------------------------------
+# The expected YAML blocks in support/golden-path-sample.md are the canonical
+# regression fixture for instruction changes. Keep them consistent with the
+# machine-readable schemas so doc edits and schema edits cannot drift apart.
+
+GOLDEN_PATH_REL = "support/golden-path-sample.md"
+# (label, heading that precedes the yaml block, schema file)
+GOLDEN_PATH_BLOCKS = [
+    ("Phase 1 domain-specification", "### `.scaffold/domain-specification.yaml`", "schemas/domain-specification.schema.json"),
+    ("Phase 2 resource-implementation", "## Expected Phase 2 Output", "schemas/resource-implementation.schema.json"),
+]
+YAML_FENCE_PATTERN = re.compile(r"```yaml\r?\n(.*?)\r?\n```", re.DOTALL)
+TOP_KEY_LINE_PATTERN = re.compile(r"^([A-Za-z][A-Za-z0-9]*):(.*)$")
+
+
+def _extract_yaml_block(text: str, heading: str) -> str | None:
+    idx = text.find(heading)
+    if idx == -1:
+        return None
+    match = YAML_FENCE_PATTERN.search(text, idx)
+    return match.group(1) if match else None
+
+
+def _yaml_scalar(raw: str) -> str:
+    return raw.strip().strip("'\"")
+
+
+def _check_block_structure(path: Path, label: str, block: str, schema: dict, findings: Findings) -> None:
+    props: dict = schema.get("properties", {})
+    required: list[str] = schema.get("required", [])
+    defs: dict = schema.get("$defs", {})
+
+    top_keys: list[str] = []
+    for line in block.splitlines():
+        m = TOP_KEY_LINE_PATTERN.match(line)
+        if not m:
+            continue
+        key, rest = m.group(1), m.group(2)
+        top_keys.append(key)
+        # Scalar enum check for top-level keys with a declared enum.
+        prop = props.get(key)
+        if prop and "enum" in prop and rest.strip():
+            value = _yaml_scalar(rest)
+            if value and value not in prop["enum"]:
+                findings.err(path, f"{label}: '{key}: {value}' not in schema enum {prop['enum']}")
+
+    for req in required:
+        if req not in top_keys:
+            findings.err(path, f"{label}: required key '{req}' missing from the YAML block")
+    for key in top_keys:
+        if key not in props:
+            findings.err(path, f"{label}: key '{key}' is not declared in the schema properties")
+
+    # Phase 1: every `kind:` value must be in the property-kind enum.
+    kind_enum = defs.get("property", {}).get("properties", {}).get("kind", {}).get("enum")
+    if kind_enum:
+        for m in re.finditer(r"^\s+kind:\s*(.+?)\s*$", block, re.MULTILINE):
+            value = _yaml_scalar(m.group(1))
+            if value not in kind_enum:
+                findings.err(path, f"{label}: property kind '{value}' not in schema enum {kind_enum}")
+
+    # Phase 2: every mode under externalDependencyModes must be a valid dependencyMode.
+    mode_enum = defs.get("dependencyMode", {}).get("enum")
+    if mode_enum and "externalDependencyModes" in top_keys:
+        in_modes = False
+        for line in block.splitlines():
+            if TOP_KEY_LINE_PATTERN.match(line):
+                in_modes = line.startswith("externalDependencyModes:")
+                continue
+            if not in_modes or not line.strip():
+                continue
+            m = re.match(r"^\s+([A-Za-z][A-Za-z0-9]*):\s*(.+?)\s*$", line)
+            if not m or m.group(1) == "externalApis":
+                continue
+            value = _yaml_scalar(m.group(2))
+            if value not in mode_enum:
+                findings.err(path, f"{label}: externalDependencyModes.{m.group(1)} = '{value}' not in {mode_enum}")
+
+
+def check_golden_path_schemas(findings: Findings) -> None:
+    import json
+
+    gp_path = INSTRUCTIONS_ROOT / GOLDEN_PATH_REL
+    if not gp_path.exists():
+        findings.err(gp_path, "golden-path sample missing - schema integrity unverifiable")
+        return
+    text = gp_path.read_text(encoding="utf-8")
+
+    try:  # optional full validation when the libs are installed (CI installs them)
+        import jsonschema  # type: ignore
+        import yaml  # type: ignore
+    except ImportError:
+        jsonschema = yaml = None  # type: ignore
+
+    for label, heading, schema_rel in GOLDEN_PATH_BLOCKS:
+        schema_path = INSTRUCTIONS_ROOT / schema_rel
+        if not schema_path.exists():
+            findings.err(schema_path, f"{label}: schema file missing")
+            continue
+        try:
+            schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            findings.err(schema_path, f"{label}: schema is not valid JSON ({exc})")
+            continue
+
+        block = _extract_yaml_block(text, heading)
+        if block is None:
+            findings.err(gp_path, f"{label}: no yaml block found after heading '{heading}'")
+            continue
+
+        _check_block_structure(gp_path, label, block, schema, findings)
+
+        if yaml is not None and jsonschema is not None:
+            try:
+                data = yaml.safe_load(block)
+                jsonschema.validate(data, schema)
+            except yaml.YAMLError as exc:  # type: ignore[union-attr]
+                findings.err(gp_path, f"{label}: YAML parse failure ({exc})")
+            except jsonschema.ValidationError as exc:  # type: ignore[union-attr]
+                findings.err(gp_path, f"{label}: full schema validation failed - {exc.message} (path: {'/'.join(str(p) for p in exc.absolute_path)})")
+
+
 def main() -> int:
     findings = Findings()
 
@@ -475,6 +602,7 @@ def main() -> int:
     check_maintenance_guards(findings)
     check_payload_shape(findings)
     check_phase5_load_set(findings)
+    check_golden_path_schemas(findings)
 
     print(f"validated {len(md_files)} markdown file(s) under {INSTRUCTIONS_ROOT}")
     if APP_ROOT != INSTRUCTIONS_ROOT:

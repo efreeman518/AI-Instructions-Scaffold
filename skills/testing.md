@@ -401,47 +401,7 @@ For React/Vite, use the same pattern around `AddViteApp(...)` and pass the Gatew
 
 ### Fixture skeleton
 
-The build/start/health-gate/connection-string mechanics below are what `Test.Aspire`'s `EnsureStartedAsync` runs on first use; the lazy `[ClassInitialize]` trigger (above) replaces the eager `[AssemblyInitialize]` shown here, and the `[AssemblyCleanup]` lives in `AspireMeshLifecycle`.
-
-```csharp
-[AssemblyInitialize]
-public static async Task AssemblyInit(TestContext context)
-{
-    // Save originals first - restore in cleanup
-    SetEnvVar("TASKFLOW_ASPIRE_TESTING", "true");
-    SetEnvVar("TASKFLOW_INCLUDE_FUNCTIONS", FuncToolAvailable() ? "true" : "false");
-
-    var builder = await DistributedApplicationTestingBuilder.CreateAsync<Projects.AppHost>(
-        args: [],
-        configureBuilder: (appOptions, hostSettings) =>
-        {
-            appOptions.DisableDashboard = true; // explicit > implicit default
-            hostSettings.Configuration["Parameters:sql-password"] = LocalSqlSettings.SharedSaPassword;
-        });
-
-    builder.Services.AddLogging(b => b
-        .SetMinimumLevel(LogLevel.Information)
-        .AddFilter("Microsoft.AspNetCore", LogLevel.Warning)
-        .AddFilter("Aspire.", LogLevel.Warning));
-
-    AspireApp = await builder.BuildAsync().WaitAsync(StartupTimeout, context.CancellationToken);
-    await AspireApp.StartAsync().WaitAsync(StartupTimeout, context.CancellationToken);
-    await AspireApp.ResourceNotifications
-        .WaitForResourceHealthyAsync("sql", context.CancellationToken)
-        .WaitAsync(StartupTimeout, context.CancellationToken);
-
-    ConnectionString = await AspireApp.GetConnectionStringAsync("sql", context.CancellationToken)
-        .AsTask().WaitAsync(StartupTimeout, context.CancellationToken);
-}
-
-[AssemblyCleanup]
-public static async Task Cleanup(TestContext context)
-{
-    try { await AspireApp.StopAsync(context.CancellationToken).WaitAsync(CleanupTimeout); }
-    catch (TimeoutException) { /* logged; do not block other assemblies */ }
-    finally { RestoreEnvVars(); }
-}
-```
+The build/start/health-gate/connection-string mechanics live in [../templates/test-templates-aspire.md](../templates/test-templates-aspire.md) section AspireTestHost. The lazy `EnsureStartedAsync` above runs them on first use, and `[AssemblyCleanup]` lives in `AspireMeshLifecycle`. Key rules preserved here: pass `Parameters:*` via `configureBuilder` host configuration (never env vars), set `DisableDashboard = true` explicitly, give every async Aspire call its own `.WaitAsync(timeout, ct)`, and bound `[AssemblyCleanup]` with `CleanupTimeout`, catching `TimeoutException`.
 
 ---
 

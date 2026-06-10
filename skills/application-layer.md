@@ -50,7 +50,7 @@ The principles below are commentary on this shape.
 
 The application layer owns DTOs, contracts, static mappers, orchestration services, validation helpers, and internal message handlers. Domain invariants stay in domain factories/methods.
 
-Base types (`IRequestContext`, `Result<T>`, `IStartupTask`): [../support/ef-packages-reference.md](../support/ef-packages-reference.md) - do not regenerate these.
+Base types (`IRequestContext`, `Result<T>`, `IStartupTask`): [../support/ef-packages-reference.md](../support/ef-packages-reference.md) - do not regenerate these. DomainResult mechanics (factory results, Bind/Map chaining, error surface): [domain-model.md](domain-model.md) section DomainResult Pattern.
 
 ## Non-Negotiables
 

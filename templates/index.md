@@ -26,6 +26,9 @@ Quick lookup: "I need to scaffold X" -> load these files.
 | Message handler | `message-handler-template.md` | `skills/application-layer.md` |
 | Updater | `updater-template.md` | `skills/data-persistence.md` |
 | appsettings | `appsettings-template.md` | `skills/configuration-secrets.md` |
+| CQRS handler + registration (`applicationStyle: cqrs` or `switch`) | `cqrs-handler-template.md` | `skills/application-layer.md` |
+| CQRS endpoint (direct handler mapping) | `cqrs-endpoint-template.md` | `skills/api.md` |
+| CQRS command validator | `cqrs-validation-template.md` | `skills/application-layer.md` |
 
 ## Tests (Split by Phase)
 
@@ -39,6 +42,7 @@ Quick lookup: "I need to scaffold X" -> load these files.
 | Endpoint contract tests + WAF base | `test-templates-endpoint.md` | 5b (base in 4) | `skills/testing.md` |
 | Multi-endpoint workflow E2E (Testcontainers SQL) | `test-templates-e2e.md` | 5b | `skills/testing.md` |
 | Architecture / Load / Benchmarks / Playwright / Mutation | `test-templates-quality.md` | 5d | `skills/testing-quality.md` |
+| CQRS handler + validation + architecture tests (`applicationStyle: cqrs` or `switch`) | `test-templates-cqrs.md` | 5b | `skills/testing.md` |
 | Complete reference (all tests) | `test-templates.md` | on-demand | `skills/testing.md` |
 
 Testing skills (two files only):
@@ -51,6 +55,7 @@ Testing skills (two files only):
 | Artifact | Instruction File | Phase |
 |---|---|---|
 | Contract scaffolding (interfaces, DTOs, shells) | `ai/contract-scaffolding.md` | 4 |
+| No-op DI stubs (all modes) | `no-op-stub-template.md` | 4 / 5b |
 | TDD red/green protocol | `ai/tdd-protocol.md` | 5a/5b |
 
 ## UI (choose one)
@@ -127,16 +132,9 @@ Generate when any of `Test.Aspire`, the `WasmUI` bridge tier, or `Test.Mobile` i
 |---|---|
 | **4 - Contracts** | Solution structure + contracts (see `ai/contract-scaffolding.md`) - also emits `Test.Support/WebApplicationFactoryBase`, `Test.Endpoints/CustomApiFactory`, `Test.E2E/SqlApiFactory`, `Test.Integration/Infrastructure/*ContainerFixture` + `IntegrationTestSetup` (component), `Test.Aspire/AspireTestHost` + `AspireMeshLifecycle` (mesh) shells |
 | **5a - Foundation (TDD)** | `entity-template`, `ef-configuration-template`, `repository-template`, `domain-rules-template`, `appsettings-template`, **`updater-template` (required when entity has child collections)**, **`test-templates-domain`**, **`test-templates-repository`**, **`test-templates-integration`** (balanced+) |
-| **5b - App Core + Runtime (TDD for app/API, tests-after for runtime)** | `data-mapping-template`, `service-template`, `endpoint-template`, `structure-validator-template`, `exception-handler-template`, `message-handler-template` (if events), `health-check-template`, **`test-templates-service`**, **`test-templates-endpoint`**, **`test-templates-e2e`** (balanced+), `test-templates-integration` (audit-repo + projection pipeline tests), `test-templates-aspire` (mesh API/Function audit pipelines, comprehensive) |
+| **5b - App Core + Runtime (TDD for app/API, tests-after for runtime)** | `data-mapping-template`, `service-template`, `endpoint-template`, `structure-validator-template`, `exception-handler-template`, `message-handler-template` (if events), `health-check-template`, **`test-templates-service`**, **`test-templates-endpoint`**, **`test-templates-e2e`** (balanced+), `test-templates-integration` (audit-repo + projection pipeline tests), `test-templates-aspire` (mesh API/Function audit pipelines, comprehensive); `cqrs-handler-template`, `cqrs-endpoint-template`, `cqrs-validation-template`, `test-templates-cqrs` (when `applicationStyle: cqrs` or `switch`) |
 | **5c - Optional Hosts** | `uno-ui-client-layer`, `uno-mvux-model-template`, `uno-xaml-page-template` (Uno); `skills/ui-react.md` (React); host-specific templates per enabled host; **`flowengine-trigger-template`** (when `includeFlowEngine: true` and Functions or Scheduler enabled) |
 | **5d - Quality + Delivery** | **`test-templates-quality`** (architecture + Playwright + Load + Benchmarks + Mutation; Integration / E2E tiers are scaffolded earlier - 5d runs them as regression), `dockerfile-template`, **`flowengine-test-template`** (when `includeFlowEngine: true`), **`tech-design-template`** (generates `docs/tech-design.md` + `docs/tech-design.html`; see [../support/tech-design-diagrams.md](../support/tech-design-diagrams.md) for the render gate), **`local-test-stack-template`** (when `Test.Aspire`/`WasmUI`/`Test.Mobile` tiers exist) |
 | **5e - Integration (Auth + AI)** | `ai-search-template`, `agent-template` (when AI in scope) |
 
 > **Note:** Use the Phase Router in `START-AI.md` and the Phase 5 file table in `ai/SKILL.md` for authoritative per-phase file lists. This index is a human/AI quick-reference for "I need to scaffold X -> load template Y".
-
-## CQRS Templates
-
-- [cqrs-handler-template.md](cqrs-handler-template.md) - feature-folder command/query handler and registration shape.
-- [cqrs-endpoint-template.md](cqrs-endpoint-template.md) - direct handler endpoint mapping.
-- [cqrs-validation-template.md](cqrs-validation-template.md) - feature-folder command validator pattern.
-- [test-templates-cqrs.md](test-templates-cqrs.md) - handler, validation, and architecture tests.

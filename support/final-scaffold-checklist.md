@@ -98,6 +98,17 @@ Use `curl`, HTTPie, REST Client, or Scalar. Record status codes and endpoint dis
 
 ---
 
+## Post-Scaffold Deployment Handoff
+
+Scaffold completion is local-complete per **GR-11**; deployment is a separate, human-triggered track. When the team is ready to go live:
+
+- **Provision live infrastructure per IaC** - [../skills/iac.md](../skills/iac.md) section Deployment, plus the manual items in section One-time, account-bound steps (resource group, federated credentials, registry wiring).
+- **Configure CI/CD** - [../skills/cicd.md](../skills/cicd.md) section Required Secrets, plus the Required Variables and Environments sections in the same file.
+- **Flip deployment-only stubs** - walk the deferred external dependencies recorded in `HANDOFF.md`: provision each, fill its config section, remove or gate the `// TODO: [CONFIGURE]` stub, and re-enable the named `[Ignore]`/`Assert.Inconclusive` tests (see [../ai/SKILL.md](../ai/SKILL.md) section Scaffold Definition of Done, item 6).
+- **Production DB migration** - [../skills/cicd.md](../skills/cicd.md) section Production DB Migration (EF bundle, schema leads code).
+
+---
+
 ## If A Check Fails
 
 - Build/test failure: one focused fix pass, rerun the exact failing command.

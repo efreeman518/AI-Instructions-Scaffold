@@ -67,14 +67,14 @@ Feed-supplied layers require package read access before Phase 4 restore/build ca
 - Auth method: `NUGET_AUTH_TOKEN` environment variable (recommended) or credential provider
 - `packagePrefix` matches the feed (e.g., `EF`, `Contoso`)
 
-**Step 2:** Generate `nuget.config`. First probe for working global credentials so the repo file does not shadow them.
+**Step 2:** Generate `nuget.config`. First probe the user-global config (`%APPDATA%\NuGet\nuget.config` on Windows; `~/.nuget/NuGet/NuGet.Config` on Linux/Mac) for a `<packageSource>` whose `value` is the **same feed URL**, then branch:
 
-**Step 2a - probe the user-global config.** Open the user-global `nuget.config` (`%APPDATA%\NuGet\nuget.config` on Windows; `~/.nuget/NuGet/NuGet.Config` on Linux/Mac) and look for a `<packageSource>` whose `value` is the **same feed URL**.
+| Global config has this feed URL | Action |
+|---|---|
+| Found | Author a **secret-free** repo `nuget.config`: copy the global source key into `<packageSources>`, add the prefix entry to `<packageSourceMapping>`, emit **no** `<packageSourceCredentials>` block (a repo credential block would shadow working global creds). NuGet resolves the PAT from the global store locally; CI injects `NUGET_AUTH_TOKEN`. Skip Step 3. |
+| Not found | Run Step 2b below to write the `%NUGET_AUTH_TOKEN%` credential block. |
 
-- **Found (the dev already restores from this feed):** author a **secret-free** repo `nuget.config` - copy the global source key into `<packageSources>` and add the prefix entry to `<packageSourceMapping>`, but emit **no** `<packageSourceCredentials>` block. NuGet resolves the PAT from the global store for local restore; CI injects it via the `NUGET_AUTH_TOKEN` secret. Skip Step 3 (the token is already present globally). This avoids the failure mode where a repo credential block shadows working global creds and local restore fails unless `NUGET_AUTH_TOKEN` is also set in every shell.
-- **Not found (no global creds for this feed):** fall through to Step 2b and write the `%NUGET_AUTH_TOKEN%` credential block.
-
-**Step 2b - write the credential-bearing config** (only when Step 2a found no global creds). Use the feed helper:
+**Step 2b - write the credential-bearing config** (only when the probe found no global creds). Use the feed helper:
 
 ```powershell
 python .instructions/scripts/configure-ef-packages-feed.py --root . --feed-url https://nuget.pkg.github.com/{owner}/index.json --username {username} --prefix {packagePrefix}
@@ -168,9 +168,7 @@ Phase 3 must populate the **Tooling & Environment Readiness** section of `.scaff
 
 ### Gate-time Amendment Protocol
 
-Phase 2 is "closed" once `.scaffold/resource-implementation.yaml` validates - but a host or topology flag can still flip at a later pre-code gate (Phase 1->2, 2->3, or 3->4). The canonical example: enabling a Blazor admin head (`includeBlazorUI: true`) because the multi-head UI decision surfaced late (see [../ai/shared-understanding-interview.md](../ai/shared-understanding-interview.md) section Multi-Head UI Decision). When that happens, the canonical artifacts drift out of sync and Phase 4 scaffolds against a stale layout.
-
-When any host/topology flag changes at a pre-code gate, **re-sync all four canonical artifacts before continuing** - do not let Phase 4 start until they agree:
+A host or topology flag can still flip at a pre-code gate after Phase 2 closes (e.g., enabling `includeBlazorUI: true` because the multi-head UI decision surfaced late - see [../ai/shared-understanding-interview.md](../ai/shared-understanding-interview.md) section Multi-Head UI Decision). When any host/topology flag changes at a pre-code gate, **re-sync all four canonical artifacts before continuing** - do not let Phase 4 start until they agree:
 
 - [ ] `.scaffold/resource-implementation.yaml` - the changed feature flag(s) are set (this is the canonical source of truth for hosting topology)
 - [ ] `.scaffold/DESIGN-DECISIONS.md` - add a new decision row for the change and update the decision dependency graph / affected-decisions list (see [../templates/design-decisions-template.md](../templates/design-decisions-template.md))
@@ -208,11 +206,6 @@ Gate passes when build and the scoped test command succeed (plus any sub-phase-s
 
 ## 4 - Contract Scaffolding
 
-Required:
-- solution structure compiles (`.slnx`, all project files, `Directory.Packages.props`),
-- all interfaces, DTOs, entity shells, and no-op stubs compile,
-- test projects compile (Test.Support, Test.Unit, Test.Integration, Test.Aspire, Test.Endpoints, Test.E2E, profile-specific projects: Test.Architecture, Test.PlaywrightUI, Test.Load, Test.Benchmarks, Test.Mutation).
-
 Exit criteria:
 - [ ] Solution structure matches `skills/solution-structure.md`
 - [ ] Every entity from `.scaffold/resource-implementation.yaml` has: interface, DTO, entity shell, builders
@@ -237,11 +230,6 @@ dotnet test --filter "TestCategory=Unit|TestCategory=Endpoint"
 ---
 
 ## 5a - Foundation (TDD)
-
-Required:
-- domain + data-access projects build,
-- DbContext + repository wiring is present,
-- all domain entity tests, domain rule tests, and repository tests pass.
 
 Exit criteria:
 - [ ] Domain entities exist with real logic (shells replaced)
@@ -278,12 +266,6 @@ dotnet ef migrations add InitialCreate `
 > **Scaffold rule (GR-13):** During a greenfield scaffold, always start fresh. Do not accumulate incremental migrations until the baseline is established and the project is in production. Brownfield/slice flows are additive - see the flow guard above.
 
 ## 5b - App Core + Runtime/Edge (TDD for app/API, tests-after for runtime)
-
-Required:
-- DTOs/mappers/services compile,
-- API endpoint mappings compile,
-- DI registrations resolve,
-- all service unit tests and endpoint integration tests pass.
 
 Exit criteria:
 - [ ] Service unit tests pass (mock-based, via Moq)
@@ -346,12 +328,7 @@ After Aspire verification, write infrastructure tests (health checks, config loa
 
 Run only for enabled hosts.
 
-Required:
-- enabled optional hosts compile and start cleanly,
-- host-specific integration steps complete,
-- optional host dependencies are reachable.
-
-> **Scaffold vs Complete:** Do NOT mark Phase 5c complete unless each enabled optional host has both a validated build AND its host-specific gate result recorded below. If a host only scaffolds successfully (e.g., solution builds but the host has not been started or its target-specific checks have not passed), record the status as `scaffolded` or `partially-validated`, not `validated`. The handoff must reflect per-host gate status, not just solution-level build success.
+> **Scaffold vs Complete:** Mark 5c complete only when each enabled host has a validated build AND its host-specific gate result recorded below. Build-only success is recorded as `scaffolded` or `partially-validated`, never `validated` - the handoff must reflect per-host gate status.
 
 Function App:
 
@@ -513,16 +490,10 @@ Delivery checks:
 
 **Scaffold mode is the default.** Authentication finalization is complete when the app builds, tests pass, and auth works with the config-driven scaffold principal. Live identity provider setup is supplemental hardening - it does **not** block scaffold completion.
 
-Required (scaffold mode):
-- `AuthMode` toggle present in config (`Scaffold` vs provider name)
-- App boots and all endpoints are reachable with scaffold principal
-- Auth stubs/no-op passthrough removed or gated behind `AuthMode` check
-- Endpoint tests pass against the scaffold auth path
-
-Required (live provider - only when intentionally provisioned):
-- Auth provider configured with real tenant values
-- Authenticated endpoint behavior verified against live tokens
-- Scaffold stub gated by config so it does not activate in production
+| Mode | Required |
+|---|---|
+| Scaffold (default) | `AuthMode` toggle present in config (`Scaffold` vs provider name); app boots and all endpoints reachable with scaffold principal; auth stubs/no-op passthrough removed or gated behind `AuthMode`; endpoint tests pass against the scaffold auth path |
+| Live provider (only when intentionally provisioned) | Auth provider configured with real tenant values; authenticated endpoint behavior verified against live tokens; scaffold stub gated by config so it does not activate in production |
 
 Commands:
 
@@ -537,15 +508,10 @@ If live Entra setup is not yet performed, log it in `HANDOFF.md` as a deployment
 
 **Scaffold mode is the default.** AI integration is complete when AI-backed interfaces compile, resolve from DI, and tests pass with stubs or no-op implementations. Live Foundry/AI Search endpoints are deployment-only dependencies and do not block scaffold completion.
 
-Required (scaffold mode):
-- AI service interfaces compile and resolve from DI
-- Config sections absent -> services register as no-op stubs (not throws/missing-registration)
-- AI DI/configuration compiles
-
-Required (live endpoints - only when provisioned):
-- Search service responds
-- Agent endpoint responds
-- Integration tests pass against live resources
+| Mode | Required |
+|---|---|
+| Scaffold (default) | AI service interfaces compile and resolve from DI; absent config sections register as no-op stubs (not throws/missing-registration); AI DI/configuration compiles |
+| Live endpoints (only when provisioned) | Search service responds; agent endpoint responds; integration tests pass against live resources |
 
 Commands:
 
@@ -560,16 +526,12 @@ If live AI endpoints are not yet provisioned, log them in `HANDOFF.md` as deploy
 
 ## Compiler-Warning Policy
 
-`dotnet build` exits 0 is the gate. New compiler/analyzer warnings introduced by generated code are either resolved or recorded in `.scaffold/INSTRUCTION-GAPS.md` with owner and rationale. `TreatWarningsAsErrors` is **off by default**; teams may opt in via `Directory.Build.props` once the codebase is warning-clean. Warnings from referenced packages or generated SDK code (EF migrations, source generators) do not block the gate.
+`dotnet build` exits 0 is the gate. New compiler/analyzer warnings introduced by generated code are either resolved or recorded in `.scaffold/INSTRUCTION-GAPS.md` with owner and rationale. `TreatWarningsAsErrors` is **off by default**; teams may opt in via `Directory.Build.props` once the codebase is warning-clean.
 
-**What blocks the gate:**
-- `dotnet build` returns nonzero exit code.
-- A warning is suppressed without an entry in `.scaffold/INSTRUCTION-GAPS.md`.
-
-**What does NOT block the gate:**
-- Warnings from third-party packages.
-- SDK-generated code warnings (EF migrations, source generators).
-- Documented warnings with an owner and target resolution date.
+| Blocks the gate | Does not block |
+|---|---|
+| `dotnet build` returns nonzero exit code | Warnings from third-party packages |
+| A warning suppressed without an entry in `.scaffold/INSTRUCTION-GAPS.md` | SDK-generated code warnings (EF migrations, source generators); documented warnings with owner and target resolution date |
 
 ---
 
@@ -581,10 +543,11 @@ Run after `dotnet restore`:
 dotnet list package --vulnerable --include-transitive
 ```
 
-Severity policy:
-- **High:** must be fixed (upgrade direct dependency or pin transitive) **or** recorded in `.scaffold/INSTRUCTION-GAPS.md` as a blocked deployment dependency with owner and target resolution date.
-- **Moderate:** logged in `.scaffold/INSTRUCTION-GAPS.md` only; tracked but does not block.
-- **Low:** team discretion.
+| Severity | Policy |
+|---|---|
+| High | Fix (upgrade direct dependency or pin transitive) **or** record in `.scaffold/INSTRUCTION-GAPS.md` as a blocked deployment dependency with owner and target resolution date |
+| Moderate | Log in `.scaffold/INSTRUCTION-GAPS.md`; tracked, does not block |
+| Low | Team discretion |
 
 The audit is mandatory before pre-merge gate and as part of the Phase 5d quality regression. CI workflows must include the audit step (see [../skills/cicd.md](../skills/cicd.md)).
 
@@ -657,15 +620,7 @@ func host start --port 7100
 ```
 
 ### 3. API Endpoint Smoke
-For each scaffolded entity, verify the CRUD cycle works:
-```
-POST /v1/tenant/{tenantId}/{entity-route}       -> 201 + Location header
-GET  /v1/tenant/{tenantId}/{entity-route}/{id}   -> 200 + entity body
-POST /v1/tenant/{tenantId}/{entity-route}/search -> 200 + paged results
-PUT  /v1/tenant/{tenantId}/{entity-route}/{id}   -> 200 + updated body
-DEL  /v1/tenant/{tenantId}/{entity-route}/{id}   -> 204
-```
-Use `http` (HTTPie), `curl`, or the Scalar UI at `/scalar/v1`.
+For each scaffolded entity, verify the CRUD cycle per [final-scaffold-checklist.md](final-scaffold-checklist.md) section API Smoke (canonical route list). Use `http` (HTTPie), `curl`, or the Scalar UI at `/scalar/v1`.
 
 ### 4. Checklist
 - [ ] All hosts start without errors

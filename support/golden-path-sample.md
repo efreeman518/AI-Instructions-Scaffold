@@ -146,6 +146,8 @@ D-001 --> D-003
 ```yaml
 scaffoldMode: full
 testingProfile: balanced
+packageStrategy: feed
+packagePrefix: EF
 includeApi: true
 includeGateway: false
 includeFunctionApp: false

@@ -503,7 +503,7 @@ These MudBlazor API points bite on scaffold and are cheap to avoid up-front:
 
 The MudBlazor analyzer emits `MUD0002 Illegal Attribute` warnings for several of these - treat them as errors during scaffolding.
 
-**API drift on `ShowMessageBoxAsync`.** Some MudBlazor releases ship without the `ShowMessageBoxAsync` extension (or expose only the synchronous `ShowMessageBox`). Before relying on it, grep the installed package: `dotnet list package | findstr MudBlazor` then check `IDialogService` for the method. If absent, **ship a `ConfirmDialog.razor` scaffold component** and route every confirm prompt through `DialogService.ShowAsync<ConfirmDialog>(...)`:
+**API drift on `ShowMessageBoxAsync`.** Some MudBlazor releases ship without the `ShowMessageBoxAsync` extension. Check `IDialogService` in the installed package before relying on it (`dotnet list package | findstr MudBlazor`); if absent, ship the `ConfirmDialog.razor` scaffold component below and route every confirm prompt through `DialogService.ShowAsync<ConfirmDialog>(...)`:
 
 ```razor
 @* Components/Dialogs/ConfirmDialog.razor *@
@@ -541,7 +541,7 @@ var result = await dialog.Result;
 if (result is { Canceled: false, Data: true }) { /* proceed */ }
 ```
 
-Decide once per scaffold (`ShowMessageBoxAsync` vs `ConfirmDialog`) and use the same pattern everywhere - mixing them produces inconsistent confirm UX and doubles the surface to maintain. Alternative: pin MudBlazor to a known-good 8.x range in `Directory.Packages.props` until v9 ships a documented confirm helper.
+Decide once per scaffold (`ShowMessageBoxAsync` vs `ConfirmDialog`) and use the same pattern everywhere; pinning MudBlazor to a known-good range in `Directory.Packages.props` is the alternative.
 
 ## Server-Side Table Paging
 

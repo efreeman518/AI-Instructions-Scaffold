@@ -79,30 +79,21 @@ Update HANDOFF.md and close.
 
 ### Phase 3 - Implementation Plan
 
+Paste the Phase 3 prompt from [prompt-catalog.md](prompt-catalog.md), then append:
+
 ```text
-Load .instructions/START-AI.md and HANDOFF.md.
-Generate .scaffold/implementation-plan.md per ai/implementation-plan.md.
-Pre-flight branches on packageStrategy:
-  - feed/hybrid: configure the private feed via scripts/configure-ef-packages-feed.py --prefix <packagePrefix>.
-  - local: no feed wiring required; nuget.org-only nuget.config is fine.
-Confirm `dotnet restore` exits 0 in all modes. Confirm `dotnet ef` is installed.
 Tooling section: list only CLIs needed for an api-only scaffold (dotnet, dotnet-ef). Skip MCP discovery beyond Microsoft Docs + Context7.
-Update HANDOFF.md and close.
 ```
 
 **Done when:** `dotnet restore` exits 0. The plan's Tooling section has no unresolved items.
 
 ### Phase 4 - Contract Scaffolding
 
+Paste the Phase 4 prompt from [prompt-catalog.md](prompt-catalog.md), then append:
+
 ```text
-Load .instructions/START-AI.md and HANDOFF.md.
-Load the Phase 4 file set from START-AI.md section Phase Router.
-Generate the api-only contract scaffold per ai/contract-scaffolding.md:
-solution structure (.slnx + Directory.Packages.props), API host project, Application/Domain/Infrastructure projects,
-test projects (Test.Support, Test.Unit, Test.Endpoints), interfaces, DTOs, entity shells, no-op DI stubs.
-Skip projects for Gateway, Aspire AppHost, Function App, Uno/Blazor/React UI, Scheduler.
-Gate: `dotnet build` succeeds on the full solution including test projects.
-Set currentPhase: 5, currentSubPhase: 5a, and contractsScaffolded: true in HANDOFF.md and close.
+MVS scope: api-only. Skip projects for Gateway, Aspire AppHost, Function App, Uno/Blazor/React UI, Scheduler.
+Expected solution: API host, Application/Domain/Infrastructure projects, Test.Support, Test.Unit, Test.Endpoints.
 ```
 
 **Done when:** `dotnet build` is green and the solution contains exactly: API host, Application/Domain/Infrastructure projects, and the three test projects. No optional hosts.
@@ -113,26 +104,20 @@ MVS skips 5c (no optional hosts), 5d (no architecture/load/benchmark gates beyon
 
 #### 5a - Foundation (TDD)
 
+Use the Phase 5 session-start prompt plus the 5a block from [prompt-catalog.md](prompt-catalog.md), then append:
+
 ```text
-Load .instructions/START-AI.md and HANDOFF.md.
-Read the Phase 5 file table in ai/SKILL.md (5a row only) and load those files.
-Follow ai/tdd-protocol.md: write domain/rule/repository tests first (red), implement to green.
-Activate {Entity}Builder.Build() after entity logic is implemented.
 Replace no-op repository stubs with real implementations in RegisterServices.cs.
-Gate: see support/execution-gates.md section 5a.
-Update HANDOFF.md (currentSubPhase: 5b) and close.
 ```
 
 #### 5b - App Core + API (TDD)
 
+Use the Phase 5 session-start prompt plus the 5b block from [prompt-catalog.md](prompt-catalog.md), then append:
+
 ```text
-Load .instructions/START-AI.md and HANDOFF.md.
-Load the 5b row from the Phase 5 file table - but only the api-only required entries.
-Skip runtime concerns: gateway, multi-tenant, caching, aspire, observability, security extensions.
-Follow ai/tdd-protocol.md: service tests -> implement service, endpoint tests -> implement endpoints.
-Replace no-op DI stubs with real implementations.
-Gate: see support/execution-gates.md section 5b (skip the Aspire portion - Aspire is disabled in MVS).
-Update HANDOFF.md and close.
+Load only the api-only required entries from the 5b row.
+Skip runtime concerns: gateway, multi-tenant, caching, aspire, observability, security.
+Skip the Aspire portion of the 5b gate - Aspire is disabled in MVS.
 ```
 
 **Done when:** `dotnet build` green, `dotnet test --filter "TestCategory=Unit|TestCategory=Endpoint"` green, the API host starts and `GET /health` returns 200.

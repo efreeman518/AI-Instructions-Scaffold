@@ -349,10 +349,10 @@ group.MapPost("/{id:guid}/reschedule", Reschedule)
 
 Two complementary layers - **Result pattern for expected outcomes, `DefaultExceptionHandler` for unexpected exceptions**:
 
-1. **Result flow (primary path):** Services return `Result<T>` / `DomainResult<T>`. Endpoints use `Result.Match()` to map success/failure/not-found to `TypedResults` + `ProblemDetails`. No exceptions thrown for validation, business rules, or not-found cases.
+1. **Result flow (primary path):** Services return `Result<T>` / `DomainResult<T>`. Endpoints use `Result.Match()` to map success/failure/not-found to `TypedResults` + `ProblemDetails`. No exceptions thrown for validation, business rules, or not-found cases. DomainResult mechanics (factory results, Bind/Map chaining, error surface): [domain-model.md](domain-model.md) section DomainResult Pattern.
 2. **`DefaultExceptionHandler` (safety net):** A global `IExceptionHandler` registered via `AddExceptionHandler<DefaultExceptionHandler>()`. Catches only truly unexpected exceptions (null refs, timeouts, infra failures) and maps them to `ProblemDetails` with appropriate HTTP status codes. This is a last-resort handler, not a control-flow mechanism. See [exception-handler-template](../templates/exception-handler-template.md) for implementation.
 
-Reference: See [exception-handler-template](../templates/exception-handler-template.md) for the implementation pattern.
+Reference: See [exception-handler-template](../templates/exception-handler-template.md) for the implementation pattern. Outbound HTTP resilience defaults (retry, circuit breaker, timeout): [resilience.md](resilience.md).
 
 ### Error Pipeline Overview
 

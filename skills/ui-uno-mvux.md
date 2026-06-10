@@ -137,11 +137,11 @@ A persistent side-nav / bottom-tab menu must land on the **top** page regardless
 - Its children are `FrameView` instances - one per top-level sibling route (`Dashboard`, `TaskList`, ...). Auto-created on first visit to each sibling. Not declared in XAML.
 - Each `FrameView` wraps a private `Frame` that owns its own back-stack.
 
-**Trap 1 - absolute `/Main/X` routes no-op.** Calling `navigator.NavigateRouteAsync(element, "/Main/TaskList")` from MainPage walks *up* to the Shell's `FrameNavigator`. That Frame already has `MainPage` loaded, so it returns `Success=true` without descending into the Visibility sub-region. Symptom: click logs a `FrameNavigator Request: /Main/TaskList` line and nothing visually changes. **Do not use rooted paths for sibling switching.**
-
-**Trap 2 - relative route on the parent navigator can silently report success without flipping sibling `Visibility`.** `this.Navigator()` from MainPage returns the composite parent navigator. Dispatched down, it sometimes leaves the previously-active sibling (e.g. `TaskItem`) still `Visible`, so the detail paints on top of the newly-active sibling. Always run a `ForceSiblingVisibility` pass after the nav call.
-
-**Trap 3 - detail pages are *stacked inside* the source sibling's `Frame`, not created as new siblings.** When `TaskListModel.OpenDetail` calls `Navigator.NavigateRouteAsync(this, "TaskItem", data: item)`, the model's injected `Navigator` is TaskList's inner `Frame` navigator, not the parent Visibility navigator - so `TaskItemPage` is pushed onto `TaskList`'s Frame stack. Flipping sibling visibility without popping that Frame leaves the user staring at Edit Task even though `TaskList` is now the active sibling.
+| Trap | Symptom | Rule |
+|---|---|---|
+| 1 - absolute `/Main/X` routes no-op (they walk up to Shell's `FrameNavigator`, which already has `MainPage` loaded and returns `Success=true` without descending) | Click logs `FrameNavigator Request: /Main/TaskList`; nothing visually changes | Never use rooted paths for sibling switching |
+| 2 - relative route on the parent navigator can report success without flipping sibling `Visibility` | Previously-active sibling (e.g. `TaskItem`) stays `Visible`; the detail paints on top of the new sibling | Always run a `ForceSiblingVisibility` pass after the nav call |
+| 3 - detail pages stack *inside* the source sibling's `Frame` (the model's injected `Navigator` is the inner Frame navigator, not the parent Visibility navigator) | After flipping visibility the user still sees Edit Task even though `TaskList` is the active sibling | Pop every FrameView's inner Frame to root when switching siblings |
 
 #### Proven pattern
 

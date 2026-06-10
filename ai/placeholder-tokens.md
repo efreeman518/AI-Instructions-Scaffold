@@ -14,6 +14,7 @@ When generating code from templates and skill files, substitute these placeholde
 | `{Entity}` | Entity `name` | Entity class, file, and method name. |
 | `{entity}` | Entity `name` with lower first character | Local variables, parameters, route values. |
 | `{Entities}` | Pluralized entity name | Display and feature grouping name. |
+| `{EntityPlural}` | Pluralized entity name | Alias of `{Entities}` used in CQRS feature namespaces (`{Project}.Application.Cqrs.Features.{EntityPlural}`). Same derivation as `{Entities}`. |
 | `{entities}` | Lower-cased pluralized entity name | URL path or collection variable. |
 | `{entity-route}` | Kebab-cased entity name | URL-safe route segment. |
 | `{ChildEntity}` | Child entity `name` | Child entity class name. |

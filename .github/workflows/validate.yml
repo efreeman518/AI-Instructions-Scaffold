@@ -1,0 +1,19 @@
+name: validate-instructions
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      # Optional deps enable the full jsonschema validation path in
+      # check_golden_path_schemas; the script falls back to stdlib-only
+      # structural checks when they are absent.
+      - run: pip install pyyaml jsonschema
+      - run: python scripts/validate-instructions.py

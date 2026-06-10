@@ -37,6 +37,24 @@ Tests must verify behavior through public interfaces or endpoints. Avoid asserti
 7. **Do not accept compile-fail as RED.** Fix compile issues first, then confirm assertion-fail RED.
 8. **No horizontal red/green.** Write and green one vertical tracer before expanding the same pattern to the next entity or layer.
 
+### What RED Looks Like
+
+Valid RED - assertion failure (always counts):
+
+```text
+Failed Given_ValidInput_When_Create_Then_ReturnsSuccess [12 ms]
+  Assert.AreEqual failed. Expected:<Active>. Actual:<(null)>.
+```
+
+Valid RED in 5a only - Phase 4 shell throw (proves the test reaches unimplemented code):
+
+```text
+Failed Given_EmptyName_When_Create_Then_ReturnsFailure [8 ms]
+  System.NotImplementedException: ... at {Project}.Domain.Model.{Entity}.Create(...)
+```
+
+NOT RED: a compile error (rule 7), or a test that passes against a no-op stub returning defaults - tighten assertions until it fails (rule 2). In 5b, stubs return safe defaults rather than throwing, so only assertion failures count as RED.
+
 ---
 
 ## BDD Naming Convention

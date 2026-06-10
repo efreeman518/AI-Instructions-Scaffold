@@ -57,13 +57,15 @@ Is HANDOFF.md present?
         Brownfield adoption   -> load ai/adopt-codebase.md (replaces Phase 1)
 ```
 
+First scaffold? The pruned API-only path with paste-ready prompts is [support/minimum-viable-scaffold.md](support/minimum-viable-scaffold.md).
+
 **Brownfield adoption (C#/.NET/Azure profile only).** When `src/` already contains a buildable C#/.NET solution and no `.scaffold/` artifacts exist (or they're stale), use the adoption flow instead of the Phase 1 interview. The adoption flow derives Phase-1 artifacts from code inspection, then hands off into the regular workflow at Phase 2. Detail: [`ai/adopt-codebase.md`](ai/adopt-codebase.md).
 
 ## Tooling Check
 
 Prefer CLIs over MCP over online resources. Use Microsoft Docs or Context7 when current docs are needed; add GitHub, Azure, Playwright, or Fetch only when the current phase needs repo, cloud, UI, or external document access. If a server is unavailable, note it in `HANDOFF.md` and continue. If `.scaffold/implementation-plan.md` exists, reload its **Tooling & Environment Readiness** section at session start and verify CLIs marked for the current phase are installed.
 
-**Context graph tooling (optional).** If graphify is installed and initialized for this repo, prefer querying it over grepping/reading raw files for orientation. graphify is the single graph tool; the per-repo decision is which LAYER to build, by LOC ratio: the full layer (AST + semantic) when the knowledge layer (`.instructions/` + `.scaffold/` + `docs/*.md`) is >= application `src` LOC (the normal case for a scaffolded app, especially Phases 1-4), structure-only (AST, no model spend) when `src` code is >= 3x the knowledge layer or no `.scaffold/` layer exists. Global install is not enough: optionally enable supported harnesses, then build the repo graph - run `graphify .` from the repo root and verify `graphify-out/graph.json`. The full layer's semantic pass runs through the host Claude session in a Claude Code / Claude VS Code session (no API key). To keep the code layer current automatically, `graphify hook install` adds a harness-agnostic post-commit hook (AST-only, background, no extra commit, not tracked in git). Build at phase boundaries, not continuously (drift rule: code wins, fix the artifact then re-extract); the hook covers code, but rerun `graphify .` to refresh the semantic/doc layer. Full layer-selection table, ignore file, harness commands, and graph build commands: [`support/context-tooling.md`](support/context-tooling.md). If graphify is not initialized, proceed normally.
+**Context graph tooling (optional).** If graphify is initialized for this repo (`graphify-out/graph.json` exists), prefer querying it over grepping raw files for orientation; if not, proceed normally. Choose the layer by LOC ratio - full (AST + semantic) when the knowledge layer (`.instructions/` + `.scaffold/` + `docs/*.md`) is at least the size of application `src`, structure-only when code dominates - and rebuild at phase boundaries (code wins: fix the artifact, then re-extract). Layer-selection table, ignore file, harness enablement, build and post-commit hook commands: [`support/context-tooling.md`](support/context-tooling.md).
 
 ## Ground Rules
 
@@ -83,7 +85,7 @@ The only profile shipped today is **C#/.NET/Azure**, indexed at [`profiles/cshar
 
 Each phase = one session. Load only the files listed for the current phase.
 
-- **Phase 1 (Domain Discovery - universal):** `ai/shared-understanding-interview.md`, `ai/domain-specification-schema.md`, `templates/ubiquitous-language-template.md`, `templates/design-decisions-template.md`. Walk every interview branch until the developer confirms, defaults, or defers each. Output: `.scaffold/domain-specification.yaml`, `.scaffold/UBIQUITOUS-LANGUAGE.md`, `.scaffold/DESIGN-DECISIONS.md` in target project (create the `.scaffold/` directory at project root if absent). Gate: developer reviews each artifact against its schema. -> `HANDOFF.md` (project root) -> close.
+- **Phase 1 (Domain Discovery - universal):** `ai/shared-understanding-interview.md`, `ai/domain-specification-schema.md`, `templates/ubiquitous-language-template.md`, `templates/design-decisions-template.md`. Walk every interview branch until the developer confirms, defaults, or defers each. Output: `.scaffold/domain-specification.yaml`, `.scaffold/UBIQUITOUS-LANGUAGE.md`, `.scaffold/DESIGN-DECISIONS.md` in target project (create the `.scaffold/` directory at project root if absent). Worked example: [support/phase-1-worked-example.md](support/phase-1-worked-example.md) (interview pacing, branch recaps, mid-interview corrections). Gate: developer reviews each artifact against its schema. -> `HANDOFF.md` (project root) -> close.
 - **Phase 2 (Resource Definition - C#/.NET/Azure profile):** `ai/resource-implementation-schema.md` + `.scaffold/DESIGN-DECISIONS.md`. Ask clarification questions for unresolved resource decisions, API surface, external integrations, scaling, caching, messaging, optional workloads. Output: `.scaffold/resource-implementation.yaml` with `externalDependencyModes` declared for every external dep. Gate: developer review. -> `HANDOFF.md` -> close.
 - **Phase 3 (Implementation Plan - C#/.NET/Azure profile):** `ai/implementation-plan.md` + Phase 1/2 schemas + project YAMLs (under `.scaffold/`). Pre-flight branches on `packageStrategy` (resolved in Phase 2):
   - `feed` or `hybrid` - configure the private NuGet feed with the verified Python launcher from `support/python-setup.md`: `python {instructionsRoot}/scripts/configure-ef-packages-feed.py --root . --feed-url <url> --username <github-user> --prefix <packagePrefix>` (`{instructionsRoot}` is `.instructions` in an installed app and `.` in this repo); confirm `NUGET_AUTH_TOKEN` or an approved credential provider is available.
@@ -96,7 +98,7 @@ Each phase = one session. Load only the files listed for the current phase.
 
 ## Reference Application
 
-A companion reference app **TaskFlow** demonstrates every pattern these instructions produce. Canonical detail (repo URL, AI access rules, do-not-copy-wholesale rule, when to consult): see [`support/reference-app.md`](support/reference-app.md) and [`support/taskflow-proof-map.md`](support/taskflow-proof-map.md) for the phase -> area index.
+A companion reference app **TaskFlow** demonstrates every pattern these instructions produce. Canonical detail (repo URL, AI access rules, do-not-copy-wholesale rule, when to consult): see [`support/reference-app.md`](support/reference-app.md) and [`support/taskflow-proof-map.md`](support/taskflow-proof-map.md) for the phase -> area index. For regression-checking instruction changes against a canonical small scaffold, see [`support/golden-path-sample.md`](support/golden-path-sample.md).
 
 ## Event Boundary Rule
 
