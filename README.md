@@ -256,6 +256,7 @@ Expected shape (note `AGENTS.md`, `.github/agents/`, and `.claude/commands/` liv
       csharp-dotnet-azure.md       # active stack profile (file index)
     support/
       HANDOFF.md
+      operator-setup.md
       execution-gates.md
       troubleshooting.md
     skills/
@@ -374,7 +375,8 @@ These references are for **maintaining and developing the instruction set itself
 - [START-AI.md](START-AI.md) - canonical AI bootstrap, version checks, phase routing, and load rules
 - [support/prompt-catalog.md](support/prompt-catalog.md) - copy-paste prompts for starting or resuming a session
 - [support/phase-1-worked-example.md](support/phase-1-worked-example.md) - condensed transcript of the TaskFlow Phase 1 interview (pacing, branch recaps, mid-interview corrections)
-- [support/execution-gates.md](support/execution-gates.md) - canonical validation gates and operator setup checklist
+- [support/execution-gates.md](support/execution-gates.md) - canonical per-phase validation gates and commands
+- [support/operator-setup.md](support/operator-setup.md) - run-once machine/repo setup + Phase 3 pre-flight (tools, tracked-source, package-feed readiness)
 - [support/python-setup.md](support/python-setup.md) - Python install and launcher verification for scaffold scripts
 - [support/golden-path-sample.md](support/golden-path-sample.md) - canonical small sample for regression-checking scaffold instructions
 - [support/final-scaffold-checklist.md](support/final-scaffold-checklist.md) - final generated-app scaffold acceptance checklist

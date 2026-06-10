@@ -79,7 +79,8 @@ Scaffold Uno Platform (multi-target WASM + mobile + desktop), Blazor (Server or 
 
 | Artifact | Instruction File |
 |---|---|
-| Complete pattern (Program.cs, FloatService, Refit interface, MainLayout, pages) | `skills/ui-blazor.md` |
+| Spine (Program.cs, FloatService, Refit interface, dev tenant header, MainLayout, auth, checklist) | `skills/ui-blazor.md` |
+| Forms & interactions (init-only edit forms, unsaved-changes prompt, aggregate children, uploads, server paging, confirm-dialog fallback) - on demand | `skills/ui-blazor-forms.md` |
 
 ### React/Vite
 

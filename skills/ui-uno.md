@@ -24,7 +24,8 @@ This skill is split for context-budget-friendly loading. Use the table to decide
 | File | Load when |
 |---|---|
 | **[ui-uno-shell.md](ui-uno-shell.md)** | Setting up the Uno project: `.csproj` with `Uno.Sdk`, packages, `App.xaml`, Shell control, host wiring (`App.xaml.host.cs`), Aspire WASM wrapper host, mock-vs-live HTTP switch. |
-| **[ui-uno-mvux.md](ui-uno-mvux.md)** | Writing presentation code: MVUX models, feed-refresh patterns, cross-model messaging, navigation menus, XAML pitfalls, business services, client-API contract (`DefaultRequest`/`DefaultResponse`/pagination), auth patterns. |
+| **[ui-uno-mvux.md](ui-uno-mvux.md)** | Writing presentation code: MVUX models, feed-refresh patterns, cross-model messaging, XAML pitfalls, business services, client-API contract (`DefaultRequest`/`DefaultResponse`/pagination), auth patterns. |
+| **[ui-uno-navigation.md](ui-uno-navigation.md)** | Wiring navigation chrome: persistent menu "always land on the top page" (`PanelVisibilityNavigator` traps + click handler), cross-model form dirty guard before leaving an edited page. |
 | **[ui-uno-platforms.md](ui-uno-platforms.md)** | Platform-specific work: WASM debugging, port exclusion, Android SDK + emulator, Resizetizer issues, CI requirements (`wasm-tools` workload). |
 
 For frontier-model loading (>=200K context), all three may be loaded together. For constrained context, load by task.

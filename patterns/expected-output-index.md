@@ -129,7 +129,7 @@ Source: [../skills/ui-blazor.md](../skills/ui-blazor.md). Project root: `Host/{P
 
 ## Uno UI (Phase 5c, optional, dedicated session - `includeUnoUI: true`)
 
-Source: [../skills/ui-uno.md](../skills/ui-uno.md), [../skills/ui-uno-shell.md](../skills/ui-uno-shell.md), [../skills/ui-uno-mvux.md](../skills/ui-uno-mvux.md), [../skills/ui-uno-platforms.md](../skills/ui-uno-platforms.md). Project roots: `src/UI/{Project}.Uno/`, `src/UI/{Project}.Uno.Core/`, and `src/Host/{Project}.Uno.WasmHost/`.
+Source: [../skills/ui-uno.md](../skills/ui-uno.md), [../skills/ui-uno-shell.md](../skills/ui-uno-shell.md), [../skills/ui-uno-mvux.md](../skills/ui-uno-mvux.md), [../skills/ui-uno-navigation.md](../skills/ui-uno-navigation.md), [../skills/ui-uno-platforms.md](../skills/ui-uno-platforms.md). Project roots: `src/UI/{Project}.Uno/`, `src/UI/{Project}.Uno.Core/`, and `src/Host/{Project}.Uno.WasmHost/`.
 
 | Artifact | Path |
 |---|---|

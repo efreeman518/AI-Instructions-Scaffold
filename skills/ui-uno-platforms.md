@@ -6,6 +6,7 @@ Companion files:
 - [ui-uno.md](ui-uno.md) - index + decision table
 - [ui-uno-shell.md](ui-uno-shell.md) - project setup, app hosting, shell control
 - [ui-uno-mvux.md](ui-uno-mvux.md) - MVUX models, routing, XAML, business services, auth
+- [ui-uno-navigation.md](ui-uno-navigation.md) - menu "always-to-top" wiring, cross-page dirty guard
 
 ---
 

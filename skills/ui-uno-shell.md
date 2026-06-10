@@ -5,6 +5,7 @@ App-shell scaffolding and project-file rules for an Uno application. Loaded duri
 Companion files:
 - [ui-uno.md](ui-uno.md) - index + decision table
 - [ui-uno-mvux.md](ui-uno-mvux.md) - MVUX models, routing, XAML, business services, auth
+- [ui-uno-navigation.md](ui-uno-navigation.md) - menu "always-to-top" wiring, cross-page dirty guard
 - [ui-uno-platforms.md](ui-uno-platforms.md) - WASM debugging, Android, CI requirements
 
 ---

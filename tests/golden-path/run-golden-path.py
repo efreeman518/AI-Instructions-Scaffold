@@ -368,7 +368,7 @@ def preflight(args: argparse.Namespace) -> str | None:
     feed_url = detect_global_feed(args.feed_url)
     if not feed_url:
         fail("no machine/user-level package feed configured; set one up per "
-             "support/execution-gates.md Shared Base-Type Readiness, or bypass with --package-strategy local")
+             "support/operator-setup.md Shared Base-Type Readiness, or bypass with --package-strategy local")
     log(f"package strategy: feed - using {feed_url}")
     return feed_url
 
