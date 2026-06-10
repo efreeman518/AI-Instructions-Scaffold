@@ -77,7 +77,34 @@ Host/{Host}.Api/
 |-- Endpoints/{Entity}Endpoints.cs
 |-- Auth/
 |-- HealthChecks/
-`-- Middleware/
+|-- Middleware/
+`-- Properties/
+    `-- launchSettings.json   # REQUIRED - sets ASPNETCORE_ENVIRONMENT=Development
+```
+
+`launchSettings.json` must exist so that running under Aspire (or `dotnet run`) sets the correct environment. Without it, `IsDevelopment()` returns false, Scalar is skipped, and the API port is not surfaced in the Aspire dashboard.
+
+Minimal `Properties/launchSettings.json`:
+
+```json
+{
+  "profiles": {
+    "http": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": false,
+      "applicationUrl": "http://localhost:5100",
+      "environmentVariables": { "ASPNETCORE_ENVIRONMENT": "Development" }
+    },
+    "https": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": false,
+      "applicationUrl": "https://localhost:7100;http://localhost:5100",
+      "environmentVariables": { "ASPNETCORE_ENVIRONMENT": "Development" }
+    }
+  }
+}
 ```
 
 ## Startup Pattern
@@ -470,6 +497,7 @@ group.MapGet("/{id:guid}", GetById)
 
 ## Verification
 
+- [ ] `Properties/launchSettings.json` exists with `ASPNETCORE_ENVIRONMENT=Development` in every profile
 - [ ] `Program.cs` wires bootstrapper + API services before `Build()`
 - [ ] Endpoints are static classes under `Endpoints/` with `Map{Entity}Endpoints(...)`
 - [ ] Route groups apply `.RequireAuthorization(...)` at the correct scope

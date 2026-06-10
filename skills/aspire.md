@@ -45,7 +45,8 @@ var api = builder.AddProject<Projects.{Host}_Api>("{host}api")
     .WithReference(projectDb, connectionName: "{Project}DbContextQuery")
     .WithReference(redis, connectionName: "Redis1")
     .WaitFor(sqlServer)
-    .WaitFor(redis);
+    .WaitFor(redis)
+    .WithExternalHttpEndpoints();
 
 var scheduler = builder.AddProject<Projects.{Host}_Scheduler>("{host}scheduler")
     .WithReference(projectDb, connectionName: "{Project}DbContextTrxn")
@@ -67,6 +68,8 @@ builder.AddViteApp("{host}react", "../../../UI/{Project}.React")
 
 await builder.Build().RunAsync();
 ```
+
+**Non-negotiable:** every project that serves HTTP traffic a developer needs to reach must have `.WithExternalHttpEndpoints()`. Without it, the Aspire dashboard shows no URL for that resource and Aspire does not proxy browser traffic to it. This applies to `api`, `gateway`, and any UI host registered via `AddProject`. `AddViteApp` already applies it; `AddProject`-based hosts do not get it automatically.
 
 Only include `AddViteApp(...)` when `includeReactUI: true`. If Gateway is disabled, reference the API project and pass the API endpoint to `VITE_API_BASE_URL` instead. Aspire may assign a dynamic Vite port; read the resource URL from the current dashboard/console output for browser tests.
 

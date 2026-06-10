@@ -100,7 +100,7 @@ Use `curl`, HTTPie, REST Client, or Scalar. Record status codes and endpoint dis
 
 ## Post-Scaffold Deployment Handoff
 
-Scaffold completion is local-complete per **GR-11**; deployment is a separate, human-triggered track. When the team is ready to go live:
+Scaffold completion is local-complete per **GR-11**; deployment is a separate, human-triggered track. At the final enabled Phase 5 sub-phase, copy the applicable items below into the **Production Deployment TODOs** section at the top of `HANDOFF.md` (see [HANDOFF.md](HANDOFF.md)) so the remaining work is the first thing a developer reads. When the team is ready to go live:
 
 - **Provision live infrastructure per IaC** - [../skills/iac.md](../skills/iac.md) section Deployment, plus the manual items in section One-time, account-bound steps (resource group, federated credentials, registry wiring).
 - **Configure CI/CD** - [../skills/cicd.md](../skills/cicd.md) section Required Secrets, plus the Required Variables and Environments sections in the same file.

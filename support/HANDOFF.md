@@ -39,6 +39,15 @@ toolingNotes: ""           # CLIs/MCPs discovered in Phase 3; note any missing o
 instructionGapsPath: ".scaffold/INSTRUCTION-GAPS.md"
 ```
 
+## Production Deployment TODOs
+
+Populated by the **final enabled Phase 5 sub-phase session** as the first section a developer reads; leave as `<not yet at final sub-phase>` until then. The scaffold is complete and runnable locally (stubs/emulators), but it is **not deployable** until every item here is done. Derive the list from [final-scaffold-checklist.md](final-scaffold-checklist.md) section Post-Scaffold Deployment Handoff and the Deferred External Dependencies table below; typical entries:
+
+- [ ] Provision live Azure infrastructure (hand-written Bicep deploy or `azd provision` - see `skills/iac.md`)
+- [ ] Set CI/CD secrets, variables, and environments; enable `push` triggers on `cd.yml`/`provision.yml` (currently `workflow_dispatch`-only)
+- [ ] Flip each deployment-only stub: provision the resource (auth tenant, AI endpoints, ...), fill its config section, remove/gate the `// TODO: [CONFIGURE]` stub, re-enable its `[Ignore]`/inconclusive tests
+- [ ] Run the production DB migration path
+
 ## Next Step
 
 - <none>

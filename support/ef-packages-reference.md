@@ -34,9 +34,9 @@ These types are consumed throughout scaffolded code. Know where they come from s
 | `IEntityBase<TKey>` | EF.Domain.Contracts | Entity base interface |
 | `ITenantEntity<TTenant>` | EF.Domain.Contracts | Tenant-scoped entity marker; enables global query filters |
 | `IAuditable<TAuditIdType>` | EF.Domain.Contracts | Audit trail interface (CreatedBy, ModifiedBy, timestamps) |
-| `DomainResult<T>` | EF.Domain.Contracts | Railway-style result for domain operations (Success/Failure) |
-| `DomainResult` | EF.Domain.Contracts | Non-generic domain result |
-| `DomainError` | EF.Domain.Contracts | Typed error with code + message for domain validation |
+| `DomainResult<T>` | EF.Domain.Contracts | Railway-style result for domain operations. Properties: `Value`, `IsSuccess`, `IsFailure`, `IsNone`, `ErrorMessage` (aggregated string), `Errors` (`IReadOnlyList<DomainError>`). Static: `Success(T)`, `Failure(string error)`, `Failure(string code, string error)`, `Failure(IReadOnlyList<DomainError>)`, `Failure(Exception)`, `None()`. |
+| `DomainResult` | EF.Domain.Contracts | Non-generic domain result. Same shape as `DomainResult<T>` minus `Value`/`IsNone`. |
+| `DomainError` | EF.Domain.Contracts | Typed error. Properties: `Error` (the human message), `Code` (machine key), `Message` (alias for `Error`). Static factory: `DomainError.Create(string error, string code)`. Never access `.Message` from `Exception` - use `.Error` or `.Message` (same). **Propagation pattern:** `if (r.IsFailure) return Result<T>.Failure(r.ErrorMessage!);` or `Result<T>.Failure(r.Errors)`. |
 
 ### Data Access Layer (EF.Data, EF.Data.Contracts)
 
@@ -64,8 +64,8 @@ These types are consumed throughout scaffolded code. Know where they come from s
 |---|---|---|
 | `IRequestContext<TUser, TTenant>` | EF.Common.Contracts | Scoped request context (CorrelationId, AuditId, TenantId, Roles, RoleExists()) |
 | `RequestContext<TUser, TTenant>` | EF.Common.Contracts | Default implementation of IRequestContext. Constructor order: `(correlationId, auditId, tenantId, roles)` |
-| `Result<T>` | EF.Common.Contracts | Application-layer result wrapper (Success/Failure/None). Members: IsSuccess, IsFailure, IsNone, Value, ErrorMessage, Errors, Match, Map, Bind, BindOrContinue, OnSuccess, OnFailure, Tap. **Not JSON-deserializable** - lacks parameterless constructor; use `JsonDocument` parsing in tests. When passed to `Results.Ok(result)` in endpoints, serializes to just the `Value` payload (not the full Result wrapper). |
-| `Result` | EF.Common.Contracts | Non-generic result (Success/Failure). Members: IsSuccess, IsFailure, Combine, Match, Map |
+| `Result<T>` | EF.Common.Contracts | Application-layer result wrapper. Members: IsSuccess, IsFailure, IsNone, Value, ErrorMessage, Errors, Match, Map, Bind, BindOrContinue, OnSuccess, OnFailure, Tap. Static: `Success(T)`, `Failure(string error)`, `Failure(string code, string error)`, `Failure(IReadOnlyList<DomainError>)`, `Failure(Exception)`. **Not JSON-deserializable** - lacks parameterless constructor; use `JsonDocument` parsing in tests. When passed to `Results.Ok(result)` in endpoints, serializes to just the `Value` payload (not the full Result wrapper). |
+| `Result` | EF.Common.Contracts | Non-generic result. Static: `Success()`, `Failure(string error)`, `Failure(string code, string error)`, `Failure(IReadOnlyList<DomainError>)`, `Failure(Exception)`, `Combine(Result[])`. |
 | `PagedResponse<T>` | EF.Common.Contracts | Paged response with Data, Total, PageSize, PageIndex |
 | `SearchRequest<TFilter>` | EF.Common.Contracts | Paged search request with PageSize, PageIndex, Sorts, Filter |
 | `Sort` | EF.Common.Contracts | Sort descriptor (PropertyName, SortOrder) |
