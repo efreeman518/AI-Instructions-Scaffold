@@ -70,8 +70,9 @@ Playwright requires a real hosted stack. It cannot run on `WebApplicationFactory
 ### Base URL Rules
 
 - Configure one base URL per UI surface/project. Do not share a hard-coded URL across Blazor, Uno, and React.
-- Make the base URL environment-driven (`{APP}_BLAZOR_BASE_URL`, `{APP}_UNO_BASE_URL`, `{APP}_REACT_BASE_URL`, or equivalent).
-- When running through Aspire, read the UI resource URL from the current dashboard/console output. Vite/React resources may use a dynamic port; do not assume `5173`, `5178`, or a prior run's URL.
+- Make the base URL environment-driven (`{APP}_BLAZOR_BASE_URL`, `{APP}_UNO_BASE_URL`, `{APP}_REACT_BASE_URL`, or equivalent) for externally hosted stacks (CI, docker-compose, preview deployments).
+- When the app is Aspire-hosted, the C# suite resolves the URL programmatically: self-host the AppHost with `DistributedApplicationTestingBuilder`, wait for the UI resource to become healthy, then read its dynamic endpoint via `GetEndpoint("{ui-resource}")`. Full fixture shape: [../templates/test-templates-quality.md](../templates/test-templates-quality.md) section E2E Tests (Playwright). Vite/React resources may use a dynamic port; never assume `5173`, `5178`, or a prior run's URL.
+- Never ship a hard-coded URL fallback or `[Ignore]`d tests pointed at a guessed URL - when no base URL can be resolved (env var absent, Docker/AppHost unavailable), mark tests `Assert.Inconclusive` with a precise message.
 - Standalone Vite can use a conventional dev port, but hosted-stack Playwright must use the actual Aspire resource URL.
 
 ### Baseline Rules

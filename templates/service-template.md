@@ -244,6 +244,7 @@ public interface I{Entity}Service
 8. **Inline entity name strings** - Always use `nameof({Entity})` in boundary-validator calls and error messages, not hardcoded strings.
 9. **Missing BuildResponse** - All success paths should use the private static `BuildResponse` helper, not inline `new() { Item = ... }`.
 10. **[Multi-tenant only] Missing PreventTenantChange in Update** - After boundary check, before domain update, call `tenantBoundaryValidator.PreventTenantChange(...)` to reject tenant reassignment.
+11. **Invented repository members (GR-14)** - Call only members that exist on the injected contract. Read the interface (or the first green service/handler in the codebase) before writing call sites. `IRepositoryQuery<T>` exposes `GetAsync(id)` / `ListAsync(predicate)`; paged search lives on the bespoke `I{Entity}RepositoryQuery.Search{Entity}Async`. There is no `QueryPageAsync` on the consumer-facing contracts - `QueryPageAsync` / `QueryPageProjectionAsync` are protected `RepositoryBase` helpers, callable only inside repository implementations.
 
 ## Policy Notes
 

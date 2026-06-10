@@ -346,7 +346,7 @@ The 2-param overload retries on `DbUpdateConcurrencyException` using the specifi
 
 ## Notes
 
-- **Repositories inherit `RepositoryBase<TContext, TAuditId, TTenantId>`** - provides `GetEntityAsync`, `Create(ref)`, `UpdateFull(ref)`, `Delete(entity)`, `DeleteAsync(predicate)`, `SaveChangesAsync(OptimisticConcurrencyWinner, CancellationToken)`, `QueryPageProjectionAsync`, `QueryPageAsync`
+- **Repositories inherit `RepositoryBase<TContext, TAuditId, TTenantId>`** - provides `GetEntityAsync`, `Create(ref)`, `UpdateFull(ref)`, `Delete(entity)`, `DeleteAsync(predicate)`, `SaveChangesAsync(OptimisticConcurrencyWinner, CancellationToken)`, `QueryPageProjectionAsync`, `QueryPageAsync`. These are **protected helpers for repository implementations only** - none of them appear on `IRepositoryQuery<T>` / `IRepositoryTrxn<T>`, so services and handlers can never call them; consumers get `GetAsync` / `ListAsync` plus the bespoke `Search{Entity}sAsync` methods (GR-14)
 - **`DB` property** - `RepositoryBase` exposes `protected TDbContext DB => dbContext;` for calling extension methods (e.g. Updater) on the context
 - **Generic args:** `TAuditId = string` (matches `IRequestContext.AuditId`), `TTenantId = Guid?` (matches `ITenantEntity<Guid>` - nullable for non-tenant scenarios)
 - **`QueryPageProjectionAsync` signature:** `(Expression<Func<T, TProject>> projector, bool readNoLock, int? pageSize, int? pageIndex, Expression<Func<T, bool>>? filter, Func<IQueryable<T>, IOrderedQueryable<T>>? orderBy, bool includeTotal, SplitQueryThresholdOptions?, CancellationToken, params includes[])`

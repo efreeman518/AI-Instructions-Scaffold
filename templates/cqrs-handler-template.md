@@ -50,6 +50,7 @@ internal sealed class Create{Entity}Handler(
 
 Rules:
 
+- **Derive repository call sites from the actual contract (GR-14).** Before writing handler bodies, read the repository interface the handler injects (vendored source under `src/Packages/<Prefix>.Data.Contracts`, or [repository-template.md](repository-template.md) section Generic Repository Pair) or the first green handler in the codebase, and call only members that exist there. `IRepositoryQuery<T>` exposes `GetAsync(id)` and `ListAsync(predicate)` - there is no `QueryPageAsync` on it. Paged search goes through the bespoke `I{Entity}RepositoryQuery.Search{Entity}sAsync` (which uses the protected `RepositoryBase.QueryPageProjectionAsync` internally). Do not invent method names from conventions; a plausible name that compiles nowhere costs a fix in every generated handler.
 - Avoid central request dispatchers, request buses, and generic `Send()` entrypoints.
 - Reason: keep route -> request -> handler flow explicit and registered once.
 - One command/query maps to one handler registration.

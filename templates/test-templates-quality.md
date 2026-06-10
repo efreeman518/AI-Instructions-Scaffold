@@ -70,7 +70,56 @@ public class ApplicationDependencyTests : BaseTest
 >
 > **MudBlazor timing:** Always `waitFor` inputs before fill and use 15 s timeout for delete dialogs as defined in [../skills/testing-quality.md](../skills/testing-quality.md) section Hosted Browser UI.
 >
-> **Base URL:** Use an environment variable per UI surface. Aspire can assign dynamic ports to UI hosts, especially React/Vite apps. Do not hard-code a previous dashboard URL.
+> **Base URL:** Aspire assigns dynamic ports to UI hosts, especially React/Vite apps. Resolve the base URL at run time via `PlaywrightStackFixture` below - env var when an externally hosted stack is provided, otherwise self-host the AppHost and read the UI resource's actual endpoint. **Never generate a hard-coded URL fallback, and never generate `[Ignore]`d tests pointed at a guessed URL** - a Playwright suite that cannot find its stack degrades to `Assert.Inconclusive` with a precise message (GR-11), same as the Docker-gated tiers.
+
+### File: `Test/Test.PlaywrightUI/PlaywrightStackFixture.cs`
+
+When `useAspire: true`, the suite hosts the stack itself with `DistributedApplicationTestingBuilder` (package `Aspire.Hosting.Testing` + a project reference to the AppHost), waits for the UI resource, and reads its dynamic URL. `{ui-resource}` is the AppHost resource name of the UI under test (e.g. the React/Vite or Blazor resource). An explicit `{APP}_UI_BASE_URL` always wins, so CI can target a docker-compose stack or preview deployment without booting Aspire.
+
+```csharp
+[TestClass]
+public class PlaywrightStackFixture
+{
+    private static DistributedApplication? _app;
+
+    /// <summary>Startup failure captured by AssemblyInit; null when a base URL was resolved.</summary>
+    public static Exception? StartupError { get; private set; }
+
+    /// <summary>Resolved UI base URL. Only valid when <see cref="StartupError"/> is null.</summary>
+    public static string BaseUrl { get; private set; } = null!;
+
+    [AssemblyInitialize]
+    public static async Task AssemblyInit(TestContext _)
+    {
+        // Externally hosted stack (CI, docker-compose, preview env) wins.
+        var external = Environment.GetEnvironmentVariable("{APP}_UI_BASE_URL");
+        if (!string.IsNullOrWhiteSpace(external)) { BaseUrl = external.TrimEnd('/'); return; }
+
+        // Otherwise self-host the Aspire AppHost and read the dynamic UI endpoint.
+        try
+        {
+            var builder = await DistributedApplicationTestingBuilder.CreateAsync<Projects.{App}_AppHost>();
+            _app = await builder.BuildAsync();
+            await _app.StartAsync();
+            await _app.ResourceNotifications
+                .WaitForResourceHealthyAsync("{ui-resource}")
+                .WaitAsync(TimeSpan.FromMinutes(3));
+            BaseUrl = _app.GetEndpoint("{ui-resource}").ToString().TrimEnd('/');
+        }
+        catch (Exception ex)
+        {
+            // Missing Docker/AppHost marks the suite Inconclusive, never red (GR-11).
+            StartupError = ex;
+        }
+    }
+
+    [AssemblyCleanup]
+    public static async Task AssemblyCleanup(TestContext _)
+    {
+        if (_app is not null) await _app.DisposeAsync();
+    }
+}
+```
 
 ### File: `Test/Test.PlaywrightUI/Tests/{Entity}CrudTests.cs`
 
@@ -81,14 +130,17 @@ public class ApplicationDependencyTests : BaseTest
 [TestCategory("PlaywrightUI")]
 public class {Entity}CrudTests : PageTest
 {
-    private static readonly string BaseUrl =
-        System.Environment.GetEnvironmentVariable("{APP}_UI_BASE_URL")
-        ?? "https://localhost:44318";
+    private static string BaseUrl => PlaywrightStackFixture.BaseUrl;
 
     public override BrowserNewContextOptions ContextOptions() => new() { IgnoreHTTPSErrors = true };
 
     [TestInitialize]
-    public async Task TestInitialize() => await Page.GotoAsync(BaseUrl);
+    public async Task TestInitialize()
+    {
+        if (PlaywrightStackFixture.StartupError != null)
+            Assert.Inconclusive($"Hosted stack unavailable: {PlaywrightStackFixture.StartupError.Message}");
+        await Page.GotoAsync(BaseUrl);
+    }
 
     [TestMethod]
     [DataRow("item1", "suffix1")]
