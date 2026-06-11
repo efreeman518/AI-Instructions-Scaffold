@@ -60,6 +60,98 @@ public class ApplicationDependencyTests : BaseTest
 }
 ```
 
+### File: `Test/Test.Architecture/AggregateBoundaryTests.cs` (GR-15)
+
+Enforces the aggregate boundary: an **owned child** (1:N owned entity or M:N junction with no life outside its root - e.g. a comment or checklist item on a task, or the join entity) gets **no** standalone Create/Update/Delete CQRS command/handler, no transactional repository contract, and no write method on its read service. This is the automated gate behind [../skills/domain-model.md](../skills/domain-model.md) section Aggregate Roots vs Internal Children - it catches the anemic-child anti-pattern (a `Create{Child}Handler` that never loads its root) that prose alone does not.
+
+Maintain the `OwnedChildEntities` list as the slice classification step ([GR-15](../GROUND-RULES.md)) decides each entity. Independent aggregate roots and polymorphic standalone entities (owned by no single root) are excluded - they keep the full write slice. The first test guards the list against renames so the rule cannot silently pass on a typo.
+
+> **Reflection, not route inspection.** Minimal API route registrations (`MapPost("/{id}/{children}", ...)`) are not type metadata, so this gate asserts on the **type surface** that backs a write - the command/handler, the `I{Child}RepositoryTrxn` contract, and the service write methods. A child cannot be persisted standalone without one of those, so blocking them blocks the standalone write endpoint by construction. The legal nested-route writes on the root use `Add/Update/Remove{Root}{Child}` names that never collide with the forbidden `{Verb}{Child}Command/Handler` names.
+
+```csharp
+namespace Test.Architecture;
+
+[TestClass]
+[TestCategory("Architecture")]
+public sealed class AggregateBoundaryTests : BaseTest
+{
+    // Owned children only (GR-15). Exclude independent roots ({Entity}, ...) and polymorphic
+    // standalone entities owned by no single root. Add a child here when one is introduced.
+    private static readonly Type[] OwnedChildEntities =
+    [
+        typeof({Project}.Domain.Model.{Child}),
+        // typeof({Project}.Domain.Model.{OtherChild}),
+    ];
+
+    // Verb prefixes that denote a standalone child write. The legitimate aggregate-routed commands
+    // are named Add/Update/Remove{Root}{Child}Command and never match these exact names.
+    private static readonly string[] WriteVerbPrefixes = ["Create", "Update", "Delete", "Upsert", "Patch"];
+
+    [TestMethod]
+    public void OwnedChildEntities_AreRealDomainEntities()
+    {
+        var strays = OwnedChildEntities
+            .Where(t => t.Assembly != DomainModelAssembly || !t.IsClass || t.IsAbstract)
+            .Select(t => t.FullName)
+            .ToList();
+        Assert.IsEmpty(strays,
+            $"Listed owned-child types are not concrete domain entities: {string.Join(", ", strays)}");
+    }
+
+    [TestMethod]
+    public void OwnedChildren_HaveNoStandaloneWriteCommandsOrHandlers()
+    {
+        var forbidden = OwnedChildEntities
+            .SelectMany(c => WriteVerbPrefixes
+                .SelectMany(p => new[] { $"{p}{c.Name}Command", $"{p}{c.Name}Handler" }))
+            .ToHashSet(StringComparer.Ordinal);
+
+        var offenders = ApplicationCqrsAssembly.GetTypes()
+            .Where(t => forbidden.Contains(t.Name))
+            .Select(t => t.FullName)
+            .ToList();
+        Assert.IsEmpty(offenders,
+            "Owned children must not have standalone write commands/handlers - route writes through the root: "
+            + string.Join(", ", offenders));
+    }
+
+    [TestMethod]
+    public void OwnedChildren_HaveNoTransactionalRepositoryContract()
+    {
+        var forbidden = OwnedChildEntities.Select(c => $"I{c.Name}RepositoryTrxn").ToHashSet(StringComparer.Ordinal);
+        var offenders = ApplicationContractsAssembly.GetTypes()
+            .Where(t => t.IsInterface && forbidden.Contains(t.Name))
+            .Select(t => t.FullName)
+            .ToList();
+        Assert.IsEmpty(offenders,
+            "Owned children must not expose a transactional repository contract (GR-15): " + string.Join(", ", offenders));
+    }
+
+    [TestMethod]
+    public void OwnedChildren_ServiceContractsExposeReadsOnly()
+    {
+        var writeMethods = new HashSet<string>(
+            ["CreateAsync", "UpdateAsync", "DeleteAsync", "UpsertAsync"], StringComparer.Ordinal);
+        var offenders = new List<string>();
+        foreach (var child in OwnedChildEntities)
+        {
+            var contract = ApplicationContractsAssembly.GetTypes()
+                .FirstOrDefault(t => t.IsInterface && t.Name == $"I{child.Name}Service");
+            if (contract is null) continue;
+            offenders.AddRange(contract.GetMethods()
+                .Where(m => writeMethods.Contains(m.Name))
+                .Select(m => $"{contract.Name}.{m.Name}"));
+        }
+        Assert.IsEmpty(offenders,
+            "Owned-child service contracts must be read-only (Search/Get only) per GR-15: " + string.Join(", ", offenders));
+    }
+}
+```
+
+> Requires `ApplicationContractsAssembly` and `ApplicationCqrsAssembly` on `BaseTest` (the CQRS assembly exists when `applicationStyle` is `cqrs` or `switch`). For a pure `service`-style scaffold with no CQRS layer, drop `OwnedChildren_HaveNoStandaloneWriteCommandsOrHandlers` and keep the repository-contract and service-surface assertions, which are style-independent.
+
+**TaskFlow proof (local):** `../AI-Instructions-ReferenceApp/src/Test/Test.Architecture/AggregateBoundaryTests.cs`
+
 ---
 
 ## E2E Tests (Playwright)

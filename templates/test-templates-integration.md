@@ -168,15 +168,17 @@ public class IntegrationTestSetup
 
 ## Repository Integration Tests
 
-Cover **migration apply** + **CRUD against real SQL** + **child includes** + **M:N junction navigation** + **tenant query filter** + **polymorphic indexes** when applicable. Build contexts via `SqlContainerFixture` and gate on `StartupError` in `[TestInitialize]`.
+Cover **migration apply** + **CRUD against real SQL** + **child includes** + **updater navigation-add round-trip** (for entities with an `{Entity}Updater`) + **M:N junction navigation** + **tenant query filter** + **polymorphic indexes** when applicable. Build contexts via `SqlContainerFixture` and gate on `StartupError` in `[TestInitialize]`.
 
 ### File: `Test/Test.Integration/{Entity}RepositoryIntegrationTests.cs`
 
 ```csharp
 using EF.Data.Contracts;
 using Microsoft.EntityFrameworkCore;
+using {Project}.Application.Models;        // {Entity}Dto / {ChildEntity}Dto for the updater round-trip test
 using {Project}.Domain.Model;
 using {Project}.Infrastructure.Data;
+using {Project}.Infrastructure.Repositories;  // {Entity}RepositoryTrxn for the updater round-trip test
 using Test.Integration.Infrastructure;
 using Test.Support;
 using Test.Support.Builders;
@@ -278,6 +280,65 @@ public class {Entity}RepositoryIntegrationTests
         Assert.HasCount(1, loaded.{ChildEntities});
     }
 
+    /// <summary>
+    /// Regression guard for the <c>ValueGeneratedNever</c> key baseline (GR-16). Drives a real
+    /// <c>repo.UpdateFromDto(reloadedParent, dto)</c> round-trip that adds a NEW child to an
+    /// already-persisted, freshly-loaded (tracked) parent - the exact aggregate-edit path the API uses,
+    /// and the ONLY path that exercises EF's add-vs-update state inference for navigation-added children.
+    /// The <c>{Entity}_WithChildren_PersistsCorrectly</c> test above seeds children via
+    /// <c>db.{ChildEntities}.Add(...)</c>, which inserts them directly and bypasses this inference -
+    /// it cannot catch a missing/regressed baseline. Here the insert succeeds only because
+    /// <c>EntityBase.Id</c> is <c>ValueGeneratedNever</c> (EntityBaseConfiguration): EF treats the
+    /// client-set Guid v7 key as application-assigned and infers the navigation-add as Added. Drop that
+    /// baseline (or add a child whose config skips <c>base.Configure</c>) and the save throws
+    /// <c>DbUpdateConcurrencyException</c> (UPDATE against a non-existent row).
+    /// </summary>
+    [TestMethod]
+    [Timeout(120000)]
+    public async Task {Entity}_UpdateFromDto_AddsChildToReloadedParent_AgainstRealSql()
+    {
+        Guid parentId;
+
+        // Seed a bare parent in its own unit of work.
+        await using (var seed = SqlContainerFixture.CreateTrxnContext())
+        {
+            await seed.Database.MigrateAsync();
+            var seeded = new {Entity}Builder().WithName("Updater Parent").Build();
+            seed.{Entities}.Add(seeded);
+            await seed.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins);
+            parentId = seeded.Id;
+        }
+
+        // Reload the persisted parent (tracked, children included) in a fresh context - the handler/service path.
+        await using var db = SqlContainerFixture.CreateTrxnContext();
+        var loaded = await db.{Entities}
+            .Include(e => e.{ChildEntities})
+            .FirstAsync(e => e.Id == parentId);
+
+        // Desired-state DTO carries a NEW child (no Id -> create path). The DTO collection property
+        // mirrors the entity navigation; fill the child's required fields for your domain.
+        var dto = new {Entity}Dto
+        {
+            Id = parentId,
+            Name = "Updater Parent",
+            {ChildEntities} = [new {ChildEntity}Dto { /* required fields */ {Entity}Id = parentId }]
+        };
+
+        var repo = new {Entity}RepositoryTrxn(db);
+        var sync = repo.UpdateFromDto(loaded, dto, RelatedDeleteBehavior.RelationshipAndEntity);
+        Assert.IsTrue(sync.IsSuccess, $"UpdateFromDto failed: {sync.ErrorMessage}");
+
+        // Inserts the navigation-added child. Throws here if the ValueGeneratedNever baseline is missing.
+        await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins);
+
+        // Confirm the child persisted via a clean reload.
+        await using var verify = SqlContainerFixture.CreateTrxnContext();
+        var reloaded = await verify.{Entities}
+            .Include(e => e.{ChildEntities})
+            .FirstAsync(e => e.Id == parentId);
+        Assert.HasCount(1, reloaded.{ChildEntities});
+    }
+
     [TestMethod]
     [Timeout(120000)]
     public async Task {Entity}Tag_ManyToMany_WorksCorrectly()
@@ -341,7 +402,8 @@ public class {Entity}RepositoryIntegrationTests
 |---|---|
 | `Migrations_ApplyCleanly_ToSqlContainer` | Always - once per schema, not per entity. |
 | `{Entity}_CrudOperations_WorkAgainstRealSql` | Every entity with mutations. |
-| `{Entity}_WithChildren_PersistsCorrectly` | Entity has owned/dependent child collections (1:N). |
+| `{Entity}_WithChildren_PersistsCorrectly` | Entity has owned/dependent child collections (1:N). Persistence + includes only - seeds children via `db.{ChildEntities}.Add(...)`, so it does NOT exercise the updater/navigation-add path (see next row). |
+| `{Entity}_UpdateFromDto_AddsChildToReloadedParent_AgainstRealSql` | Entity has owned/dependent child collections (1:N) **and** an `{Entity}Updater`. Required regression guard for the `ValueGeneratedNever` key baseline (GR-16) - the only test that adds a NEW child through `repo.UpdateFromDto` against real SQL. A green `WithChildren_PersistsCorrectly` does not substitute for it. |
 | `{Entity}Tag_ManyToMany_WorksCorrectly` | Entity participates in M:N via a junction. |
 | `TenantQueryFilter_RestrictsResults_WhenTenantIdSet` | `enableMultiTenant: true`. |
 | `Polymorphic_Index_Exists` | Entity uses a polymorphic ownership pattern (e.g., `Attachment.OwnerType` + `OwnerId`). |
