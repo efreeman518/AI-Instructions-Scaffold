@@ -192,6 +192,14 @@ public interface I{Entity}RepositoryQuery
 
 > **When to use:** an entity with **no bespoke read/write logic** - join entities, append-only logs,
 > simple CRUD. Resolve the shared generic pair instead of generating the per-entity classes above.
+>
+> **Never for an aggregate root with owned children (GR-15).** A root that owns child collections
+> ALWAYS keeps a bespoke `{Root}RepositoryTrxn` + `I{Root}RepositoryTrxn` + `{Root}Updater`, even under
+> `generic-only` - regardless of query complexity. `Get{Root}Async(includeChildren)` + `UpdateFromDto`
+> graph sync can only live on a bespoke Trxn repo, and `I{Root}RepositoryTrxn` is the only
+> Infrastructure-free way to expose include-load + graph-sync to handlers (the application/CQRS layer
+> may not reference Infrastructure). Dropping it pushes child writes into the application layer - the
+> anemic-aggregate anti-pattern. Generic-only applies to leaf/CRUD/log/join entities only.
 
 `IRepositoryBase` already exposes generic-method CRUD/query (`Create<T>(ref T)`, `Delete<T>(T)`,
 `GetEntityAsync<T>(...)`, `QueryPageProjectionAsync<T,TProject>(...)`, `SaveChangesAsync(...)`), so the
@@ -356,7 +364,7 @@ The 2-param overload retries on `DbUpdateConcurrencyException` using the specifi
 - **UpdateFromDto** delegates to `DB.UpdateFromDto(entity, dto, relatedDeleteBehavior)` - a DbContext extension method (see updater-template.md)
 - Projectors (`{Entity}Mapper.Projection` by default, `{Entity}Mapper.ProjectorSearch` for intentional lean grid shapes) used in query repo for efficient SQL translation
 - No `SaveChangesAsync` override on query repo - read-only by design
-- Entity-specific repositories only for bespoke read/write logic; the open-generic `IRepositoryTrxn<T>`/`IRepositoryQuery<T>` pair (see [Generic Repository Pair](#generic-repository-pair-repositorycontractstyle-hybrid--generic-only)) covers simple CRUD / join / append-only entities under `repositoryContractStyle: hybrid`/`generic-only`
+- Entity-specific repositories for bespoke read/write logic; the open-generic `IRepositoryTrxn<T>`/`IRepositoryQuery<T>` pair (see [Generic Repository Pair](#generic-repository-pair-repositorycontractstyle-hybrid--generic-only)) covers simple CRUD / join / append-only entities under `repositoryContractStyle: hybrid`/`generic-only`. **Aggregate roots that own child collections ALWAYS get a bespoke `{Root}RepositoryTrxn` + `{Root}Updater` regardless of query complexity or contract style (GR-15)** - the include-load + `UpdateFromDto` graph sync cannot live on the generic pair, and the application/CQRS layer can only reach it through `I{Root}RepositoryTrxn`
 - Use `ConfigureAwait(ConfigureAwaitOptions.None)` in repository methods (library code)
 
 ---

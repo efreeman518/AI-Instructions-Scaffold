@@ -134,6 +134,31 @@ Apply enum freely when the values are genuinely interchangeable labels with no s
     - { name: Category, entity: Category, required: false }
   ```
 
+### Aggregate Roots vs Owned Children (drives the generated write surface)
+
+The `children` / `navigation` structure already encodes aggregate ownership; this section makes it **normative for generation** so downstream phases apply the DDD default (GR-15) instead of treating every entity as an independent root.
+
+**Default classification (derive it, do not ask):**
+
+- An entity that appears as the `entity` target of another entity's `one-to-many` or `one-to-one` `children` relationship is an **owned child** of that aggregate (e.g. `Comment`, `ChecklistItem` owned by a task). It has no identity or lifecycle outside its parent.
+- A `many-to-many` relationship produces a **junction** that is an owned child (membership) of the declaring root; the **associated** entity (e.g. `Tag`) remains an independent **root**.
+- A `self-referencing` relationship keeps the entity a **root** (it owns a tree of itself).
+- A `polymorphic-join` child (e.g. `Attachment`) is its **own root** with a polymorphic owner reference - not an owned child.
+- Every entity not owned by any parent is an **aggregate root**.
+
+**Explicit override (only when the default is wrong):** add `aggregateRole` to an entity to pin the classification - `root`, `owned-child` (name the `aggregateParent`), or `join`. Use it for a shared child owned by more than one parent, or a child that genuinely has an independent lifecycle.
+
+```yaml
+entities:
+  - name: Comment
+    aggregateRole: owned-child       # no standalone write slice; mutated through TaskItem
+    aggregateParent: TaskItem
+  - name: Tag
+    aggregateRole: root              # independent aggregate; full slice
+```
+
+**Generation consequence (GR-15, default-on - opt out only on explicit instruction):** an **owned child** gets entity + EF config + DbSet + the root's `Add*`/`Remove*` methods + `{Root}Updater` wiring + DTO + mapper + optional read query (`Get`/`Search`). It gets **no** standalone create/update/delete command, handler, service write method, or write endpoint - those become nested sub-resource routes on the root (see [../skills/domain-model.md](../skills/domain-model.md) section Aggregate Roots vs Internal Children). An **aggregate root** gets the full slice. A developer may override this per entity, but the override must be recorded in `.scaffold/DESIGN-DECISIONS.md`.
+
 ## Business Rules
 
 ```yaml
@@ -369,6 +394,7 @@ Before moving to Phase 2 (Resource Definition), verify all of the following:
 
 - [ ] Every entity has `name`, at least one `property`, and `isTenantEntity` set
 - [ ] Every relationship references an entity defined in this file
+- [ ] Each entity is classified aggregate **root** or **owned child** (derived from `children`/`navigation`, or pinned via `aggregateRole`); any non-default `aggregateRole` override is recorded in `.scaffold/DESIGN-DECISIONS.md` (drives GR-15 write-surface generation)
 - [ ] No entity names collide with C# reserved types (`Task`, `Thread`, `Timer`, `Type`, `String`, `Object`, `Action`, `Attribute`, `File`, `Path`)
 - [ ] State machine `states` list matches `transitions` from/to values (no orphaned states or transitions)
 - [ ] Every event `raisedBy` references a defined entity

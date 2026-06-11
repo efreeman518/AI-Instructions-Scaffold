@@ -101,7 +101,14 @@ src/
 `-- {SolutionName}.slnx            # solution file name is NOT collapsed
 ```
 
-The `{SolutionName}.slnx` file keeps its full name either way, and `{App}`-derived types render without the prefix (`DbContextTrxn` / `DbContextQuery`). `OrganizationName` is not applied under `none`. Test, `src/Packages/`, and `Aspire/` project names already omit the prefix and are unchanged by this setting. Caveat: bare top-level namespaces (`Domain.Model`, `Application.Services`) are generic and can collide if these assemblies are consumed alongside other solutions - this is an accepted Phase 1 trade-off, recorded in `.scaffold/DESIGN-DECISIONS.md`. Token mechanics: [../ai/placeholder-tokens.md - Derivation Rules](../ai/placeholder-tokens.md#derivation-rules).
+The `{SolutionName}.slnx` file keeps its full name either way, and `{App}`-derived types render without the prefix (`DbContextTrxn` / `DbContextQuery`). `OrganizationName` is not applied under `none`. Test, `src/Packages/`, and `Aspire/` project names already omit the prefix and are unchanged by this setting. Token mechanics: [../ai/placeholder-tokens.md - Derivation Rules](../ai/placeholder-tokens.md#derivation-rules).
+
+> **The prefix is not just verbosity - it prevents framework assembly/namespace collisions.** Bare project names and root namespaces collide with platform identities, and the failures are confusing:
+> - A bare **`Uno`** / **`Uno.Core`** project name clashes with the Uno Platform's own `Uno.*` assemblies.
+> - A bare **`Application`** layer creates a root `Application` namespace that **shadows `Microsoft.UI.Xaml.Application`** (and WPF's `System.Windows.Application`) inside any referencing UI project - the XAML code-behind base class fails to resolve (CS0118), and a `global using Application = ...` alias added to "fix" it then collides with the namespace (CS0576).
+> - Bare `Domain.Model` / `Application.Services` also collide when consumed alongside other solutions.
+>
+> Because of this, `projectNamePrefix: none` is an accepted Phase-1 trade-off only for **backend-only** solutions, recorded in `.scaffold/DESIGN-DECISIONS.md`. When de-prefixing is requested **and a Uno/Blazor/WPF UI head is in scope**, do one of: (a) keep the prefix on UI heads and the `Application` layer (de-prefix the rest); (b) keep a short qualifier so no project is bare `Uno`/`Uno.Core`/`Application`; or (c) emit fully-qualified base types in generated XAML code-behind (`: global::Microsoft.UI.Xaml.Application`). Default to (a). Never ship a bare `Application` namespace into a XAML project.
 
 ### Required Root Files (Cross-Platform Hygiene)
 

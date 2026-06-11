@@ -52,6 +52,23 @@ Reference patterns: [../patterns/expected-output-index.md](../patterns/expected-
 10. **Remove overloads** - Provide both `Remove{Child}({Child} entity)` and `Remove{Child}(Guid id)` overloads. The Guid overload looks up the entity in the collection and removes it. Both return `DomainResult.Success()` unconditionally (desired-state pattern).
 11. **Idempotent Add** - `Add{Child}` / `AssociateTag` checks for duplicates first and returns `Success(existing)` if already present.
 
+## Aggregate Roots vs Internal Children (GR-15)
+
+Before generating a slice, classify the entity:
+
+- **Aggregate root** - has its own identity and lifecycle, is loaded and saved as a unit, and other things reference it by id (e.g. `TaskItem`, `Category`, `Tag`). Gets the **full slice**: entity, EF config, DbSet, repository (per `repositoryContractStyle`), DTO, mapper, structure validator, service, CQRS requests/handlers/registrations, and CRUD endpoints.
+- **Internal child** - a 1:N owned entity or M:N junction that only exists inside one root and has no meaning without it (e.g. `Comment`, `ChecklistItem` on a `TaskItem`; the `TaskItemTag` junction). Gets a **reduced slice**: entity, EF config, DbSet, the child collection + `Add*`/`Remove*` methods on the root, the root's `{Root}Updater` wiring, DTO, mapper, and optionally read-only queries (`GetById`/`Search`) with their query endpoints. It gets **no** standalone create/update/delete command, handler, service write method, or write endpoint.
+
+Why: a standalone `CreateCommentHandler` that never loads its `TaskItem` bypasses every invariant the root enforces (the anemic-child anti-pattern), leaves the root's `Add*`/`Remove*` methods as dead code, and forks child-create logic between the handler and the updater.
+
+**Write paths for an internal child (all go through the loaded root):**
+1. **Whole-graph save** - the root's `UpdateAsync` / `UpdateTaskItemCommand` syncs the full child list via the `{Root}Updater` (`RelatedDeleteBehavior.RelationshipAndEntity`). The updater calls the root's `Add*`/`Remove*` methods (see [updater-template.md](../templates/updater-template.md)).
+2. **Granular nested sub-resource routes** on the root - `POST /{roots}/{id}/{children}`, `PUT /{roots}/{id}/{children}/{childId}`, `DELETE /{roots}/{id}/{children}/{childId}`, `POST /{roots}/{id}/tags/{tagId}`. The handler loads the root via its transactional repository, calls the matching `Add*`/`Update`/`Remove*` domain method, and saves the aggregate in one transaction. Removal of a child on a **required** relationship deletes the orphaned row on save.
+
+Reads are unconstrained: a child read query/endpoint is fine because CQRS read models may cross aggregate boundaries.
+
+> Pitfall: letting a child-collection mutation surface bypass the root's `Add*()` / `Remove*()` methods - whether a standalone handler or a raw `collection.Add()` inside the updater - silently violates invariants. The updater and the nested handlers both call the root's methods.
+
 ## Flags Enum Pattern (Domain.Shared)
 
 Use `[Flags]` enums for entity status/features. Always start with `None = 0` and use bit shifting. See [entity-template.md](../templates/entity-template.md) for examples.

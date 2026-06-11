@@ -102,6 +102,58 @@ public class {Entity} : EntityBase, ITenantEntity<Guid>  // [MULTI-TENANT] omit 
 }
 ```
 
+## Critical domain-method rules
+
+### `Update()` MUST re-validate (non-negotiable)
+
+Every `Update()` ends with `Valid().Map(_ => this)` - it returns `DomainResult<T>`, never a bare `this`. Mutating fields and returning the entity without re-running `Valid()` lets an update persist invalid state (negative counters, blank required fields) that the factory would have rejected. If a generated `Update()` does not call `Valid()`, it is wrong.
+
+```csharp
+// WRONG - skips validation, can persist invalid state
+public {Entity} Update(string? name = null) { if (name is not null) Name = name; return this; }
+
+// RIGHT - re-validates, returns DomainResult
+public DomainResult<{Entity}> Update(string? name = null)
+{
+    if (name is not null) Name = name;
+    return Valid().Map(_ => this);
+}
+```
+
+### Lifecycle status is a guarded `Transition`, never a settable `Update` field
+
+When the domain spec declares a `stateMachine` for an entity, the status is **not** a parameter on `Update()`. Expose a dedicated `Transition(target)` that enforces allowed moves and keeps dependent fields aligned (e.g. a completion timestamp). A free-form `Update(status, ...)` lets callers jump to any state and bypass the lifecycle. Use an explicit transition matrix; for compound/guarded transitions, back it with a `{Entity}StatusTransitionRule` (see [domain-rules-template.md](domain-rules-template.md)).
+
+```csharp
+public DomainResult<{Entity}> Transition({Entity}Status target)
+{
+    if (!IsValidTransition(Status, target))
+        return DomainResult<{Entity}>.Failure($"Cannot transition from {Status} to {target}.");
+    Status = target;
+    if (target == {Entity}Status.Completed) CompletedDate = DateTimeOffset.UtcNow;
+    return DomainResult<{Entity}>.Success(this);
+}
+
+private static bool IsValidTransition({Entity}Status current, {Entity}Status target) =>
+    (current, target) switch { /* explicit allowed pairs */ _ => false };
+```
+
+Reference: `TaskItem.TransitionStatus` + `IsValidTransition` in the reference app. (Use a non-flags `enum` status for a state machine; `{Entity}Flags` is for independently combinable booleans, not a lifecycle.)
+
+### `DomainError.Create` argument order (GR-14)
+
+`DomainError.Create` takes the **human message FIRST**. The current `EF.Domain.Contracts` exposes `DomainError.Create(string error, string code)` (message, then optional code key) - and some builds expose a single-arg `DomainError.Create(string error)`. Verify the actual overload set against the package (GR-14); do **not** infer it. The common, silent bug is emitting the two-arg form with the arguments reversed:
+
+```csharp
+// WRONG - code key surfaces as the user-facing message
+DomainError.Create("TenantId.Required", "Tenant ID is required.")
+
+// RIGHT - message first
+DomainError.Create("Tenant ID is required.", "TenantId.Required")
+// or, when only the single-arg overload exists (reference-app shape):
+DomainError.Create("Tenant ID is required.")
+```
+
 ## File: Domain/Shared/{Entity}Flags.cs
 
 ```csharp

@@ -13,6 +13,19 @@
 
 Endpoint templates map relative routes only. The API host owns the outer route group and versioning decision, for example `/api/v1/{entity}` for public domain endpoints. Do not bake `/api`, `/v1`, tenant segments, gateway prefixes, health routes, or admin routes into entity endpoint classes.
 
+> **Aggregate-internal children get no standalone write endpoint (GR-15).** This template's `Create` / `Update` / `Delete` routes apply to **aggregate roots** only. If the entity is an internal child of a root (a 1:N owned entity or M:N junction - e.g. a comment or checklist item on a task), do **not** generate a `{Child}Endpoints` write surface. Instead expose the child writes as **nested sub-resource routes on the root's** endpoint class, calling the root's domain methods through a loaded aggregate:
+>
+> ```csharp
+> // In {Root}Endpoints - children are mutated only through the root (GR-15):
+> group.MapPost("/{id:guid}/{children}", Add{Child});                       // -> root.Add{Child}(...)
+> group.MapPut("/{id:guid}/{children}/{childId:guid}", Update{Child});       // -> child.Update(...)
+> group.MapDelete("/{id:guid}/{children}/{childId:guid}", Remove{Child});    // -> root.Remove{Child}(...)
+> group.MapPost("/{id:guid}/tags/{tagId:guid}", AssociateTag);              // -> root.AssociateTag(tagId)  (M:N)
+> group.MapDelete("/{id:guid}/tags/{tagId:guid}", RemoveTag);               // -> root.RemoveTag(tagId)
+> ```
+>
+> Each nested handler loads the root via its transactional repository, calls the matching `Add*`/`Update`/`Remove*` method, and saves the aggregate in one transaction (return `Success(Item=null)` for a missing root so the shared 2-arg `Match` maps to 404). A child read endpoint (`GetById`/`Search`) is still allowed because reads may cross aggregate boundaries. See [../skills/domain-model.md](../skills/domain-model.md) section Aggregate Roots vs Internal Children.
+
 ```csharp
 using Microsoft.AspNetCore.Mvc;
 

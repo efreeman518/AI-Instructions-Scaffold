@@ -207,6 +207,10 @@ public static class {ChildEntity}Mapper
 
 ## Child Collection Mapping
 
+> **Aggregate-root DTOs MUST carry their owned child collections, and the root `Projection`/`ToDto` MUST project them (non-negotiable).** The `{Root}Updater.UpdateFromDto` graph sync diffs `dto.{ChildEntity}s` against the loaded aggregate; if the root DTO omits the child collection or `ToDto` does not populate it, the updater has nothing to diff and child writes silently no-op. A flat parent DTO is the most common cause of "child saves are lost." Generation rule: for every `one-to-many`/`one-to-one`/`many-to-many` child in the domain spec, the root DTO declares `List<{ChildEntity}Dto>? {ChildEntity}s` and the root `Projection` includes the inline `.Select(...).ToList()` for it.
+>
+> **Null vs present contract** (mirrors the null-coalesce note in [updater-template.md](updater-template.md)): a **null** child collection on the incoming DTO means "don't touch these children"; a **present** collection (including empty) means "this is the desired full set" - items missing from it are removed when the caller passes `RelatedDeleteBehavior.RelationshipAndEntity`. Response DTOs always populate the collection (empty, never null) so clients can round-trip an edit.
+
 Child collections follow a consistent pattern across both DTOs and Mappers:
 
 ### DTO Side

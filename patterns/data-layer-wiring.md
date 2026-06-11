@@ -41,7 +41,7 @@ private static void AddDatabaseServices(IServiceCollection services, IConfigurat
     services.AddScoped(typeof(IRepositoryTrxn<>), typeof({App}RepositoryTrxn<>));
     services.AddScoped(typeof(IRepositoryQuery<>), typeof({App}RepositoryQuery<>));
     services.AddScoped<I{Entity}RepositoryQuery, {Entity}RepositoryQuery>();   // bespoke only
-    services.AddScoped<I{Entity}RepositoryTrxn, {Entity}RepositoryTrxn>();     // bespoke only
+    services.AddScoped<I{Root}RepositoryTrxn, {Root}RepositoryTrxn>();         // ALWAYS for aggregate roots with owned children (GR-15), even under generic-only
     // (repositoryContractStyle: per-entity - omit the open generics and register a pair per entity.)
 
     // Interceptors

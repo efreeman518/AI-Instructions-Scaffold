@@ -8,10 +8,12 @@
 
 ## File: Infrastructure/Repositories/Updaters/{Entity}Updater.cs
 
-The updater is a **DbContext extension method** - this gives it access to `db.Delete()` for explicit EF change-tracker removal of orphaned children.
+The graph-sync **always lives in its own `internal static {Root}Updater` file** under `Infrastructure.Repositories/Updaters/`, as a `this {Project}DbContextTrxn db` extension method - never inlined into the repository. `{Root}RepositoryTrxn.UpdateFromDto` collapses to a one-line `=> DB.UpdateFromDto(entity, dto, relatedDeleteBehavior)` delegate, so the repo stays "load-with-includes + delegate" only. The extension shape is what gives the sync access to `db.Delete()` for explicit EF change-tracker removal of orphaned children. (This is behavior-preserving and test-safe: handler/service tests mock `I{Root}RepositoryTrxn`, not the updater.)
+
+> **Generation gotcha - the standalone updater MUST declare `using EF.Data;`.** `db.Delete(toRemove)` (used in every `removeFunc`) is an **extension method in the `EF.Data` namespace**. While the logic sits inline in the repository it compiles without an extra import (the repo already imports `EF.Data` for `SplitQueryThresholdOptions`), but once it moves to a standalone `{Root}Updater.cs` the import must be present or the file fails with **CS1061** (`'{Project}DbContextTrxn' does not contain a definition for 'Delete'`). Do not let a using-pruner drop it - it looks unused to a naive scan but is required for the `db.Delete` call.
 
 ```csharp
-using EF.Data;
+using EF.Data;            // REQUIRED: db.Delete(...) is an extension method in this namespace (see gotcha above)
 using EF.Data.Contracts;
 using EF.Domain;
 using EF.Domain.Contracts;
@@ -34,7 +36,10 @@ internal static class {Entity}Updater
             name: dto.Name,
             description: dto.Description)
         .Bind(updatedEntity => DomainResult.Combine(
-            // Sync {ChildEntity}s collection (owned, 1:N)
+            // Sync {ChildEntity}s collection (owned, 1:N). The create/remove callbacks route through
+            // the aggregate root's own Add{ChildEntity} / Remove{ChildEntity} methods - never raw
+            // collection .Add() / .Remove() - so the root stays the single owner of its invariants
+            // (GR-15). db.Delete() still runs so EF detaches the orphaned row from the change tracker.
             CollectionUtility.SyncCollectionWithResult<{ChildEntity}, {ChildEntity}Dto, Guid>(
                 updatedEntity.{ChildEntity}s,
                 dto.{ChildEntity}s ?? [],
@@ -42,37 +47,31 @@ internal static class {Entity}Updater
                 i => i.Id,
                 incomingDto =>
                 {
-                    var result = {ChildEntity}.Create(updatedEntity.TenantId, updatedEntity.Id, incomingDto.Name);
-                    if (result.IsSuccess) updatedEntity.{ChildEntity}s.Add(result.Value!);
-                    return result;
+                    var created = {ChildEntity}.Create(updatedEntity.TenantId, updatedEntity.Id, incomingDto.Name);
+                    return created.IsFailure ? created : updatedEntity.Add{ChildEntity}(created.Value!);
                 },
                 (existing, incomingDto) => existing.Update(incomingDto.Name),
                 toRemove =>
                 {
                     if (relatedDeleteBehavior == RelatedDeleteBehavior.None) return DomainResult.Success();
+                    updatedEntity.Remove{ChildEntity}(toRemove);
                     db.Delete(toRemove);
-                    updatedEntity.{ChildEntity}s.Remove(toRemove);
                     return DomainResult.Success();
                 }
             ),
-            // Sync Tags collection (M:N via junction entity)
+            // Sync Tags collection (M:N via junction entity) through the root's AssociateTag / RemoveTag.
             CollectionUtility.SyncCollectionWithResult<{Entity}Tag, TagDto, Guid>(
                 updatedEntity.{Entity}Tags,
                 dto.Tags ?? [],
                 e => e.TagId,
                 i => i.Id,
-                incomingDto =>
-                {
-                    var result = {Entity}Tag.Create(updatedEntity.TenantId, updatedEntity.Id, incomingDto.Id!.Value);
-                    if (result.IsSuccess) updatedEntity.{Entity}Tags.Add(result.Value!);
-                    return result;
-                },
+                incomingDto => updatedEntity.AssociateTag(incomingDto.Id!.Value),
                 // updateFunc omitted - junction has no updatable properties
                 removeFunc: toRemove =>
                 {
                     if (relatedDeleteBehavior == RelatedDeleteBehavior.None) return DomainResult.Success();
+                    updatedEntity.RemoveTag(toRemove);
                     db.Delete(toRemove);
-                    updatedEntity.{Entity}Tags.Remove(toRemove);
                     return DomainResult.Success();
                 }
             ))
@@ -136,7 +135,7 @@ public static class CollectionUtility
 
 ### Owned 1:N Child (Comments, ChecklistItems)
 
-All three callbacks needed - create adds to collection, update delegates to entity method, remove calls `db.Delete()` to mark for EF deletion:
+All three callbacks needed - create routes through the root's `AddComment`, update delegates to the child's own method, remove routes through `RemoveComment` then `db.Delete()` to mark the orphan for EF deletion. Never call `collection.Add()` / `collection.Remove()` directly here - that bypasses the aggregate root (GR-15):
 
 ```csharp
 CollectionUtility.SyncCollectionWithResult<Comment, CommentDto, Guid>(
@@ -146,44 +145,41 @@ CollectionUtility.SyncCollectionWithResult<Comment, CommentDto, Guid>(
     i => i.Id,
     createFunc: incomingDto =>
     {
-        var result = Comment.Create(updatedEntity.TenantId, updatedEntity.Id, incomingDto.Body);
-        if (result.IsSuccess) updatedEntity.Comments.Add(result.Value!);
-        return result;
+        var created = Comment.Create(updatedEntity.TenantId, updatedEntity.Id, incomingDto.Body);
+        return created.IsFailure ? created : updatedEntity.AddComment(created.Value!);
     },
     updateFunc: (existing, incomingDto) => existing.Update(incomingDto.Body),
     removeFunc: toRemove =>
     {
         if (relatedDeleteBehavior == RelatedDeleteBehavior.None) return DomainResult.Success();
+        updatedEntity.RemoveComment(toRemove);
         db.Delete(toRemove);
-        updatedEntity.Comments.Remove(toRemove);
         return DomainResult.Success();
     });
 ```
 
+> If the root instead exposes a create-inside overload (e.g. `AddComment(string body)` that runs `Comment.Create` internally and returns the new child), call that directly: `createFunc: incomingDto => updatedEntity.AddComment(incomingDto.Body)`. Either way the collection is mutated only by the root method.
+
 #### createFunc must apply ALL DTO fields
 
-Domain factory methods often take a minimal field set (e.g., `ChecklistItem.Create(tenantId, taskItemId, title, sortOrder)` - no `IsCompleted`). If the DTO carries additional state (a pre-checked checkbox buffered in a create form, a status flag, a completion date), the `createFunc` must follow the `Create` with an `Update` call to apply those fields. Otherwise the UI's single-payload aggregate save silently drops them on newly-inserted children. Pattern:
+Domain factory / `Add*` methods often take a minimal field set (e.g., `AddChecklistItem(title, sortOrder)` - no `IsCompleted`). If the DTO carries additional state (a pre-checked checkbox buffered in a create form, a status flag, a completion date), the `createFunc` must follow the add with an `Update` call on the returned child to apply those fields. Otherwise the UI's single-payload aggregate save silently drops them on newly-inserted children. Pattern:
 
 ```csharp
 createFunc: incomingDto =>
 {
-    var result = ChecklistItem.Create(updatedEntity.TenantId, updatedEntity.Id, incomingDto.Title, incomingDto.SortOrder);
-    if (result.IsSuccess)
-    {
-        // Create() has no IsCompleted arg - apply it via Update() so buffered
-        // "checked" state isn't lost when the parent + children are POSTed together.
-        if (incomingDto.IsCompleted) result.Value!.Update(isCompleted: true);
-        updatedEntity.Comments.Add(result.Value!);
-    }
-    return result;
+    var added = updatedEntity.AddChecklistItem(incomingDto.Title, incomingDto.SortOrder);
+    // AddChecklistItem has no IsCompleted arg - apply it via the child's Update() so buffered
+    // "checked" state isn't lost when the parent + children are POSTed together.
+    if (added.IsSuccess && incomingDto.IsCompleted) added.Value!.Update(isCompleted: true);
+    return added;
 }
 ```
 
-Rule: for every field the DTO can carry that the domain factory doesn't accept, the `createFunc` must call the corresponding `Update` / setter path immediately after `Create`.
+Rule: for every field the DTO can carry that the root's add method doesn't accept, the `createFunc` must call the corresponding `Update` on the returned child immediately after adding it.
 
 ### M:N Junction (Tags via TaskItemTag)
 
-Only create + remove needed - junction entities have no updatable properties. Match on the foreign key (TagId), not the junction entity's own Id:
+Only create + remove needed - junction entities have no updatable properties. The root exposes `AssociateTag` (idempotent) and `RemoveTag`; match on the foreign key (TagId), not the junction entity's own Id:
 
 ```csharp
 CollectionUtility.SyncCollectionWithResult<TaskItemTag, TagDto, Guid>(
@@ -191,17 +187,12 @@ CollectionUtility.SyncCollectionWithResult<TaskItemTag, TagDto, Guid>(
     dto.Tags ?? [],
     e => e.TagId,           // match on FK, not junction Id
     i => i.Id,
-    createFunc: incomingDto =>
-    {
-        var result = TaskItemTag.Create(updatedEntity.TenantId, updatedEntity.Id, incomingDto.Id!.Value);
-        if (result.IsSuccess) updatedEntity.TaskItemTags.Add(result.Value!);
-        return result;
-    },
+    createFunc: incomingDto => updatedEntity.AssociateTag(incomingDto.Id!.Value),
     removeFunc: toRemove =>
     {
         if (relatedDeleteBehavior == RelatedDeleteBehavior.None) return DomainResult.Success();
+        updatedEntity.RemoveTag(toRemove);
         db.Delete(toRemove);
-        updatedEntity.TaskItemTags.Remove(toRemove);
         return DomainResult.Success();
     });
     // updateFunc omitted - no properties to update on junction
@@ -258,8 +249,9 @@ if (syncResult.IsFailure) return Result<DefaultResponse<{Entity}Dto>>.Failure(sy
 
 ## Notes
 
-- Updater is a **static extension method on `{Project}DbContextTrxn`** - gives access to `db.Delete()` for EF change-tracker removal
-- Repository delegates via `DB.UpdateFromDto(entity, dto, relatedDeleteBehavior)` where `DB` is the `RepositoryBase` context property
+- Updater is **always a standalone `internal static {Root}Updater` file** with a `this {Project}DbContextTrxn db` extension method - never inlined into the repository. The extension shape gives access to `db.Delete()` for EF change-tracker removal
+- The standalone updater file **MUST** include `using EF.Data;` - `db.Delete(...)` is an extension method there; omitting it compiles inline but fails with CS1061 in the extracted file
+- Repository delegates via a one-line `UpdateFromDto(...) => DB.UpdateFromDto(entity, dto, relatedDeleteBehavior)` where `DB` is the `RepositoryBase` context property; the repo keeps only load-with-includes + this delegate
 - Uses railway `.Bind()` flow: `entity.Update(...).Bind(updatedEntity => DomainResult.Combine(...).Map(updatedEntity))` - parent update errors short-circuit child syncs
 - `RelatedDeleteBehavior` gates whether `removeFunc` actually deletes: `None` = no-op, `RelationshipOnly` / `RelationshipAndEntity` = `db.Delete(toRemove)` + collection remove
 - **CRITICAL:** Must call `db.Delete(toRemove)` in removeFunc, not just `collection.Remove()` - without explicit EF delete, orphaned children remain in DB when relationship isn't cascade-delete
@@ -267,7 +259,7 @@ if (syncResult.IsFailure) return Result<DefaultResponse<{Entity}Dto>>.Failure(sy
 - `CollectionUtility.SyncCollectionWithResult` handles error aggregation internally via `DomainResult.Combine()`
 - All callbacks return `DomainResult` (not void) - even remove must return `DomainResult.Success()`
 - `DomainResult<T>` inherits from `DomainResult` - domain factory methods (`Create`, `Update`) return `DomainResult<T>` which satisfies the `Func<TDto, DomainResult>` parameter
-- Uses the entity's domain methods (`Create`, `Update`) - never mutates properties directly
-- `createFunc` must add the new entity to the parent's navigation collection - `SyncCollectionWithResult` does not do this automatically
+- Routes every child create/remove through the aggregate root's `Add*` / `Remove*` methods, never raw `collection.Add()` / `collection.Remove()` and never direct property mutation (GR-15). The root owns its invariants; the updater only resolves the desired-state diff and gates hard deletes.
+- The root's `Add*` method is what puts the new child into the navigation collection - `SyncCollectionWithResult` does not do this automatically, so the `createFunc` must return the result of that `Add*` call (which has already added it)
 - `getDtoId` returns `TId?` - null or default(TId) signals a new item (create path)
 - Explicit generic type args (`<TEntity, TDto, TId>`) recommended when lambdas make inference ambiguous

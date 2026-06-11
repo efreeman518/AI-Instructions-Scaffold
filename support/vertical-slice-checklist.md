@@ -20,6 +20,7 @@ Use this when adding a new entity to an **already-scaffolded** solution. Skip fu
 - [ ] Inspect existing neighboring slices before asking questions. If the code answers naming, folder placement, route shape, or DI pattern, follow the code and record only assumptions that affect generated artifacts.
 - [ ] For each assumption, record evidence, risk if wrong, confidence, and outcome in `.scaffold/DESIGN-DECISIONS.md` section Assumptions.
 - [ ] Trace the slice before generation: accepted language term -> `domain-specification.yaml` entity/action/rule -> `resource-implementation.yaml` store/host/dependency -> test category.
+- [ ] **Classify the entity (GR-15): aggregate root or internal child?** An aggregate root has its own identity/lifecycle and is referenced by id (full slice). An internal child (1:N owned or M:N junction that only exists inside one root - e.g. a comment or checklist item on a task) gets a **reduced slice**: no standalone create/update/delete command, handler, service write method, or write endpoint. Its writes flow through the root's `Add*`/`Remove*` methods, the `{Root}Updater`, and nested sub-resource routes on the root. See [../skills/domain-model.md](../skills/domain-model.md) section Aggregate Roots vs Internal Children.
 
 ### Load Set for Slice
 
@@ -35,6 +36,8 @@ Use this when adding a new entity to an **already-scaffolded** solution. Skip fu
 10. If React UI enabled: `skills/ui-react.md` - add API hooks, entity list page, detail/edit page, and form components
 
 ### Slice Execution Order
+
+> **Internal-child branch (GR-15):** if the Pre-Flight classification marked this entity an internal child of an aggregate root, generate steps 1-3 and 5-8 (entity, EF config, DbSet, updater wiring on the root, DTO, mapper), add `Add{Child}`/`Remove{Child}` (or `AssociateTag`/`RemoveTag`) methods to the **root** entity, and **skip** the standalone write artifacts in steps 9-14 (structure validator for writes, service write methods, CQRS create/update/delete requests+handlers+registrations, and the standalone CRUD endpoint). Instead add nested sub-resource routes to the root's endpoint(s): `POST/PUT/DELETE /{roots}/{id}/{children}[/{childId}]` (and `POST/DELETE /{roots}/{id}/tags/{tagId}` for a junction), whose handlers/service methods load the root, call its domain method, and save. Optionally keep a read-only query (`GetById`/`Search`) + query endpoint for the child. The steps below are the full aggregate-root path.
 
 1. Create entity + enum/flags in `Domain.Model`
 2. Create EF configuration in `Infrastructure.Data`
@@ -89,6 +92,8 @@ Use composite mode when business behavior cannot be completed safely as one isol
 ---
 
 ## Backend Slice (Required)
+
+> The table below is the **aggregate-root** slice. For an **internal child** (GR-15), keep the Domain entity, EF config, optional updater, DTO/SearchFilter, and mapper rows; keep the structure validator and repository/service/CQRS/endpoint rows only for **reads** (`GetById`/`Search`). Drop the create/update/delete handlers, service write methods, and standalone write endpoint - those operations become nested sub-resource routes on the aggregate root's endpoint instead.
 
 For entity `{Entity}`:
 

@@ -77,6 +77,15 @@
         },
         "description": { "type": "string" },
         "isTenantEntity": { "type": "boolean", "default": true },
+        "aggregateRole": {
+          "type": "string",
+          "enum": ["root", "owned-child", "join"],
+          "description": "Optional explicit aggregate classification override (GR-15). Default is derived from children/navigation: an entity owned via a parent's one-to-many/one-to-one relationship is an owned-child; a many-to-many junction is a join owned by the declaring root; everything else is a root. Owned children get no standalone write slice - mutated through the root."
+        },
+        "aggregateParent": {
+          "type": "string",
+          "description": "When aggregateRole is owned-child or join, the name of the owning aggregate root."
+        },
         "properties": {
           "type": "array",
           "items": { "$ref": "#/$defs/property" }
