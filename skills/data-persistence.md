@@ -177,7 +177,7 @@ public abstract class EntityBaseConfiguration<T>(bool pkClusteredIndex = false)
 }
 ```
 
-> **CRITICAL:** Every project must create this abstract base. ALL entity configurations MUST inherit from it. Without it, `RowVersion` won't function as a concurrency token, and `Id` may be auto-generated.
+> **CRITICAL:** Every project must create this abstract base. ALL entity configurations MUST inherit from it (and call `base.Configure(builder)`). Without it, `RowVersion` won't function as a concurrency token, and `Id` may be auto-generated. The `ValueGeneratedNever()` line is also load-bearing for **aggregate child inserts**: it lets EF save a NEW child added to a tracked parent through a navigation collection (the `{Root}Updater` path) as an `INSERT` rather than misinferring it as `Modified` and throwing `DbUpdateConcurrencyException`. A child config that skips the base config silently reintroduces that bug for that entity. See [../templates/updater-template.md](../templates/updater-template.md) section New children and EF Added state.
 
 See [ef-configuration-template.md](../templates/ef-configuration-template.md) for entity-specific configuration patterns.
 

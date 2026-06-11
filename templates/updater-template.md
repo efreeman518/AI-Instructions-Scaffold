@@ -39,9 +39,9 @@ internal static class {Entity}Updater
             // Sync {ChildEntity}s collection (owned, 1:N). The create/remove callbacks route through
             // the aggregate root's own Add{ChildEntity} / Remove{ChildEntity} methods - never raw
             // collection .Add() / .Remove() - so the root stays the single owner of its invariants
-            // (GR-15). The updater then sets the EF change-tracker state explicitly: db.Add(child) on
-            // create, db.Delete(child) on remove. db.Add is REQUIRED on the update path - see the
-            // "createFunc must db.Add" note below - and db.Delete detaches the orphaned row.
+            // (GR-15). New children added to the tracked parent are inferred as Added on save because
+            // the key is ValueGeneratedNever (see "New children and EF Added state" note below); removeFunc
+            // calls db.Delete() so EF detaches the orphaned row from the change tracker.
             CollectionUtility.SyncCollectionWithResult<{ChildEntity}, {ChildEntity}Dto, Guid>(
                 updatedEntity.{ChildEntity}s,
                 dto.{ChildEntity}s ?? [],
@@ -50,10 +50,7 @@ internal static class {Entity}Updater
                 incomingDto =>
                 {
                     var created = {ChildEntity}.Create(updatedEntity.TenantId, updatedEntity.Id, incomingDto.Name);
-                    if (created.IsFailure) return created;
-                    var added = updatedEntity.Add{ChildEntity}(created.Value!);
-                    if (added.IsSuccess) db.Add(added.Value!);   // force Added; navigation-add alone can be inferred Modified on a tracked parent
-                    return added;
+                    return created.IsFailure ? created : updatedEntity.Add{ChildEntity}(created.Value!);
                 },
                 (existing, incomingDto) => existing.Update(incomingDto.Name),
                 toRemove =>
@@ -70,12 +67,7 @@ internal static class {Entity}Updater
                 dto.Tags ?? [],
                 e => e.TagId,
                 i => i.Id,
-                incomingDto =>
-                {
-                    var added = updatedEntity.AssociateTag(incomingDto.Id!.Value);
-                    if (added.IsSuccess) db.Add(added.Value!);   // force Added (createFunc only runs for new associations)
-                    return added;
-                },
+                incomingDto => updatedEntity.AssociateTag(incomingDto.Id!.Value),
                 // updateFunc omitted - junction has no updatable properties
                 removeFunc: toRemove =>
                 {
@@ -145,7 +137,7 @@ public static class CollectionUtility
 
 ### Owned 1:N Child (Comments, ChecklistItems)
 
-All three callbacks needed - create routes through the root's `AddComment` then `db.Add(child)`, update delegates to the child's own method, remove routes through `RemoveComment` then `db.Delete()` to mark the orphan for EF deletion. Never call `collection.Add()` / `collection.Remove()` directly here - that bypasses the aggregate root (GR-15):
+All three callbacks needed - create routes through the root's `AddComment`, update delegates to the child's own method, remove routes through `RemoveComment` then `db.Delete()` to mark the orphan for EF deletion. Never call `collection.Add()` / `collection.Remove()` directly here - that bypasses the aggregate root (GR-15):
 
 ```csharp
 CollectionUtility.SyncCollectionWithResult<Comment, CommentDto, Guid>(
@@ -156,10 +148,7 @@ CollectionUtility.SyncCollectionWithResult<Comment, CommentDto, Guid>(
     createFunc: incomingDto =>
     {
         var created = Comment.Create(updatedEntity.TenantId, updatedEntity.Id, incomingDto.Body);
-        if (created.IsFailure) return created;
-        var added = updatedEntity.AddComment(created.Value!);
-        if (added.IsSuccess) db.Add(added.Value!);   // REQUIRED - force Added (see note below)
-        return added;
+        return created.IsFailure ? created : updatedEntity.AddComment(created.Value!);
     },
     updateFunc: (existing, incomingDto) => existing.Update(incomingDto.Body),
     removeFunc: toRemove =>
@@ -171,11 +160,16 @@ CollectionUtility.SyncCollectionWithResult<Comment, CommentDto, Guid>(
     });
 ```
 
-> If the root instead exposes a create-inside overload (e.g. `AddComment(string body)` that runs `Comment.Create` internally and returns the new child), call that directly: `createFunc: incomingDto => { var added = updatedEntity.AddComment(incomingDto.Body); if (added.IsSuccess) db.Add(added.Value!); return added; }`. Either way the collection is mutated only by the root method, and the new child is explicitly `db.Add`-ed.
+> If the root exposes a create-inside overload (e.g. `AddComment(string body)` that runs `Comment.Create` internally and returns the new child), call it directly: `createFunc: incomingDto => updatedEntity.AddComment(incomingDto.Body)`. Either way the collection is mutated only by the root method.
 
-#### createFunc must `db.Add(child)` - navigation-add alone is unreliable on the update path
+#### New children and EF Added state
 
-The `createFunc` must explicitly `db.Add(newChild)` (the updater is a `DbContextTrxn` extension, so `db` is in scope; `Add` is a built-in `DbContext` method, no extra using). Adding the child only through the parent navigation collection is **not** enough when the parent is an **already-tracked, persisted** aggregate (the Update path) and the entity key is store-generated by EF's default convention (the usual case - `EntityBase.Id` is a client-set `Guid.CreateVersion7()` with no `ValueGeneratedNever`). In that situation EF can infer the navigation-added child as **Modified** rather than **Added**, so `SaveChanges` emits `UPDATE ... WHERE Id=@id AND RowVersion=@rv` against a row that does not exist and throws `DbUpdateConcurrencyException` ("retrieve DB values returned null" under `ClientWins`). `db.Add(child)` forces `Added` and is safe: `SyncCollectionWithResult` calls `createFunc` only for keys not already in the collection, so it never re-adds an existing child. (The Create path also works - the child is `Added` either way.) This bug is invisible to a test that seeds children via `db.Set<Child>().Add(...)`; only a real `repo.UpdateFromDto(reloadedParent, dto)` round-trip that adds a NEW child exercises it - generate that integration test.
+A new child added to the **already-tracked, persisted** parent (the Update path) must be saved as an `INSERT`. EF decides Added-vs-Modified for a navigation-added child partly from the key, so this hinges on how the key is configured:
+
+- **Primary mitigation (required baseline):** configure the key `ValueGeneratedNever()` on `EntityBase.Id` in the shared `EntityBaseConfiguration` (the scaffold mandates this - see [ef-configuration-template.md](ef-configuration-template.md) and [../skills/data-persistence.md](../skills/data-persistence.md)). Because the scaffold's identity is a client-set `Guid.CreateVersion7()`, `ValueGeneratedNever` is the *correct* model, not a workaround: EF then treats the key as application-assigned and infers the navigation-added child as `Added`. With this in place the clean `createFunc` above (no `db.Add`) is correct, and it covers **every** navigation-add path - the updater, nested sub-resource handlers, any aggregate mutation - in one line.
+- **Residual risk:** the protection is the *global* `ValueGeneratedNever`. It silently breaks if someone removes that line, or adds a child entity whose EF config does not inherit `EntityBaseConfiguration` / skips `base.Configure(builder)`. New child configs MUST inherit the base config.
+- **If the key is store-generated** (no `ValueGeneratedNever`, e.g. an int identity or a deviating config), the navigation-add is inferred as `Modified` and `SaveChanges` emits `UPDATE ... WHERE Id=@id AND RowVersion=@rv` against a non-existent row -> `DbUpdateConcurrencyException`. In that case `createFunc` must `db.Add(newChild)` explicitly (the updater is a `DbContextTrxn` extension, so `db` is in scope; `Add` is a built-in `DbContext` method, no extra using). Prefer fixing the key config over scattering `db.Add` - the config covers all paths; `db.Add` only covers the one call site you remember.
+- **Test it:** only a real `repo.UpdateFromDto(reloadedParent, dto)` round-trip that adds a NEW child exercises this state inference. A test that seeds children via `db.Set<Child>().Add(...)` bypasses it and masks both the bug and a regression of the `ValueGeneratedNever` baseline. Generate that round-trip integration test.
 
 #### createFunc must apply ALL DTO fields
 
@@ -185,13 +179,9 @@ Domain factory / `Add*` methods often take a minimal field set (e.g., `AddCheckl
 createFunc: incomingDto =>
 {
     var added = updatedEntity.AddChecklistItem(incomingDto.Title, incomingDto.SortOrder);
-    if (added.IsSuccess)
-    {
-        // AddChecklistItem has no IsCompleted arg - apply it via the child's Update() so buffered
-        // "checked" state isn't lost when the parent + children are POSTed together.
-        if (incomingDto.IsCompleted) added.Value!.Update(isCompleted: true);
-        db.Add(added.Value!);   // REQUIRED - force Added on the tracked-parent update path
-    }
+    // AddChecklistItem has no IsCompleted arg - apply it via the child's Update() so buffered
+    // "checked" state isn't lost when the parent + children are POSTed together.
+    if (added.IsSuccess && incomingDto.IsCompleted) added.Value!.Update(isCompleted: true);
     return added;
 }
 ```
@@ -208,12 +198,7 @@ CollectionUtility.SyncCollectionWithResult<TaskItemTag, TagDto, Guid>(
     dto.Tags ?? [],
     e => e.TagId,           // match on FK, not junction Id
     i => i.Id,
-    createFunc: incomingDto =>
-    {
-        var added = updatedEntity.AssociateTag(incomingDto.Id!.Value);
-        if (added.IsSuccess) db.Add(added.Value!);   // force Added (createFunc only runs for new associations)
-        return added;
-    },
+    createFunc: incomingDto => updatedEntity.AssociateTag(incomingDto.Id!.Value),
     removeFunc: toRemove =>
     {
         if (relatedDeleteBehavior == RelatedDeleteBehavior.None) return DomainResult.Success();
@@ -287,6 +272,6 @@ if (syncResult.IsFailure) return Result<DefaultResponse<{Entity}Dto>>.Failure(sy
 - `DomainResult<T>` inherits from `DomainResult` - domain factory methods (`Create`, `Update`) return `DomainResult<T>` which satisfies the `Func<TDto, DomainResult>` parameter
 - Routes every child create/remove through the aggregate root's `Add*` / `Remove*` methods, never raw `collection.Add()` / `collection.Remove()` and never direct property mutation (GR-15). The root owns its invariants; the updater only resolves the desired-state diff and gates hard deletes.
 - The root's `Add*` method is what puts the new child into the navigation collection - `SyncCollectionWithResult` does not do this automatically, so the `createFunc` must return the result of that `Add*` call (which has already added it)
-- **`createFunc` MUST also `db.Add(newChild)`** to force EF `Added` state. Navigation-add on an already-tracked, persisted parent (the Update path) can be inferred as `Modified` when the key is store-generated, producing a `DbUpdateConcurrencyException` on save. `db.Add` is a built-in `DbContext` method (no using needed) and is safe because `createFunc` runs only for genuinely new children. Mirror of `db.Delete` in `removeFunc`. Cover it with an integration test that adds a NEW child via `repo.UpdateFromDto(reloadedParent, dto)` - not `db.Set<Child>().Add(...)`, which masks the bug.
+- **New children rely on `ValueGeneratedNever` for correct `Added` inference.** The scaffold's mandated `EntityBaseConfiguration` sets `ValueGeneratedNever()` on the key, so a navigation-added child on a tracked parent is saved as an `INSERT` (the clean `createFunc` above needs no `db.Add`). This covers all navigation-add paths. Only if the key is store-generated (deviating config) must `createFunc` `db.Add(newChild)` explicitly to avoid a `DbUpdateConcurrencyException`; `db.Add` is a built-in `DbContext` method (no using), safe because `createFunc` runs only for new children. See "New children and EF Added state" above. Cover the path with a `repo.UpdateFromDto(reloadedParent, dto)` round-trip test that adds a NEW child - not `db.Set<Child>().Add(...)`, which masks it.
 - `getDtoId` returns `TId?` - null or default(TId) signals a new item (create path)
 - Explicit generic type args (`<TEntity, TDto, TId>`) recommended when lambdas make inference ambiguous
