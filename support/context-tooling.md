@@ -28,7 +28,7 @@ graphify can build at two depths. The per-repo decision is which LAYER, not whic
   backend needed. Sees code symbols and call/reference edges; blind to markdown, YAML,
   infra, and `.razor` / `.xaml` markup. This is the cheap, code-navigation layer.
 - **Full (AST + semantic)** - adds an LLM pass that extracts semantic relationships
-  from markdown/YAML/infra and the `.instructions/` / `.scaffold/` doc layer. In a
+  from markdown/YAML/infra and the `.scaffold/` / `docs/` knowledge layer. In a
   Claude Code or **Claude VS Code** session the host Claude session performs this
   extraction directly (subagent dispatch) - **no API key needed**. Headless/CI flows set
   `GEMINI_API_KEY` or `GOOGLE_API_KEY` to use Gemini, or pass
@@ -44,21 +44,27 @@ Measure two sums, excluding generated/transient files (bin, obj, node_modules,
 .tmp, TestResults, StrykerOutput, BenchmarkDotNet.Artifacts, logs,
 package-lock.json, *.Designer.cs, ModelSnapshot.cs, rendered *.html docs):
 
-- KNOWLEDGE = LOC of `.instructions/` + `.scaffold/` + `docs/*.md`
+- KNOWLEDGE = LOC of `.scaffold/` + `docs/*.md`
 - CODE = LOC of application `src/` (*.cs, *.razor, *.ts, *.tsx, *.xaml)
+
+`.instructions/` is excluded from both the measurement and the graph corpus: it is the
+generic scaffold payload, identical across installed apps, not app-specific knowledge.
+Workflow steps that still need it (e.g. vertical-slice) load its files directly by path,
+not via graph queries. `HANDOFF.md` is excluded too - transient resume state that goes
+stale in the graph immediately. Both are listed in `.graphifyignore` below.
 
 | Condition                                                | Layer          | Why                                                                 |
 |----------------------------------------------------------|----------------|---------------------------------------------------------------------|
 | KNOWLEDGE >= CODE                                        | full           | Doc/spec layer is the majority; only the semantic pass reads it     |
 | CODE > KNOWLEDGE but CODE < 3x KNOWLEDGE                 | full           | Spec<->code links still high value; semantic layer wins             |
 | CODE >= 3x KNOWLEDGE                                     | structure-only | Mostly code navigation; local + free + AST is sufficient            |
-| No `.instructions/` or `.scaffold/`                      | structure-only | Plain code repo; no semantic doc layer to miss                      |
+| No `.scaffold/` and no `docs/*.md`                       | structure-only | Plain code repo; no semantic doc layer to miss                      |
 | Brownfield adoption pass (src/ exists, no .scaffold/ yet)| structure-only | Thick code, no knowledge layer yet; re-evaluate after Phase-1 artifacts derived |
 
 Rationale: the full layer sees the whole repo (code AST PLUS LLM semantic extraction
 of markdown/YAML/infra), at the cost of model spend. The structure-only layer is
-AST-only, 100% local, zero model spend, but blind to the `.instructions/` /
-`.scaffold/` / docs layer and to `.razor` / `.xaml` markup. A freshly scaffolded app
+AST-only, 100% local, zero model spend, but blind to the `.scaffold/` / docs layer
+and to `.razor` / `.xaml` markup. A freshly scaffolded app
 is knowledge-heavy (KNOWLEDGE >= CODE) -> full. A mature app where code dwarfs the
 static doc layer -> structure-only, with an occasional full pass for spec<->code
 consistency checks.
@@ -74,7 +80,7 @@ function Sum-Loc($paths) {
     ForEach-Object { (Get-Content -LiteralPath $_.FullName | Measure-Object -Line).Lines } |
     Measure-Object -Sum).Sum
 }
-$knowledge = Sum-Loc @('.instructions','.scaffold','docs')
+$knowledge = Sum-Loc @('.scaffold','docs')
 $code = (Get-ChildItem src -Recurse -File -Include *.cs,*.razor,*.ts,*.tsx,*.xaml -EA SilentlyContinue |
          Where-Object { $_.FullName -notmatch $prune -and $_.Name -notmatch $skip } |
          ForEach-Object { (Get-Content -LiteralPath $_.FullName | Measure-Object -Line).Lines } |
@@ -130,8 +136,9 @@ graphify . --wiki       # PowerShell CLI: no leading slash
 # Structure-only layer (AST, no model spend): code-heavy / low-doc repos.
 # There is no dedicated --code-only flag: graphify ALWAYS extracts code locally via
 # tree-sitter (no API calls); the semantic LLM pass only runs on docs/papers/images.
-# So restrict the corpus to code via .graphifyignore (exclude docs/.instructions/
-# .scaffold) and the semantic pass has nothing to do. Add --no-cluster to also skip
+# So restrict the corpus to code via .graphifyignore (additionally exclude docs/ and
+# .scaffold/ - .instructions/ is already in the baseline ignore) and the semantic pass
+# has nothing to do. Add --no-cluster to also skip
 # the clustering/community-naming step. A structure-only build has no communities, so
 # the wiki adds little - skip --wiki here. Refresh with the no-LLM update:
 graphify .  --no-cluster   # initial structure-only build
@@ -182,8 +189,12 @@ tool-schema tokens.
 docs/.html
 docs/assets/
 src/Infrastructure/**/Migrations/
+.instructions/
+HANDOFF.md
 
-Keep `.instructions/`, `.scaffold/`, `docs/*.md`, `HANDOFF.md`, all `src/*.cs|.razor`.
+Keep `.scaffold/`, `docs/*.md`, and all of `src/` including tests (impact-radius queries
+benefit from test edges). `.instructions/` and `HANDOFF.md` stay ignored per the
+decision-rule note above.
 
 Do NOT gitignore all of `graphify-out/`. Commit the durable graph artifacts and ignore
 only the transient/machine-specific ones. Keep these rules in the **repo-root
@@ -262,7 +273,7 @@ both are set, the union-merge does not run. If you keep `graph.json` untracked, 
 entirely.
 
 **Scope gap**: the hook is CODE/AST only. It does NOT refresh the semantic/doc layer
-(`.instructions/`, `.scaffold/`, `docs/*.md`). Keep refreshing that with a full
+(`.scaffold/`, `docs/*.md`). Keep refreshing that with a full
 `graphify .` at the phase boundaries below. For a structure-only repo the hook alone
 keeps the graph current.
 

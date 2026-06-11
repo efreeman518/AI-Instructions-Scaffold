@@ -109,6 +109,14 @@ Scaffold completion is local-complete per **GR-11**; deployment is a separate, h
 
 ---
 
+## Post-Scaffold Recommendations (Optional)
+
+Alongside the deployment TODOs, copy the item below into `HANDOFF.md` as an optional TODO. It is a recommendation for the operator to consider, never a completion criterion.
+
+- **Consider initializing graphify for this repo** - post-scaffold is the cheapest build point: the knowledge layer (`.scaffold/` + `docs/`) is at its peak and `src/` is at its smallest, and future sessions already prefer the graph once `graphify-out/graph.json` exists. Corpus is `.scaffold/` + `docs/` + `src/` (tests included); exclude `.instructions/` and `HANDOFF.md` via `.graphifyignore`. Pick the layer by the `.scaffold`+`docs` vs `src/` LOC ratio and follow the setup, ignore-file, and post-commit-hook guidance in [context-tooling.md](context-tooling.md). Operator opt-in: the full layer spends model tokens and harness enablement is a per-operator choice.
+
+---
+
 ## If A Check Fails
 
 - Build/test failure: one focused fix pass, rerun the exact failing command.

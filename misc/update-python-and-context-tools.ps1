@@ -88,18 +88,20 @@
   WHICH GRAPHIFY MODE (per repo, by LOC ratio)
     graphify is the single graph tool. The only per-repo decision is which LAYER to
     build, not which tool. Measure, excluding generated/transient files:
-      KNOWLEDGE = LOC of .instructions/ + .scaffold/ + docs/*.md
+      KNOWLEDGE = LOC of .scaffold/ + docs/*.md
       CODE      = LOC of application src/ (*.cs,*.razor,*.ts,*.tsx,*.xaml)
+      (.instructions/ and HANDOFF.md are excluded from measurement AND graph corpus:
+       generic scaffold payload / transient resume state - see support/context-tooling.md)
 
       KNOWLEDGE >= CODE .............................. full (AST + semantic LLM)
       CODE > KNOWLEDGE but CODE < 3x KNOWLEDGE ....... full (AST + semantic LLM)
       CODE >= 3x KNOWLEDGE ........................... structure-only (AST, no LLM)
-      No .instructions/ or .scaffold/ ............... structure-only (AST, no LLM)
+      No .scaffold/ and no docs/*.md ................. structure-only (AST, no LLM)
       Brownfield adoption (src/ exists, no .scaffold/) structure-only; re-eval after Phase 1
 
     WHY: the FULL layer adds LLM semantic extraction of markdown/YAML/infra on top of
-    tree-sitter AST parsing - it sees the WHOLE repo, including the .instructions/ /
-    .scaffold/ knowledge layer and .razor/.xaml markup, but spends model tokens. In a
+    tree-sitter AST parsing - it sees the whole corpus, including the .scaffold/ +
+    docs/ knowledge layer and .razor/.xaml markup, but spends model tokens. In a
     Claude Code / Claude VS Code session the host Claude session does that extraction
     directly - NO API key. Headless/CI uses Gemini via GEMINI_API_KEY/GOOGLE_API_KEY (or
     --backend on 'graphify extract'). The STRUCTURE-ONLY layer is AST-only, 100% local,
