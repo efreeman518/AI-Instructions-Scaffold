@@ -352,21 +352,11 @@ This scaffold can use optional context-optimization tools ([rtk](https://github.
 [graphify](https://github.com/safishamsi/graphify)) to cut token cost in AI sessions. They are a separate concern from the scaffold itself - machine and
 operator setup, not part of any app's payload, and not required to scaffold or run an app.
 
-Setup, the operating model, the activation split, and per-tool details live in
-[misc/README.md](misc/README.md). In short, three actions cover it:
-
-- Run `misc/update-python-and-context-tools.ps1` periodically (per machine) - installs and
-  updates the tools and wires all global config: rtk + headroom always-on, plus graphify's
-  conditional steering, which stays inert until a repo builds a graph.
-- Paste `misc/apply-graphify-to-repo.txt` into a repo to build a graphify graph there (the
-  only opt-in, per-repo step).
-- Run `misc/strip-graphify-repo-wiring.ps1` to remove graphify wiring that leaked into a
-  repo's tracked files.
-
-The per-repo graphify layer choice and phase-boundary build timing are in
-[support/context-tooling.md](support/context-tooling.md) (reached per repo via a pointer in
-[START-AI.md](START-AI.md)); the rtk/headroom deep reference is
-[misc/context-optimize.md](misc/context-optimize.md).
+Setup, installation, and per-tool details are operator/machine concerns managed separately
+and are out of scope for this instruction set. Within the scaffold, the only context-tooling
+guidance that matters is the per-repo graphify layer choice and phase-boundary build timing,
+in [support/context-tooling.md](support/context-tooling.md) (reached per repo via a pointer in
+[START-AI.md](START-AI.md)).
 
 ## Operational References
 

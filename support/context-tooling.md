@@ -15,9 +15,8 @@ upstream of the compression tools (headroom, rtk) and does not overlap with them
 
 Pipeline: graph (what to load) -> headroom (compress inputs) -> rtk + output rules.
 
-graphify is installed/updated globally by
-`misc/update-python-and-context-tools.ps1`. That script installs the CLI only. It
-does not enable any repo harness and does not create a graph database.
+graphify is installed/updated globally by your operator tooling, which installs the
+CLI only. It does not enable any repo harness and does not create a graph database.
 Per-harness enablement and per-repo graph creation are project-time actions.
 
 ## Two layers: structure-only vs. full
