@@ -254,6 +254,15 @@ Resolve `<latest-installed-stable-sdk>` from `dotnet --list-sdks` at scaffold ti
 - Expose contracts in Application layer; keep implementations in Infrastructure.
 - Register each infrastructure module through Bootstrapper extension methods.
 
+### Wrap vs. Direct Reference
+
+Not every external dependency earns an Infrastructure project. Two paths:
+
+- **Wrap (default).** The application layer owns the interface in `Application.Contracts`; the Infrastructure project references `Application.Contracts` and implements it. Services/handlers inject the contract, never the provider type. This is the path for bespoke repositories, Refit API wrappers, and Service Bus / Event Grid adapters. The Infrastructure-references-`Application.Contracts` dependency direction (see the Minimal Reference Matrix) exists precisely so the implementation can satisfy the app-owned interface.
+- **Direct reference (exception).** When a library already ships a stable, app-shaped interface, the application layer references that package and injects the interface directly - no `Application.Contracts` interface, no Infrastructure project. FusionCache (`IFusionCache` / `IFusionCacheProvider`) is the canonical case: the cache abstraction is already what you would have written, so wrapping it only re-exports the same shape.
+
+Criterion: wrap when the provider's surface is provider-shaped, transport-coupled, or needs DTO/error mapping (the wrapper rules in [external-api.md](external-api.md)); reference directly when the provider's interface is already the abstraction you would have authored. A direct reference means the `Application` project takes the package reference itself - call that out, it is the deliberate exception to the otherwise internal-only application reference surface (see the Minimal Reference Matrix note).
+
 ---
 
 ## Minimal Reference Matrix
@@ -265,8 +274,8 @@ Resolve `<latest-installed-stable-sdk>` from `dotnet --list-sdks` at scaffold ti
 | `Application.Models` | shared/common abstractions as needed |
 | `Application.Mappers` | `Application.Models`, `Domain.Model`, `Domain.Shared` |
 | `Application.Contracts` | `Application.Models`, `Domain.Model`, `Domain.Shared` |
-| `Application.Services` | `Application.Contracts`, `Application.Mappers`, `Application.Models`, domain projects |
-| `Application.Cqrs` | `Application.Contracts`, `Application.Mappers`, `Application.Models`, domain projects, `<Prefix>.CQRS` |
+| `Application.Services` | `Application.Contracts`, `Application.Mappers`, `Application.Models`, domain projects, + external packages whose interface is the contract (e.g. FusionCache) |
+| `Application.Cqrs` | `Application.Contracts`, `Application.Mappers`, `Application.Models`, domain projects, `<Prefix>.CQRS`, + external packages whose interface is the contract (e.g. FusionCache) |
 | `Infrastructure.Data` | domain projects |
 | `Infrastructure.Repositories` | `Application.Contracts`, `Infrastructure.Data` |
 | `{Host}.Bootstrapper` | app/infrastructure implementations |
@@ -274,7 +283,7 @@ Resolve `<latest-installed-stable-sdk>` from `dotnet --list-sdks` at scaffold ti
 Default scaffold and TaskFlow keep `Application.Cqrs` referencing shared `Application.Models` and `Application.Mappers` so service and CQRS styles share one contract. A CQRS-only vertical slice may move feature-specific models, mappers, projections, and adapters under `Application.Cqrs/Features/{Entity}` and then trim unused shared project references.
 | `{Host}.Api` / `{Host}.Scheduler` / `{Host}.Functions` | `{Host}.Bootstrapper` (+ host-specific packages) |
 
-Adjust optional dependencies per enabled features without inverting layer direction.
+Adjust optional dependencies per enabled features without inverting layer direction. The `+ external packages whose interface is the contract` clause on the application rows is the deliberate direct-reference exception (see Infrastructure Naming Rules -> Wrap vs. Direct Reference): a library like FusionCache whose own interface is already the abstraction is referenced straight from the application layer, so the application project takes that package reference and no Infrastructure wrapper exists. Wrapped integrations (repositories, Refit APIs, messaging adapters) keep their package references in the Infrastructure implementation project, not in the application layer.
 
 ---
 
