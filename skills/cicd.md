@@ -145,6 +145,27 @@ jobs:
       # Test.PlaywrightUI requires a hosted stack - see "Hosted-stack orchestration" section below.
 ```
 
+### Runner Disk for Container-Backed Test Tiers
+
+The `Integration` and `Aspire` tiers pull the full emulator image set: SQL Server (**two** tags once the Service Bus emulator's bundled SQL sidecar is counted - see [aspire.md](aspire.md) -> *Emulator Image Pinning*), plus Azurite, the Service Bus emulator, and Redis. A GitHub-hosted `ubuntu-latest` runner has ~14 GB free and can overflow mid-pull. **The failure is misleading:** Docker reports `no space left on device` deep in the pull log, but the test surfaces it as an AppHost resource-wait `System.TimeoutException` (the SQL container never reaches healthy). Check the pull log for the disk error before chasing the timeout.
+
+Reclaim space before the container-backed steps, gated to the same dispatch inputs so normal PR runs (unit/endpoint/arch only) skip it:
+
+```yaml
+- name: Free disk space
+  if: ${{ github.event_name == 'workflow_dispatch' && (inputs.includeIntegration || inputs.includeAspireMesh) }}
+  uses: jlumbroso/free-disk-space@main
+  with:
+    tool-cache: false   # keep the hosted .NET; build depends on it
+    dotnet: false
+    android: true       # ~9 GB
+    haskell: true       # ~5 GB
+    large-packages: true
+    swap-storage: false
+```
+
+Aligning the Service Bus SQL sidecar tag with the `sql` resource (aspire.md, same section) also shrinks the pull - the two SQL containers then share layers instead of pulling two majors.
+
 ### Test Category Policy
 
     | Category | PR Default | Optional / Manual |

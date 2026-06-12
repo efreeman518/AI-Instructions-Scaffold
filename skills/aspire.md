@@ -196,6 +196,30 @@ var eventHubs = builder.AddAzureEventHubs("eventhubs").RunAsEmulator();
 >
 > **Narrow exception: Cosmos preview emulator.** Cosmos image is large and slow to start, so a long local-dev session may justify `ContainerLifetime.Persistent` on the Cosmos preview emulator specifically. If used, document the restart cleanup procedure (manually remove the container and its network when network errors appear) in `HANDOFF.md`. Do not extend this exception to Azurite, Service Bus, or Event Hubs without an explicit reason - those startup costs are low and not worth the stranding risk.
 
+### Emulator Image Pinning (and the Service Bus SQL sidecar)
+
+Pin every emulator to `latest` the same way you pin SQL/Redis. A bare `.RunAsEmulator()` rides whatever tag the hosting package defaults to, which drifts and can pull an image older than the rest of the stack:
+
+```csharp
+var storage = builder.AddAzureStorage("storage")
+    .RunAsEmulator(e => e.WithImageTag("latest"));
+var serviceBus = builder.AddAzureServiceBus("servicebus")
+    .RunAsEmulator(e => e.WithImageTag("latest"));
+```
+
+**The Service Bus emulator bundles its own SQL Server sidecar** - a separate container named `{servicebus}-mssql`. The Aspire package **hardcodes that SQL image tag**, and the `RunAsEmulator` callback **cannot reach it** (the callback configures only the emulator container, not the sidecar). Left alone it pulls a different, usually older SQL Server major than your `sql` resource - so the machine ends up with two full SQL images. Override it by pulling the resource out of the model right after `RunAsEmulator` and re-tagging it to match `sql`:
+
+```csharp
+// Align the Service Bus emulator's bundled SQL sidecar with the `sql` tag so Docker shares layers
+// instead of pulling a second SQL Server major (matters most on disk-constrained CI runners).
+// builder.Resources.Single(...) needs System.Linq in scope.
+builder.CreateResourceBuilder(
+        (ContainerResource)builder.Resources.Single(r => r.Name == "servicebus-mssql"))
+    .WithImageTag("2025-latest");
+```
+
+> **Compatibility caveat.** The Service Bus emulator is validated against its bundled SQL version, so forcing a newer major is a mild risk. Verify the emulator still reaches a healthy state after re-tagging (a mesh/Aspire test that exercises the bus is enough). If it regresses, drop the override and accept the second image.
+
 ### Azure Service Bus Topics and Subscriptions
 
 ```csharp
@@ -348,6 +372,7 @@ Fixed ports and explorer UIs are **local-dev affordances only**. In test runs:
 5. Keep Gateway as public ingress, backend hosts internal.
 6. Keep AppHost resource names aligned with IaC modules in [iac.md](iac.md).
 7. Pin SQL Server containers to `WithImageTag("2025-latest")`; EF SQL registrations must use `UseCompatibilityLevel(170)`.
+8. Pin every emulator image to `latest` and override the Service Bus emulator's hidden SQL sidecar tag - see *Emulator Image Pinning (and the Service Bus SQL sidecar)* above.
 
 ---
 
