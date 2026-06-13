@@ -6,6 +6,8 @@ Reference patterns: [../patterns/infrastructure-wiring.md](../patterns/infrastru
 
 Use FusionCache as the application cache abstraction, with Redis as distributed layer and backplane for cross-instance invalidation.
 
+FusionCache is referenced directly from the application layer (services/handlers inject `IFusionCache` / `IFusionCacheProvider`) and is **not** wrapped in an Infrastructure project, because `IFusionCache` is already the app-level abstraction you would otherwise author. This is the deliberate direct-reference exception to the usual contract-in-Application / implementation-in-Infrastructure split - see the Wrap vs. Direct Reference rule in [solution-structure.md](solution-structure.md#wrap-vs-direct-reference).
+
 ## Architecture
 
 ```
