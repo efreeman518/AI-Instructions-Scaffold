@@ -323,14 +323,20 @@ aiServices:
   # --- Microsoft Foundry ---
   foundry:
     projectName: ""                    # Microsoft Foundry project name
+    hosting: foundry-local-or-azure    # foundry-local-or-azure | azure-only
+                                       #   foundry-local-or-azure: AppHost uses RunAsFoundryLocal() in
+                                       #   run mode (on-device, no Azure) and provisions Azure on publish.
+                                       #   azure-only: always a real Azure Foundry resource.
+    connectionName: chat               # Aspire deployment resource name; clients bind AddAzureChatCompletionsClient(<connectionName>)
     models:
       - name: gpt-4o
         purpose: agent-reasoning       # agent-reasoning | embedding | completion
         deploymentName: gpt-4o-deploy
+        localModel: Phi4               # FoundryModel.Local.* used when running on Foundry Local
       - name: text-embedding-3-small
         purpose: embedding
         deploymentName: embedding-deploy
-    useFoundryAgentService: false      # true = hosted agents in Foundry Agent Service
+    useFoundryAgentService: false      # true = hosted agents in Foundry Agent Service (Azure-only)
 
   # --- Semantic Search ---
   search:
@@ -486,7 +492,7 @@ externalDependencyModes:
   keyVault: lazy-optional
   blobStorage: emulator
   cosmosDb: emulator
-  aiServices: no-op stub          # always no-op stub or deployment-only until Foundry is provisioned
+  aiServices: lazy-optional       # Foundry Local in run mode, or Azure when configured/published; no-op IChatClient when neither is wired. AI Search stays deployment-only.
   externalApis:
     - name: PaymentGateway
       mode: no-op stub

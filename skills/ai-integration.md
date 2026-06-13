@@ -25,7 +25,7 @@ Use this only when the current slice actually needs semantic retrieval, grounded
 10. System prompts live in files, not inline string literals spread through services.
 11. **Read DTO source files before writing any property access against them.** Response/DTO types may not expose the properties you assume. Writing against an assumed shape (e.g., `snapshot.PreferredLanguage` on a type that has no such property) produces `CS1061` compile errors. Always call `read_file` on the DTO before generating tool wrapper code or snapshot records.
 12. **Read the target class constructor before injecting new dependencies into scaffold agents or tool classes.** Generated constructors may differ from what session notes describe. Reading the actual constructor first avoids duplicate-parameter or mismatched-arity compile errors.
-13. **Scaffold mode is the default.** Foundry and AI Search are `deployment-only` external dependencies - no Aspire emulator or local alternative exists. When endpoints are absent from config, AI services must register as no-op stubs so the app boots without cloud credentials. Live endpoints are wired only when intentionally provisioned; log them in `HANDOFF.md` as deployment-only blockers.
+13. **Scaffold mode is the default.** AI Search is `deployment-only` (no local emulator). Foundry models have a local path: `AddFoundry(...).RunAsFoundryLocal()` runs a model on-device via Foundry Local, so chat, streaming, and code-hosted agents work with no Azure subscription (Foundry *Projects* and Foundry-*hosted* agents still require Azure). When no model and no Foundry Local are wired, AI services must register as no-op stubs (including a no-op `IChatClient`) so the app boots without cloud credentials. A live model is wired only when a Foundry deployment is referenced; record any remaining Azure-only dependency (Search, Foundry Agent Service) in `HANDOFF.md`.
 
 ---
 
@@ -64,16 +64,19 @@ Useful primitives:
 
 ## Packages
 
-- Baseline for any AI capability:
-    - `Azure.AI.OpenAI`
-    - `Azure.Identity`
+- Baseline for any AI capability (Aspire Foundry path):
+    - `Aspire.Hosting.Foundry` (AppHost) - preview-only, pin with reason
+    - `Aspire.Azure.AI.Inference` (host project) - preview-only, pin with reason; provides the `IChatClient`
+    - `Microsoft.Extensions.AI` - `IChatClient`, `AIFunctionFactory`
+    - `Microsoft.Agents.AI` - `ChatClientAgent`
+    - `Azure.Identity` - managed identity for real Azure
 - Add only when enabled:
-    - `Azure.Search.Documents` for search
-    - `Microsoft.Agents.AI.OpenAI` for agents
+    - `Azure.Search.Documents` + `Aspire.Hosting.Azure.Search` for search
+    - `Azure.AI.OpenAI` only if a component needs the Azure OpenAI client directly (embeddings, a FlowEngine Azure-OpenAI connector)
     - `Azure.AI.Agents.Persistent` for Foundry Agent Service
     - `Microsoft.Agents.Workflows` for workflow orchestration
 
-Version all packages in `Directory.Packages.props`.
+Version all packages in `Directory.Packages.props`. The two preview-only Aspire packages above carry no stable release; pin them with a one-line inline reason (the version-pinning exception).
 
 ---
 
@@ -246,20 +249,11 @@ public static class AiServiceCollectionExtensions
 
         var settings = aiSection.Get<AiSettings>() ?? new AiSettings();
 
-        // Azure OpenAI / Foundry Models client - conditional on endpoint config
-        if (!string.IsNullOrWhiteSpace(settings.FoundryEndpoint))
-        {
-            services.AddSingleton(new AzureOpenAIClient(
-                new Uri(settings.FoundryEndpoint),
-                new DefaultAzureCredential()));
-        }
-        else
-        {
-            // TODO: [CONFIGURE] Foundry endpoint - set AiServices:FoundryEndpoint for live AI completions
-            // No-op: AzureOpenAIClient not registered; agents/search will register no-op stubs below
-        }
+        // The model client (IChatClient) is registered at the HOST via Aspire (see Aspire section).
+        // Its presence - not raw config - gates live AI here.
+        var hasChatClient = services.Any(d => d.ServiceType == typeof(IChatClient));
 
-        // Azure AI Search (if configured)
+        // Azure AI Search (if configured) - Search has no local emulator (deployment-only).
         if (settings.UseSearch && !string.IsNullOrWhiteSpace(settings.SearchEndpoint))
         {
             services.AddSingleton(new SearchClient(
@@ -275,19 +269,15 @@ public static class AiServiceCollectionExtensions
             services.AddScoped<IProjectSearchService, NoOpSearchService>();
         }
 
-        // Agent services
-        if (settings.UseAgents)
-        {
-            if (!string.IsNullOrWhiteSpace(settings.FoundryEndpoint))
-            {
-                services.AddScoped<ISupportTriageAgent, SupportTriageAgentService>();
-            }
-            else
-            {
-                // TODO: [CONFIGURE] Foundry endpoint required for live agents
-                services.AddScoped<ISupportTriageAgent, NoOpSupportTriageAgent>();
-            }
-        }
+        // Agent services - live agent needs a real IChatClient; otherwise the no-op stub.
+        if (settings.UseAgents && hasChatClient)
+            services.AddScoped<ISupportTriageAgent, SupportTriageAgentService>();
+        else
+            services.AddScoped<ISupportTriageAgent, NoOpSupportTriageAgent>();
+
+        // IChatClient fallback so AI endpoints/consumers resolve and the app boots offline.
+        if (!hasChatClient)
+            services.AddSingleton<IChatClient, NoOpChatClient>();
 
         return services;
     }
@@ -321,21 +311,76 @@ No-op stubs return empty results or a `Result.Failure("AI service not configured
 
 ---
 
-## Aspire Integration
+## Aspire Integration (Azure AI Foundry)
 
 Only wire AI resources through Aspire if the solution already uses an AppHost. Do not introduce Aspire solely for AI.
 
+Use the Foundry hosting integration (`Aspire.Hosting.Foundry`) so the same model graph runs locally on Foundry Local and provisions Azure on publish. This package and the Inference client (`Aspire.Azure.AI.Inference`) are preview-only - pin them with an inline reason in `Directory.Packages.props` (the version-pinning exception). The deployment resource name (`"chat"` below) is the connection name consumers bind to.
+
 ```csharp
-var openai = builder.AddAzureOpenAI("openai")
-    .AddDeployment(new("gpt-4o-deploy", "gpt-4o", "2024-08-06", "GlobalStandard", 10))
-    .AddDeployment(new("embedding-deploy", "text-embedding-3-small", "1", "GlobalStandard", 10));
+// AppHost. Publish (or a configured real endpoint) -> Azure deployment; otherwise Foundry Local.
+IResourceBuilder<FoundryDeploymentResource>? chat = null;
+var azureConfigured = builder.ExecutionContext.IsPublishMode
+    || !string.IsNullOrWhiteSpace(builder.Configuration["AiServices:FoundryEndpoint"]);
 
-var search = builder.AddAzureSearch("search");
+if (azureConfigured)
+{
+    chat = builder.AddFoundry("foundry").AddDeployment("chat", FoundryModel.OpenAI.Gpt4oMini);
+}
+else if (Environment.GetEnvironmentVariable("ENABLE_FOUNDRY_LOCAL") == "true")
+{
+    chat = builder.AddFoundry("foundry").RunAsFoundryLocal()
+        .AddDeployment("chat", FoundryModel.Local.Phi4); // requires Foundry Local installed
+}
 
-var api = builder.AddProject<Projects.MyApp_Api>("api")
-    .WithReference(openai)
-    .WithReference(search);
+var api = builder.AddProject<Projects.MyApp_Api>("api");
+if (chat is not null) api = api.WithReference(chat); // injects CHAT_ENDPOINT / CHAT_APIKEY / CHAT_DEPLOYMENT
 ```
+
+Register the client at the **host** (`IHostApplicationBuilder`, not the `IServiceCollection` AI extension). The `connectionName` must equal the deployment resource name:
+
+```csharp
+// Program.cs - run only when the AppHost wired a "chat" reference; else AddAiServices adds a no-op.
+if (!string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("chat")))
+    builder.AddAzureChatCompletionsClient("chat").AddChatClient(); // registers Microsoft.Extensions.AI.IChatClient
+```
+
+`AddAiServices` then gates live AI on **IChatClient presence** (not raw config) and registers a no-op `IChatClient` when none was wired, so demos/endpoints resolve and the app boots offline:
+
+```csharp
+var hasChatClient = services.Any(d => d.ServiceType == typeof(IChatClient));
+if (settings.UseAgents && hasChatClient)
+    services.AddScoped<IAssistantAgent, AssistantAgentService>();
+else
+    services.AddScoped<IAssistantAgent, NoOpAssistantAgent>();
+if (!hasChatClient)
+    services.AddSingleton<IChatClient, NoOpChatClient>();
+```
+
+Build agents as a `ChatClientAgent` over the injected `IChatClient` (Microsoft Agent Framework), not over an `AzureOpenAIClient`. Keep an `AzureOpenAIClient` registration only if a component needs it directly (e.g. a FlowEngine Azure-OpenAI connector or embedding generation) - it is independent of the `IChatClient` chat/agent path.
+
+```csharp
+_agent = new ChatClientAgent(chatClient, instructions: systemPrompt, name: "Assistant", tools: [ /* AIFunctionFactory.Create(...) */ ]);
+```
+
+For embeddings or AI Search, add `builder.AddAzureSearch("search")` and reference it the same way; Search has no local emulator, so it stays `deployment-only` with a no-op stub.
+
+---
+
+## Inference Use-Case Taxonomy
+
+When a slice needs inference, pick the pattern by concept and avoid building several that overlap:
+
+- **Basic completion** - prompt to text via `IChatClient.GetResponseAsync`.
+- **Streaming completion** - token UX via `IChatClient.GetStreamingResponseAsync` over Server-Sent Events.
+- **Conversational tool-calling agent** - multi-turn `ChatClientAgent` with function tools that delegate to application services.
+- **Structured-output decisioning** - prompt for JSON, parse a typed result that drives a deterministic branch (classification/triage).
+- **Inline enrichment in a write** - one inference step inside an application command (e.g. draft fields before persisting).
+- **Asynchronous event-driven inference** - reason in a background/event handler off a domain event, with the side effect on a different surface.
+- **Read-only multi-tool reasoning** - an agent composes read-only tools to recommend, with no persistence.
+- **Orchestrated workflow** - a durable workflow engine runs an agent node as one step of a branching, resumable process.
+
+The first three are foundational; the rest embed inference inside application use cases. Start narrow and add a pattern only when the concept is genuinely new.
 
 ---
 

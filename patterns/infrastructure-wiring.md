@@ -161,3 +161,23 @@ var functionApp = builder.AddProject<Projects.FunctionApp>("functionapp")
 
 builder.Build().Run();
 ```
+
+### Azure AI Foundry (when `includeAiServices: true`)
+
+Wire the model with `Aspire.Hosting.Foundry` so it runs on Foundry Local locally and provisions Azure on publish. The deployment resource name is the connection name consumers bind to.
+
+```csharp
+IResourceBuilder<FoundryDeploymentResource>? chat = null;
+var azureConfigured = builder.ExecutionContext.IsPublishMode
+    || !string.IsNullOrWhiteSpace(builder.Configuration["AiServices:FoundryEndpoint"]);
+
+if (azureConfigured)
+    chat = builder.AddFoundry("foundry").AddDeployment("chat", FoundryModel.OpenAI.Gpt4oMini);
+else if (Environment.GetEnvironmentVariable("ENABLE_FOUNDRY_LOCAL") == "true")
+    chat = builder.AddFoundry("foundry").RunAsFoundryLocal().AddDeployment("chat", FoundryModel.Local.Phi4);
+
+if (chat is not null) {app}Api = {app}Api.WithReference(chat); // CHAT_ENDPOINT / CHAT_APIKEY / CHAT_DEPLOYMENT
+```
+
+**Registration boundary:** the model client is registered at the **host** (`IHostApplicationBuilder.AddAzureChatCompletionsClient("chat").AddChatClient()` from `Aspire.Azure.AI.Inference`), NOT in the `IServiceCollection` AI-registration extension. The connection name passed to `AddAzureChatCompletionsClient` must equal the deployment resource name. The `IServiceCollection` extension then gates live agents on `IChatClient` presence and registers a no-op `IChatClient` when none was wired. See [../skills/ai-integration.md](../skills/ai-integration.md).
+```

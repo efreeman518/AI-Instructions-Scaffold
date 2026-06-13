@@ -62,9 +62,10 @@ These are already part of the reference app and may be added without developer d
 | `MudBlazor` | Blazor component library | [ui-blazor.md](ui-blazor.md) |
 | `Refit` / `Refit.HttpClientFactory` | Typed HTTP clients | [external-api.md](external-api.md) |
 | `Azure.*` (Identity, Storage, KeyVault, Cosmos, ServiceBus, EventGrid, EventHubs, AI) | Azure SDK | [azure-data-storage.md](azure-data-storage.md), [security.md](security.md), [messaging.md](messaging.md), [ai-integration.md](ai-integration.md) |
-| `Aspire.*` (Hosting + Aspire.Hosting.Testing) | Orchestration + integration tests | [bootstrapper.md](bootstrapper.md), [testing.md](testing.md) |
+| `Aspire.*` (Hosting + client integrations like `Aspire.Azure.AI.Inference` + `Aspire.Hosting.Testing`) | Orchestration + integration tests | [bootstrapper.md](bootstrapper.md), [aspire.md](aspire.md), [testing.md](testing.md) |
+| `Microsoft.Extensions.AI` / `Microsoft.Agents.AI` (+ `.OpenAI`) | `IChatClient` + Microsoft Agent Framework agents | [ai-integration.md](ai-integration.md) |
 
-Add only the specific sub-package needed (e.g., `Azure.Storage.Blobs`, not the entire SDK). Versions stay in `Directory.Packages.props` per the Latest, Not Pinned rule.
+Add only the specific sub-package needed (e.g., `Azure.Storage.Blobs`, not the entire SDK). Versions stay in `Directory.Packages.props` per the Latest, Not Pinned rule. `Aspire.Hosting.Foundry` and `Aspire.Azure.AI.Inference` are preview-only (no stable release); pin them with a one-line inline reason - the documented version-pinning exception.
 
 ### Any other package - discuss first
 
