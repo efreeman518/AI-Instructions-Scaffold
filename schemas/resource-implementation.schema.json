@@ -161,6 +161,11 @@
       "items": { "$ref": "#/$defs/functionDefinition" }
     },
     "externalDependencyModes": { "$ref": "#/$defs/externalDependencyModes" },
+    "aspireResources": {
+      "type": "array",
+      "description": "Optional documentation block for Aspire-hosted dependencies, especially non-baseline integrations. Records AppHost API, local mode, publish mode, connection names, and docs URL.",
+      "items": { "$ref": "#/$defs/aspireResource" }
+    },
     "aiServices": { "$ref": "#/$defs/aiServices" },
     "compliance": { "$ref": "#/$defs/compliance" },
     "moneyCalculationPolicy": { "type": "object" },
@@ -361,6 +366,29 @@
     "dependencyMode": {
       "type": "string",
       "enum": ["emulator", "lazy-optional", "no-op stub", "deployment-only"]
+    },
+    "aspireResource": {
+      "type": "object",
+      "required": ["name", "service", "appHostApi", "localMode", "publishMode"],
+      "properties": {
+        "name": { "type": "string" },
+        "service": { "type": "string" },
+        "appHostApi": { "type": "string" },
+        "localMode": {
+          "type": "string",
+          "enum": ["RunAsEmulator", "RunAsContainer", "RunAsFoundryLocal", "RunAsExisting", "AsExisting", "local-container", "local-project", "none", "deployment-only", "lazy-optional", "no-op stub"]
+        },
+        "publishMode": {
+          "type": "string",
+          "enum": ["provision", "PublishAsExisting", "AsExisting", "container", "connection-string", "none", "deployment-only"]
+        },
+        "connectionNames": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "docs": { "type": "string" },
+        "notes": { "type": "string" }
+      }
     },
     "aiServices": {
       "type": "object",

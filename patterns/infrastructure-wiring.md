@@ -169,12 +169,16 @@ Wire the model with `Aspire.Hosting.Foundry` so it runs on Foundry Local locally
 ```csharp
 IResourceBuilder<FoundryDeploymentResource>? chat = null;
 var azureConfigured = builder.ExecutionContext.IsPublishMode
-    || !string.IsNullOrWhiteSpace(builder.Configuration["AiServices:FoundryEndpoint"]);
+    || !string.IsNullOrWhiteSpace(builder.Configuration["AiServices:FoundryEndpoint"])
+    || Environment.GetEnvironmentVariable("MYAPP_USE_AZURE_FOUNDRY") == "true";
+var foundryLocalEnabled =
+    Environment.GetEnvironmentVariable("MYAPP_ENABLE_FOUNDRY_LOCAL") == "true";
 
 if (azureConfigured)
     chat = builder.AddFoundry("foundry").AddDeployment("chat", FoundryModel.OpenAI.Gpt4oMini);
-else if (Environment.GetEnvironmentVariable("ENABLE_FOUNDRY_LOCAL") == "true")
-    chat = builder.AddFoundry("foundry").RunAsFoundryLocal().AddDeployment("chat", FoundryModel.Local.Phi4);
+else if (foundryLocalEnabled)
+    chat = builder.AddFoundry("foundry").RunAsFoundryLocal()
+        .AddDeployment("chat", FoundryModel.Local.Qwen2505b);
 
 if (chat is not null) {app}Api = {app}Api.WithReference(chat); // CHAT_ENDPOINT / CHAT_APIKEY / CHAT_DEPLOYMENT
 ```

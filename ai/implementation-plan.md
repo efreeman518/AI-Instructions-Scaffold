@@ -27,6 +27,7 @@ Run this check before writing Phase 4 tasks. Fix source artifacts first, not gen
 - [ ] Every entity in `.scaffold/domain-specification.yaml` has accepted terms in `.scaffold/UBIQUITOUS-LANGUAGE.md`.
 - [ ] Every command/action, state, event, policy, role, and external system used by the plan is present in `.scaffold/UBIQUITOUS-LANGUAGE.md`.
 - [ ] Every entity maps to a store, host exposure, and test category in `.scaffold/resource-implementation.yaml`, or has an explicit "no generated resource" note.
+- [ ] If `useAspire: true`, every non-baseline Aspire dependency has an `aspireResources` entry with AppHost API, local mode, publish mode, connection names, and official docs URL.
 - [ ] Every design decision that affects generation order, auth, tenancy, contracts, hosting, package strategy, or external dependency mode is `confirmed`, `defaulted`, or non-blocking `deferred`.
 - [ ] No `[OPEN QUESTION: ...]` marker remains in Phase 4 scope (**GR-10**). Markers still present must be either resolved or downgraded to a non-blocking deferred decision with `Needed Before` set.
 
@@ -108,7 +109,7 @@ Run this check before writing Phase 4 tasks. Fix source artifacts first, not gen
 - [ ] Agent function tools wrapping existing `I{Entity}Service` domain operations
 - [ ] Agent middleware (logging, auth context propagation, content safety)
 - [ ] Multi-agent workflow with executors + edges (if `workflow.enabled: true`)
-- [ ] Aspire resource wiring (`AddAzureAISearch()`, `AddAzureOpenAI()`)
+- [ ] Aspire resource wiring from `aspireResources` and [skills/aspire.md](../skills/aspire.md), typically `AddFoundry()`/`RunAsFoundryLocal()` for chat and `AddAzureSearch()` for Azure AI Search
 - [ ] Bootstrapper DI registration for AI services
 - [ ] API endpoints for search + agent interactions
 - [ ] Configuration: Foundry endpoint, model deployment names, search index names in appsettings
@@ -213,6 +214,8 @@ For libraries/services with no CLI or MCP server, record documentation and repo 
 
 | Library/Service | Phase | Resource | URL |
 |---|---|---|---|
+| Aspire integrations | 2-5 | Official integration catalog, AppHost APIs, local mode support | `https://aspire.dev/integrations/` |
+| Aspire Azure integrations | 2-5 | Azure `AddAzure*`, `RunAsEmulator`, `RunAsContainer`, existing-resource modes | `https://aspire.dev/integrations/cloud/azure/overview/` |
 | _e.g., FusionCache_ | _5b_ | _GitHub repo + wiki_ | _`https://github.com/ZiggyCreatures/FusionCache`_ |
 | _e.g., TickerQ_ | _5c_ | _NuGet readme + samples_ | _`https://github.com/user/TickerQ`_ |
 | _e.g., NetArchTest_ | _5d_ | _GitHub README_ | _`https://github.com/BenMorris/NetArchTest`_ |

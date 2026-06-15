@@ -4,6 +4,61 @@ Use Aspire AppHost for local orchestration and keep it consistent with IaC outpu
 
 Reference patterns: [../patterns/infrastructure-wiring.md](../patterns/infrastructure-wiring.md) (Aspire Resource Wiring).
 
+## Official Integration Catalog Awareness
+
+Before adding or rejecting an Aspire-hosted dependency, check the current Aspire integration catalog:
+
+- Aspire integrations: <https://aspire.dev/integrations/>
+- Azure integrations overview: <https://aspire.dev/integrations/cloud/azure/overview/>
+
+The integration catalog is the source of truth for the AppHost API, required hosting/client packages, local emulator/container support, and connection pattern. Do not invent a local container, package name, or `Add*` API from memory when the current docs list the integration.
+
+### Selection Rule
+
+When a Phase 2 resource requirement names a service in the Aspire left menu:
+
+1. Prefer the official Aspire hosting integration when it exists.
+2. For Azure services, prefer unified `AddAzure*` resources when `deployTarget` needs Azure infrastructure. Add `RunAsEmulator`, `RunAsContainer`, or `RunAsFoundryLocal` only for run mode.
+3. If the Azure overview does not list a local emulator/container path for that service, treat local execution as `lazy-optional`, `no-op stub`, or `deployment-only` unless the service-specific page documents a current `RunAs*` path.
+4. For non-Azure services in the catalog, use the service-specific `Add*` hosting integration and its documented container/local behavior.
+5. Add the matching client integration in the consuming host only when app code needs a typed client. AppHost resources alone do not register application services.
+6. Record any chosen service, local mode, publish mode, package names, connection names, and docs URL in `.scaffold/resource-implementation.yaml` or `HANDOFF.md`.
+
+### Azure Run-Mode Matrix
+
+Use this matrix as the default for Azure left-menu services. Re-check the service page during scaffold time because Aspire integrations evolve.
+
+| Service family | Left-menu services | Local scaffold stance |
+| --- | --- | --- |
+| Azure emulators | App Configuration, Cosmos DB, Event Hubs, Service Bus, SignalR Service, Storage Blob/Queue/Table via Azure Storage | Use `AddAzure*().RunAsEmulator(...)` in run mode, real Azure on publish. Storage uses Azurite; Cosmos can use the preview emulator/Data Explorer where appropriate. |
+| Azure local containers | Azure Cache for Redis, Azure PostgreSQL Flexible Server, Azure SQL Database/Server | Use `AddAzure*().RunAsContainer(...)` in run mode, real Azure on publish. Prefer this over plain `AddRedis`, `AddPostgres`, or `AddSqlServer` when the published target must be Azure-managed. |
+| Azure AI local path | Microsoft Foundry | Use `AddFoundry(...).RunAsFoundryLocal()` only behind an explicit local opt-in. Publish or configured real mode uses Azure Foundry. |
+| Azure AI cloud-only by default | Azure AI Inference, Azure AI Search, Azure OpenAI, Foundry Agent Service | Use live Azure when configured/published and no-op stubs locally unless the current service page documents a local `RunAs*` path. Azure AI Search has no local emulator in this scaffold. |
+| Azure app/platform resources | App Service, Container Registry, AKS, Container App Jobs, Front Door, Virtual Network, Log Analytics, Application Insights, Data Explorer, Data Lake Storage, Web PubSub, Key Vault, User-assigned managed identity, role assignments | Model for publish or existing-resource wiring. Do not assume a local emulator. Use `RunAsExisting`, `PublishAsExisting`, `AsExisting`, or app-level no-op/lazy wiring as appropriate. |
+
+### Non-Azure Local Integration Families
+
+The Aspire catalog also lists local/container integrations outside Azure. Use the category-specific skill file for application architecture, but use the official Aspire page for AppHost package/API details.
+
+| Category | Left-menu services | Scaffold stance |
+| --- | --- | --- |
+| Artificial Intelligence | GitHub Models, Ollama, OpenAI | Only add when `includeAiServices: true`. Prefer local Ollama or Foundry Local for offline demos when explicitly selected; otherwise keep no-op AI services so the app boots. |
+| Caching and state | Redis, Redis Distributed Cache, Redis Output Cache, Valkey, Garnet | Use the documented hosting integration for local state. The scaffold default remains FusionCache plus Redis unless Phase 2 selects another cache. |
+| Data and databases | ClickHouse, Elasticsearch, EF Core integrations, KurrentDB, Meilisearch, Milvus, MongoDB, MySQL, Oracle, PostgreSQL, Qdrant, RavenDB, SQL Server, SQLite, SurrealDB | Pick by domain need. SQL remains default for relational aggregates. Vector/search stores are optional projection stores, not source of truth, unless Phase 2 records that decision. |
+| Messaging and eventing | Apache Kafka, LavinMQ, NATS, RabbitMQ | Use when the domain eventing requirement fits better than Azure Service Bus. Record delivery semantics, local container support, and publish/deployment story. |
+| Frameworks and runtimes | .NET projects, Blazor, Orleans, Dapr, Go, Java, JavaScript/Node/Bun/Deno, PowerShell, Python, Rust, MAUI, WPF/WinForms | Use only for selected hosts/runtimes. Do not add a runtime just because Aspire supports it. |
+| Observability and logging | Seq | Use for local log inspection when selected. Keep OpenTelemetry in ServiceDefaults either way. |
+| Security and identity | Keycloak | Use only when Phase 2 selects Keycloak/local OIDC. Otherwise keep scaffold-mode auth or Entra guidance. |
+| Reverse proxies and APIs | YARP | This scaffold uses YARP for Gateway when `includeGateway: true`. |
+| Dev tools and extensions | Browser logs, Data API Builder, Dev Tunnels, flagd, goff, k6, MailPit, SQL Database Projects | Add only when the feature requires it. k6/load tooling belongs in quality/performance phases, MailPit in notification/email local tests, Dev Tunnels in callback scenarios. |
+
+### AppHost API Naming Discipline
+
+- Plain local resource APIs such as `AddRedis`, `AddSqlServer`, `AddPostgres`, and service-specific container integrations publish as containers unless documented otherwise.
+- Unified Azure APIs such as `AddAzureSqlServer`, `AddAzurePostgresFlexibleServer`, and `AddAzureRedis` can run locally through `RunAsContainer` and publish as Azure-managed services.
+- Azure emulator APIs such as `AddAzureStorage`, `AddAzureServiceBus`, `AddAzureEventHubs`, `AddAzureCosmosDB`, and `AddAzureAppConfiguration` can run locally through `RunAsEmulator` and publish as Azure resources.
+- Existing-resource modes are explicit: `RunAsExisting` for run mode, `PublishAsExisting` for publish mode, and `AsExisting` for both. Require parameterized resource names/resource groups and compatible authentication.
+
 ## Structure
 
 ```text

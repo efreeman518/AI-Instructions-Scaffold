@@ -2,6 +2,8 @@
 
 Maps domain constructs from [domain-specification-schema.md](domain-specification-schema.md) to concrete Aspire/Azure resources, datatypes, and infrastructure.
 
+When `useAspire: true`, resource selection must use the current Aspire integration catalog before declaring a dependency unsupported or inventing local wiring. Start with [skills/aspire.md](../skills/aspire.md) section Official Integration Catalog Awareness, then consult the linked Aspire docs for the selected service.
+
 **JSON Schema:** [`schemas/resource-implementation.schema.json`](../schemas/resource-implementation.schema.json) - use for programmatic validation of `.scaffold/resource-implementation.yaml`.
 
 **Prerequisite:** Complete Phase 1 domain definition first, including `.scaffold/domain-specification.yaml`, `.scaffold/UBIQUITOUS-LANGUAGE.md`, and `.scaffold/DESIGN-DECISIONS.md`.
@@ -194,6 +196,8 @@ compliance:
 
 Binary content -> `blob`. Relational + complex queries -> `sql`. Simple key lookups -> `table`. Document aggregates -> `cosmosdb`. Uncertain -> default to `sql`. For detailed selection guidance, see [skills/data-persistence.md](../skills/data-persistence.md) and [skills/azure-data-storage.md](../skills/azure-data-storage.md).
 
+If a non-default database/search/vector store is selected because the Aspire catalog supports it locally (for example PostgreSQL, MongoDB, Qdrant, Meilisearch, Elasticsearch, or ClickHouse), record both the domain reason and the Aspire integration URL. Do not replace SQL as the source of truth with a search/vector service unless `.scaffold/DESIGN-DECISIONS.md` explicitly records that choice.
+
 ### SQL Type Defaults
 
 | Domain kind | SQL type | Notes |
@@ -243,6 +247,37 @@ builder.HasIndex(e => new { e.EntityType, e.EntityId });
 > **CRITICAL - No navigation collections on parent entities.** Parent entities that participate in a polymorphic join (e.g., `TaskItem` and `Comment` both owning `Attachment`) must NOT declare `ICollection<PolymorphicChild>` navigation properties. EF convention-generates a real FK from each navigation, creating multiple conflicting FK constraints on the shared `EntityId`/`OwnerId` column. The polymorphic child references its owner via `EntityType` + `EntityId` properties only - no EF relationship is configured. Query polymorphic children explicitly: `db.Attachments.Where(a => a.OwnerType == type && a.OwnerId == id)`.
 
 ## Infrastructure Resources
+
+### Aspire Integration Selection
+
+When `useAspire: true`, map every external dependency through the Aspire catalog:
+
+```yaml
+aspireResources:
+  - name: sql
+    service: Azure SQL Database
+    appHostApi: AddAzureSqlServer
+    localMode: RunAsContainer
+    publishMode: provision
+    connectionNames: [{Project}DbContextTrxn, {Project}DbContextQuery]
+    docs: https://aspire.dev/integrations/cloud/azure/azuresql/
+  - name: servicebus
+    service: Azure Service Bus
+    appHostApi: AddAzureServiceBus
+    localMode: RunAsEmulator
+    publishMode: provision
+    connectionNames: [ServiceBus1]
+    docs: https://aspire.dev/integrations/cloud/azure/azureservicebus/
+```
+
+Use this optional `aspireResources` block when the resource map includes anything beyond the baseline SQL/Redis/Storage set, or when a service has a non-obvious local mode. The block is documentation for later phases; it does not replace the concrete first-class fields below.
+
+Selection rules:
+
+- Azure-managed publish target: prefer `AddAzure*` plus `RunAsEmulator`, `RunAsContainer`, `RunAsFoundryLocal`, or existing-resource APIs as documented.
+- Local-only dependency: use the service-specific non-Azure `Add*` integration.
+- Cloud-only dependency: declare `deployment-only` or `lazy-optional` plus no-op stubs so the scaffold still boots locally.
+- AI Search, Foundry Agent Service, Key Vault, platform resources, and observability sinks must not block local scaffold completion unless Phase 2 explicitly requires a live endpoint.
 
 ### Database & Storage
 
@@ -332,7 +367,7 @@ aiServices:
       - name: gpt-4o
         purpose: agent-reasoning       # agent-reasoning | embedding | completion
         deploymentName: gpt-4o-deploy
-        localModel: Phi4               # FoundryModel.Local.* used when running on Foundry Local
+        localModel: Qwen2505b          # FoundryModel.Local.* used when running on Foundry Local
       - name: text-embedding-3-small
         purpose: embedding
         deploymentName: embedding-deploy
@@ -517,7 +552,7 @@ Work through these in order during Phase 2. **Question 1 is asked first and must
 3. **Data store mapping** - for each entity: SQL (default), Cosmos, Table, or Blob? Binary content -> blob, relational -> sql, key-value -> table, document aggregates -> cosmosdb.
 4. **Property details** - add types, maxLength, precision/scale to every property. Resolve ambiguous Phase 1 kinds.
 5. **Relationship config** - join entities for many-to-many, cascade behavior, FK naming.
-6. **External dependencies** - declare a scaffold mode for each (emulator, lazy-optional, no-op stub, deployment-only). Think about what needs to run locally vs. what can be deferred.
+6. **External dependencies** - declare a scaffold mode for each (emulator, lazy-optional, no-op stub, deployment-only). When `useAspire: true`, consult [skills/aspire.md](../skills/aspire.md) section Official Integration Catalog Awareness and record any non-baseline service in `aspireResources` with docs URL, local mode, publish mode, and connection names.
 7. **Messaging & events** - which events need Service Bus topics? Which are in-process channel dispatches?
 8. **AI services** - if enabled: which entities need search indexes? Which decisions need agents? What models?
 9. **Testing profile & surfaces** - minimal, balanced, or comprehensive? Which optional test types (E2E, architecture, load)? **Test surfaces are derived from the hosts/UI chosen in Question 2, not asked independently:** Uno -> `WasmUI` (Skia canvas bridge) + `Test.Mobile`; Blazor/React -> `Test.PlaywrightUI` (DOM); `useAspire` + comprehensive (or explicit `includeAspireTests`) -> `Test.Aspire` mesh; `api-only` / no UI -> none of these. Record the resulting tier set; the [Capability-Gated Test Tiers](../skills/testing.md#capability-gated-test-tiers-the-early-decision-drives-the-rest) table is authoritative for the mapping.
@@ -543,6 +578,7 @@ Before moving to Phase 3 (Implementation Plan), verify all of the following:
 - [ ] If `packageStrategy: local` - `customNugetFeeds` is `[]`; `localPackageLayers` covers every layer in [`../support/ef-packages-reference.md`](../support/ef-packages-reference.md)
 - [ ] If `packageStrategy: hybrid` - `customNugetFeeds` has at least one entry **and** `localPackageLayers` lists only the layers the feed does not provide
 - [ ] `externalDependencyModes` declared for every external dependency
+- [ ] If `useAspire: true`, Aspire-hosted dependencies are checked against [skills/aspire.md](../skills/aspire.md) and any non-baseline service has package/API/local-mode notes recorded
 - [ ] If `includeAiServices: true`: Foundry project name set, at least one model defined, each agent references a defined model, search indexes reference defined entities
 
 ## applicationStyle
