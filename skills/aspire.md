@@ -158,24 +158,39 @@ The fixed local SQL port and the `sql-password` parameter live INSIDE the `RunAs
 
 Use `Aspire.Hosting.Foundry` to model a chat model that runs on Foundry Local in run mode and provisions Azure on publish. The package is preview-only - pin it with an inline reason in `Directory.Packages.props`. The deployment resource name is the connection name consumers bind to.
 
+Use three explicit modes:
+
+| Mode | AppHost condition | Result |
+|---|---|---|
+| Foundry Local | app-specific env var, e.g. `MYAPP_ENABLE_FOUNDRY_LOCAL=true`, and no Azure mode selected | Runs local model with `RunAsFoundryLocal()`; no Azure subscription needed. |
+| Real Azure AI Foundry | publish mode, `AiServices:FoundryEndpoint`, or app-specific env var, e.g. `MYAPP_USE_AZURE_FOUNDRY=true` | Provisions or connects to an Azure Foundry deployment. |
+| Disabled | neither local nor Azure mode selected | No `chat` resource is wired; app registers no-op AI services. |
+
 ```csharp
-// Publish (or a configured real endpoint) -> Azure deployment; otherwise Foundry Local; otherwise no model.
+// Publish (or configured real endpoint/override) -> Azure deployment;
+// otherwise explicit Foundry Local; otherwise no model.
 IResourceBuilder<FoundryDeploymentResource>? chat = null;
 var azureConfigured = builder.ExecutionContext.IsPublishMode
-    || !string.IsNullOrWhiteSpace(builder.Configuration["AiServices:FoundryEndpoint"]);
+    || !string.IsNullOrWhiteSpace(builder.Configuration["AiServices:FoundryEndpoint"])
+    || Environment.GetEnvironmentVariable("MYAPP_USE_AZURE_FOUNDRY") == "true";
+var foundryLocalEnabled =
+    Environment.GetEnvironmentVariable("MYAPP_ENABLE_FOUNDRY_LOCAL") == "true";
 
 if (azureConfigured)
     chat = builder.AddFoundry("foundry").AddDeployment("chat", FoundryModel.OpenAI.Gpt4oMini);
-else if (Environment.GetEnvironmentVariable("ENABLE_FOUNDRY_LOCAL") == "true")
+else if (foundryLocalEnabled)
     chat = builder.AddFoundry("foundry").RunAsFoundryLocal()
-        .AddDeployment("chat", FoundryModel.Local.Phi4);   // requires Foundry Local installed
+        .AddDeployment("chat", FoundryModel.Local.Qwen2505b);   // tool-capable local model
 
-if (chat is not null) api = api.WithReference(chat);       // injects CHAT_ENDPOINT / CHAT_APIKEY / CHAT_DEPLOYMENT
+if (chat is not null) api = api.WithReference(chat);       // injects ConnectionStrings:chat and CHAT_* env values
 ```
 
 - `RunAsFoundryLocal()` runs the model on-device (no Azure subscription); it does not support Foundry Projects or Foundry-hosted agents.
 - Gate Foundry Local behind an opt-in env var so a default `aspire run` boots without it (the host then registers a no-op `IChatClient`).
+- If code-hosted agents or workflow agent nodes call tools, select a local model whose Foundry Local task list includes `tools`. `qwen2.5-0.5b` is a small pragmatic default; `phi-4` is chat-only in Foundry Local `0.8.119`.
 - The consuming project registers the client at the host: `builder.AddAzureChatCompletionsClient("chat").AddChatClient()` (from `Aspire.Azure.AI.Inference`), where the connection name equals the deployment resource name. See [ai-integration.md](ai-integration.md).
+- Fully local run: set `$env:MYAPP_ENABLE_FOUNDRY_LOCAL = "true"` and run `dotnet run --project src/Host/Aspire/AppHost`.
+- Real Azure local run: set `AiServices:FoundryEndpoint` in AppHost user secrets/config or set `$env:MYAPP_USE_AZURE_FOUNDRY = "true"`. `aspire publish` always takes the real Azure path.
 
 ---
 
@@ -530,7 +545,12 @@ If using dev tunnels, add `Aspire.Hosting.DevTunnels`.
 Before running `dotnet run --project src/Host/Aspire/AppHost`, confirm the substrate:
 
 1. **Docker/Podman running:** `docker info` or `podman info` succeeds. If not, start the container runtime - do not debug app code.
-2. **launchSettings.json exists:** AppHost requires `Properties/launchSettings.json` with OTLP/dashboard endpoints. Without it, `dotnet run` starts but the dashboard never opens and the terminal appears blank. Minimal template:
+2. **Aspire CLI available when using `aspire run`:** `aspire --version` succeeds. If missing, install it:
+   ```powershell
+   dotnet tool install -g Aspire.Cli
+   ```
+   You can still run the AppHost with `dotnet run --project src/Host/Aspire/AppHost`, but having the CLI installed keeps local and docs commands aligned.
+3. **launchSettings.json exists:** AppHost requires `Properties/launchSettings.json` with OTLP/dashboard endpoints. Without it, `dotnet run` starts but the dashboard never opens and the terminal appears blank. Minimal template:
    ```json
    {
      "profiles": {
@@ -559,15 +579,28 @@ Before running `dotnet run --project src/Host/Aspire/AppHost`, confirm the subst
      }
    }
    ```
-3. **User secrets initialized for SQL password:** If the AppHost uses `builder.AddParameter("sql-password", secret: true)`, the secret must exist in user secrets before launch:
+4. **User secrets initialized for SQL password:** If the AppHost uses `builder.AddParameter("sql-password", secret: true)`, the secret must exist in user secrets before launch:
    ```powershell
    dotnet user-secrets init --project src/Host/Aspire/AppHost
    dotnet user-secrets set "Parameters:sql-password" "<YourPassword>" --project src/Host/Aspire/AppHost
    ```
    Without this, the SQL container starts but cannot authenticate.
-4. **Ports available:** No stale containers holding SQL/Redis ports. Run `docker ps` / `podman ps` to check.
-5. **NuGet restore clean:** `dotnet restore` on the AppHost project succeeds (catches `packageSourceMapping` issues before launch).
-6. **Foundry Local (only if running AI demos on-device):** `AddFoundry(...).RunAsFoundryLocal()` needs the Foundry Local runtime installed and on `PATH`. Install with `winget install Microsoft.FoundryLocal` (Windows) or `brew install microsoft/foundrylocal/foundrylocal` (macOS); verify with `foundry --version`. The first run pulls a multi-GB model. Skip this if you only use a real Azure Foundry endpoint or run with AI disabled (no-op `IChatClient`).
+5. **Ports available:** No stale containers holding SQL/Redis ports. Run `docker ps` / `podman ps` to check.
+6. **NuGet restore clean:** `dotnet restore` on the AppHost project succeeds (catches `packageSourceMapping` issues before launch).
+7. **Foundry Local (only if running AI demos on-device):** `AddFoundry(...).RunAsFoundryLocal()` needs the Foundry Local runtime installed and on `PATH`.
+   ```powershell
+   winget install Microsoft.FoundryLocal
+   foundry --version
+   foundry service status
+   foundry model info qwen2.5-0.5b
+   foundry model download qwen2.5-0.5b
+   ```
+   Use a model with `tools` support for agent demos. `foundry model list` can log catalog-processing errors on some CLI versions even when explicit `model info` and `model download` work, so use explicit model checks during setup. Skip this if you only use a real Azure Foundry endpoint or run with AI disabled (no-op `IChatClient`).
+8. **Functions Core Tools (only if running Azure Functions locally):**
+   ```powershell
+   npm i -g azure-functions-core-tools@4 --unsafe-perm true
+   func --version
+   ```
 
 Only after the applicable checks pass, proceed to `dotnet run`.
 

@@ -11,6 +11,34 @@ Use this only when the current slice actually needs semantic retrieval, grounded
 - [identity-management.md](identity-management.md) (agents need auth context)
 - [package-dependencies.md](package-dependencies.md)
 
+### Local Runtime Prerequisites
+
+For a real local AI run through Aspire, verify the substrate before debugging application code:
+
+```powershell
+dotnet --version
+docker info                 # or podman info
+aspire --version            # install: dotnet tool install -g Aspire.Cli
+foundry --version           # install: winget install Microsoft.FoundryLocal
+foundry service status
+foundry model info qwen2.5-0.5b
+foundry model download qwen2.5-0.5b
+func --version              # optional Functions run: npm i -g azure-functions-core-tools@4 --unsafe-perm true
+```
+
+Notes:
+
+- `foundry model list` can log catalog-processing errors on some Foundry Local versions even when explicit model lookup works. Treat `foundry model info <alias>` plus `foundry service status` as the pragmatic verification path.
+- Use a local model whose task list includes `tools` when any `ChatClientAgent` or FlowEngine agent node will call functions. In Foundry Local `0.8.119`, `phi-4` is `chat` only; `qwen2.5-0.5b` is small and supports `chat, tools`.
+- Pre-download the selected local model before the AppHost run when possible so app startup is not confused with model download latency.
+- Fully local model run: set an app-specific opt-in variable such as `$env:MYAPP_ENABLE_FOUNDRY_LOCAL = "true"`, then run `dotnet run --project src/Host/Aspire/AppHost`. The AppHost should call `RunAsFoundryLocal()` only when that variable is set.
+- Real Azure Foundry run: set `AiServices:FoundryEndpoint` in AppHost user secrets/config or set an app-specific override such as `$env:MYAPP_USE_AZURE_FOUNDRY = "true"`. `aspire publish` should always select the real Azure Foundry path.
+- Add the AppHost SQL password secret before launch when the AppHost has a secret `sql-password` parameter:
+  ```powershell
+  dotnet user-secrets init --project src/Host/Aspire/AppHost
+  dotnet user-secrets set "Parameters:sql-password" "<StrongPassword>" --project src/Host/Aspire/AppHost
+  ```
+
 ## Non-Negotiables
 
 1. All AI services behind interfaces - testable, swappable.
@@ -26,6 +54,7 @@ Use this only when the current slice actually needs semantic retrieval, grounded
 11. **Read DTO source files before writing any property access against them.** Response/DTO types may not expose the properties you assume. Writing against an assumed shape (e.g., `snapshot.PreferredLanguage` on a type that has no such property) produces `CS1061` compile errors. Always call `read_file` on the DTO before generating tool wrapper code or snapshot records.
 12. **Read the target class constructor before injecting new dependencies into scaffold agents or tool classes.** Generated constructors may differ from what session notes describe. Reading the actual constructor first avoids duplicate-parameter or mismatched-arity compile errors.
 13. **Scaffold mode is the default.** AI Search is `deployment-only` (no local emulator). Foundry models have a local path: `AddFoundry(...).RunAsFoundryLocal()` runs a model on-device via Foundry Local, so chat, streaming, and code-hosted agents work with no Azure subscription (Foundry *Projects* and Foundry-*hosted* agents still require Azure). When no model and no Foundry Local are wired, AI services must register as no-op stubs (including a no-op `IChatClient`) so the app boots without cloud credentials. A live model is wired only when a Foundry deployment is referenced; record any remaining Azure-only dependency (Search, Foundry Agent Service) in `HANDOFF.md`.
+14. **Function-tool schemas must be provider-compatible.** Avoid nullable optional tool parameters such as `string? status = null` when targeting Azure AI Inference / Foundry Local. `AIFunctionFactory` can emit JSON Schema union types like `["string","null"]`, and some inference endpoints reject them. Prefer non-null optional strings with empty defaults (`string status = ""`) or explicit DTOs with provider-safe schema.
 
 ---
 
@@ -118,8 +147,7 @@ public sealed class SupportTriageAgentService : ISupportTriageAgent
     private readonly ChatClientAgent _agent;
 
     public SupportTriageAgentService(
-        AzureOpenAIClient openAiClient,
-        IOptions<AiSettings> settings,
+        IChatClient chatClient,
         ITicketService ticketService)
     {
         // Load system prompt from embedded resource
@@ -130,21 +158,18 @@ public sealed class SupportTriageAgentService : ISupportTriageAgent
         using var reader = new StreamReader(stream);
         var systemPrompt = reader.ReadToEnd();
 
-        // AsAIAgent is an extension method on OpenAI.Chat.ChatClient
-        // from the Microsoft.Agents.AI.OpenAI package
-        _agent = openAiClient
-            .GetChatClient(settings.Value.AgentModelDeployment)
-            .AsAIAgent(
-                instructions: systemPrompt,
-                name: "SupportTriageAgent",
-                tools:
-                [
-                    AIFunctionFactory.Create(  // Microsoft.Extensions.AI
-                        (string ticketId) =>
-                            ticketService.GetTicketHistoryAsync(ticketId, CancellationToken.None),
-                        "GetTicketHistory",
-                        "Get the history of a support ticket")
-                ]);
+        _agent = new ChatClientAgent(
+            chatClient,
+            instructions: systemPrompt,
+            name: "SupportTriageAgent",
+            tools:
+            [
+                AIFunctionFactory.Create(  // Microsoft.Extensions.AI
+                    (string ticketId) =>
+                        ticketService.GetTicketHistoryAsync(ticketId, CancellationToken.None),
+                    "GetTicketHistory",
+                    "Get the history of a support ticket")
+            ]);
     }
 
     public async Task<AgentChatResponse> TriageAsync(string userMessage, AgentSession? session = null, CancellationToken ct = default)
@@ -269,8 +294,9 @@ public static class AiServiceCollectionExtensions
             services.AddScoped<IProjectSearchService, NoOpSearchService>();
         }
 
-        // Agent services - live agent needs a real IChatClient; otherwise the no-op stub.
-        if (settings.UseAgents && hasChatClient)
+        // Agent services - once the agent feature exists, live behavior follows IChatClient presence.
+        // Without a model, keep the no-op stub so local scaffold runs still boot.
+        if (hasChatClient)
             services.AddScoped<ISupportTriageAgent, SupportTriageAgentService>();
         else
             services.AddScoped<ISupportTriageAgent, NoOpSupportTriageAgent>();
@@ -317,24 +343,36 @@ Only wire AI resources through Aspire if the solution already uses an AppHost. D
 
 Use the Foundry hosting integration (`Aspire.Hosting.Foundry`) so the same model graph runs locally on Foundry Local and provisions Azure on publish. This package and the Inference client (`Aspire.Azure.AI.Inference`) are preview-only - pin them with an inline reason in `Directory.Packages.props` (the version-pinning exception). The deployment resource name (`"chat"` below) is the connection name consumers bind to.
 
+Recommended modes:
+
+| Mode | AppHost condition | Result |
+|---|---|---|
+| Foundry Local | app-specific env var, e.g. `MYAPP_ENABLE_FOUNDRY_LOCAL=true`, and no Azure mode selected | Runs local model with `RunAsFoundryLocal()`; no Azure subscription needed. |
+| Real Azure AI Foundry | publish mode, `AiServices:FoundryEndpoint`, or app-specific env var, e.g. `MYAPP_USE_AZURE_FOUNDRY=true` | Provisions or connects to an Azure Foundry deployment. |
+| Disabled | neither local nor Azure mode selected | No `chat` resource is wired; app registers no-op AI services. |
+
 ```csharp
-// AppHost. Publish (or a configured real endpoint) -> Azure deployment; otherwise Foundry Local.
+// AppHost. Publish (or configured real endpoint/override) -> Azure deployment;
+// otherwise explicit Foundry Local; otherwise no model.
 IResourceBuilder<FoundryDeploymentResource>? chat = null;
 var azureConfigured = builder.ExecutionContext.IsPublishMode
-    || !string.IsNullOrWhiteSpace(builder.Configuration["AiServices:FoundryEndpoint"]);
+    || !string.IsNullOrWhiteSpace(builder.Configuration["AiServices:FoundryEndpoint"])
+    || Environment.GetEnvironmentVariable("MYAPP_USE_AZURE_FOUNDRY") == "true";
+var foundryLocalEnabled =
+    Environment.GetEnvironmentVariable("MYAPP_ENABLE_FOUNDRY_LOCAL") == "true";
 
 if (azureConfigured)
 {
     chat = builder.AddFoundry("foundry").AddDeployment("chat", FoundryModel.OpenAI.Gpt4oMini);
 }
-else if (Environment.GetEnvironmentVariable("ENABLE_FOUNDRY_LOCAL") == "true")
+else if (foundryLocalEnabled)
 {
     chat = builder.AddFoundry("foundry").RunAsFoundryLocal()
-        .AddDeployment("chat", FoundryModel.Local.Phi4); // requires Foundry Local installed
+        .AddDeployment("chat", FoundryModel.Local.Qwen2505b); // tool-capable local model
 }
 
 var api = builder.AddProject<Projects.MyApp_Api>("api");
-if (chat is not null) api = api.WithReference(chat); // injects CHAT_ENDPOINT / CHAT_APIKEY / CHAT_DEPLOYMENT
+if (chat is not null) api = api.WithReference(chat); // injects ConnectionStrings:chat and CHAT_* env values
 ```
 
 Register the client at the **host** (`IHostApplicationBuilder`, not the `IServiceCollection` AI extension). The `connectionName` must equal the deployment resource name:
@@ -349,7 +387,7 @@ if (!string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("chat")
 
 ```csharp
 var hasChatClient = services.Any(d => d.ServiceType == typeof(IChatClient));
-if (settings.UseAgents && hasChatClient)
+if (hasChatClient)
     services.AddScoped<IAssistantAgent, AssistantAgentService>();
 else
     services.AddScoped<IAssistantAgent, NoOpAssistantAgent>();
@@ -364,6 +402,20 @@ _agent = new ChatClientAgent(chatClient, instructions: systemPrompt, name: "Assi
 ```
 
 For embeddings or AI Search, add `builder.AddAzureSearch("search")` and reference it the same way; Search has no local emulator, so it stays `deployment-only` with a no-op stub.
+
+Copy-paste configuration examples:
+
+```powershell
+# Fully local model run
+$env:MYAPP_ENABLE_FOUNDRY_LOCAL = "true"
+dotnet run --project src/Host/Aspire/AppHost
+
+# Real Azure Foundry local run
+dotnet user-secrets set "AiServices:FoundryEndpoint" "https://<your-foundry-resource>.services.ai.azure.com/" --project src/Host/Aspire/AppHost
+dotnet run --project src/Host/Aspire/AppHost
+```
+
+If the target Azure environment requires keyless managed-identity inference instead of the generated connection secret, update the host-side `AddAzureChatCompletionsClient("chat")` registration to use the required credential overload. Do that before classifying failures as model or prompt failures.
 
 ---
 
