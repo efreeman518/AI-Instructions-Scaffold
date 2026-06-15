@@ -357,11 +357,14 @@ aiServices:
 
   # --- Microsoft Foundry ---
   foundry:
-    projectName: ""                    # Microsoft Foundry project name
-    hosting: foundry-local-or-azure    # foundry-local-or-azure | azure-only
-                                       #   foundry-local-or-azure: AppHost uses RunAsFoundryLocal() in
-                                       #   run mode (on-device, no Azure) and provisions Azure on publish.
-                                       #   azure-only: always a real Azure Foundry resource.
+    projectName: ""                    # Microsoft Foundry project name (only when using a project + agents)
+    lifecycle: local-or-provision      # local-or-provision | existing
+                                       #   local-or-provision: AppHost uses RunAsFoundryLocal() in run mode
+                                       #     (on-device, no Azure) and provisions a new Azure account on publish.
+                                       #   existing: RunAsExisting/PublishAsExisting/AsExisting against an
+                                       #     already-provisioned account; deployment names must already exist there.
+    resourceName: ""                   # existing only: Azure Foundry account name (RunAsExisting/AsExisting param)
+    resourceGroup: ""                  # existing only: resource group of the existing account
     connectionName: chat               # Aspire deployment resource name; clients bind AddAzureChatCompletionsClient(<connectionName>)
     models:
       - name: gpt-4o
@@ -371,7 +374,11 @@ aiServices:
       - name: text-embedding-3-small
         purpose: embedding
         deploymentName: embedding-deploy
-    useFoundryAgentService: false      # true = hosted agents in Foundry Agent Service (Azure-only)
+    agentHosting: code-hosted          # code-hosted | prompt-agent | pre-existing
+                                       #   code-hosted: ChatClientAgent over the injected IChatClient (default, offline-capable).
+                                       #   prompt-agent: Aspire AddProject + AddPromptAgent (Azure-only, deploys even on aspire run).
+                                       #   pre-existing: agent created in portal/IaC, consumed via AIProjectClient.AsAIAgent(...).
+    projectEndpoint: ""                # prompt-agent / pre-existing only: project URI (or Aspire-injected PROJ_URI)
 
   # --- Semantic Search ---
   search:
@@ -394,7 +401,7 @@ aiServices:
     framework: AgentFramework          # AgentFramework (Microsoft Agent Framework)
     agents:
       - name: SupportTriageAgent
-        type: ChatClientAgent          # ChatClientAgent | FoundryAgent | CustomAgent
+        type: ChatClientAgent          # ChatClientAgent (code-hosted) | FoundryAgent (prompt-agent/pre-existing, Azure-only) | CustomAgent
         model: gpt-4o
         systemPrompt: "You are a support triage agent..."
         tools: [SearchKnowledgeBase, GetTicketHistory, ClassifyUrgency]
@@ -579,7 +586,7 @@ Before moving to Phase 3 (Implementation Plan), verify all of the following:
 - [ ] If `packageStrategy: hybrid` - `customNugetFeeds` has at least one entry **and** `localPackageLayers` lists only the layers the feed does not provide
 - [ ] `externalDependencyModes` declared for every external dependency
 - [ ] If `useAspire: true`, Aspire-hosted dependencies are checked against [skills/aspire.md](../skills/aspire.md) and any non-baseline service has package/API/local-mode notes recorded
-- [ ] If `includeAiServices: true`: Foundry project name set, at least one model defined, each agent references a defined model, search indexes reference defined entities
+- [ ] If `includeAiServices: true`: at least one model defined, each agent references a defined model, search indexes reference defined entities; `lifecycle: existing` sets `resourceName`/`resourceGroup`; `agentHosting: prompt-agent`/`pre-existing` sets `projectName`/`projectEndpoint`
 
 ## applicationStyle
 

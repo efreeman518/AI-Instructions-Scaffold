@@ -164,7 +164,7 @@ builder.Build().Run();
 
 ### Azure AI Foundry (when `includeAiServices: true`)
 
-Wire the model with `Aspire.Hosting.Foundry` so it runs on Foundry Local locally and provisions Azure on publish. The deployment resource name is the connection name consumers bind to.
+Wire the model with `Aspire.Hosting.Foundry` so it runs on Foundry Local locally and provisions Azure on publish. The deployment resource name is the connection name consumers bind to. This snippet covers the default **inference** surface across all three lifecycle modes; for the **existing-account** and **project + server-hosted agent** surfaces see [../skills/ai-integration.md](../skills/ai-integration.md) -> *Foundry Projects and Server-Hosted Agents*.
 
 ```csharp
 IResourceBuilder<FoundryDeploymentResource>? chat = null;
@@ -176,6 +176,11 @@ var foundryLocalEnabled =
 
 if (azureConfigured)
     chat = builder.AddFoundry("foundry").AddDeployment("chat", FoundryModel.OpenAI.Gpt4oMini);
+    // Existing account instead of provisioning a new one (deployment "chat" must already exist):
+    //   var name = builder.AddParameter("foundry-name");
+    //   var rg = builder.AddParameter("foundry-rg");
+    //   chat = builder.AddFoundry("foundry").RunAsExisting(name, rg)
+    //       .AddDeployment("chat", FoundryModel.OpenAI.Gpt4oMini);
 else if (foundryLocalEnabled)
     chat = builder.AddFoundry("foundry").RunAsFoundryLocal()
         .AddDeployment("chat", FoundryModel.Local.Qwen2505b);

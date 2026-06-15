@@ -65,7 +65,7 @@ These are already part of the reference app and may be added without developer d
 | `Aspire.*` (Hosting + client integrations like `Aspire.Azure.AI.Inference` + `Aspire.Hosting.Testing`) | Orchestration + integration tests | [bootstrapper.md](bootstrapper.md), [aspire.md](aspire.md), [testing.md](testing.md) |
 | `Microsoft.Extensions.AI` / `Microsoft.Agents.AI` (+ `.OpenAI`) | `IChatClient` + Microsoft Agent Framework agents | [ai-integration.md](ai-integration.md) |
 
-Add only the specific sub-package needed (e.g., `Azure.Storage.Blobs`, not the entire SDK). Versions stay in `Directory.Packages.props` per the Latest, Not Pinned rule. `Aspire.Hosting.Foundry` and `Aspire.Azure.AI.Inference` are preview-only (no stable release); pin them with a one-line inline reason - the documented version-pinning exception.
+Add only the specific sub-package needed (e.g., `Azure.Storage.Blobs`, not the entire SDK). Versions stay in `Directory.Packages.props` per the Latest, Not Pinned rule. Consuming a Foundry **project** or **server-hosted/pre-existing agent** from app code adds `Azure.AI.Projects` + `Microsoft.Agents.AI.Foundry` (the `AIProjectClient.AsAIAgent(...)` path). `Aspire.Hosting.Foundry`, `Aspire.Azure.AI.Inference`, and `Microsoft.Agents.AI.Foundry` are preview-only (no stable release); pin them with a one-line inline reason - the documented version-pinning exception.
 
 ### Any other package - discuss first
 

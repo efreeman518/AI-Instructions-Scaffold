@@ -32,8 +32,8 @@ Use this matrix as the default for Azure left-menu services. Re-check the servic
 | --- | --- | --- |
 | Azure emulators | App Configuration, Cosmos DB, Event Hubs, Service Bus, SignalR Service, Storage Blob/Queue/Table via Azure Storage | Use `AddAzure*().RunAsEmulator(...)` in run mode, real Azure on publish. Storage uses Azurite; Cosmos can use the preview emulator/Data Explorer where appropriate. |
 | Azure local containers | Azure Cache for Redis, Azure PostgreSQL Flexible Server, Azure SQL Database/Server | Use `AddAzure*().RunAsContainer(...)` in run mode, real Azure on publish. Prefer this over plain `AddRedis`, `AddPostgres`, or `AddSqlServer` when the published target must be Azure-managed. |
-| Azure AI local path | Microsoft Foundry | Use `AddFoundry(...).RunAsFoundryLocal()` only behind an explicit local opt-in. Publish or configured real mode uses Azure Foundry. |
-| Azure AI cloud-only by default | Azure AI Inference, Azure AI Search, Azure OpenAI, Foundry Agent Service | Use live Azure when configured/published and no-op stubs locally unless the current service page documents a local `RunAs*` path. Azure AI Search has no local emulator in this scaffold. |
+| Azure AI local path | Microsoft Foundry (model inference) | Use `AddFoundry(...).RunAsFoundryLocal()` only behind an explicit local opt-in. Publish or configured real mode uses Azure Foundry; an existing account uses `RunAsExisting`/`PublishAsExisting`/`AsExisting`. |
+| Azure AI cloud-only by default | Azure AI Inference, Azure AI Search, Azure OpenAI, Foundry projects + server-hosted agents (`AddProject`/`AddPromptAgent`) | Use live Azure when configured/published and no-op stubs locally unless the current service page documents a local `RunAs*` path. Azure AI Search has no local emulator in this scaffold. Foundry prompt agents always deploy to Azure even under `aspire run` (no offline path), so keep them opt-in. |
 | Azure app/platform resources | App Service, Container Registry, AKS, Container App Jobs, Front Door, Virtual Network, Log Analytics, Application Insights, Data Explorer, Data Lake Storage, Web PubSub, Key Vault, User-assigned managed identity, role assignments | Model for publish or existing-resource wiring. Do not assume a local emulator. Use `RunAsExisting`, `PublishAsExisting`, `AsExisting`, or app-level no-op/lazy wiring as appropriate. |
 
 ### Non-Azure Local Integration Families
@@ -213,12 +213,13 @@ The fixed local SQL port and the `sql-password` parameter live INSIDE the `RunAs
 
 Use `Aspire.Hosting.Foundry` to model a chat model that runs on Foundry Local in run mode and provisions Azure on publish. The package is preview-only - pin it with an inline reason in `Directory.Packages.props`. The deployment resource name is the connection name consumers bind to.
 
-Use three explicit modes:
+Two independent axes - **lifecycle** (where the resource comes from) x **consumption** (raw inference vs. project + server-hosted agents). The lifecycle modes (`FoundryResource : AzureProvisioningResource`, so the general existing-resource APIs apply):
 
 | Mode | AppHost condition | Result |
 |---|---|---|
-| Foundry Local | app-specific env var, e.g. `MYAPP_ENABLE_FOUNDRY_LOCAL=true`, and no Azure mode selected | Runs local model with `RunAsFoundryLocal()`; no Azure subscription needed. |
-| Real Azure AI Foundry | publish mode, `AiServices:FoundryEndpoint`, or app-specific env var, e.g. `MYAPP_USE_AZURE_FOUNDRY=true` | Provisions or connects to an Azure Foundry deployment. |
+| Foundry Local | app-specific env var, e.g. `MYAPP_ENABLE_FOUNDRY_LOCAL=true`, and no Azure mode selected | Runs local model with `RunAsFoundryLocal()`; no Azure subscription needed. Inference only. |
+| Provision new Azure Foundry | publish mode, `AiServices:FoundryEndpoint`, or app-specific env var, e.g. `MYAPP_USE_AZURE_FOUNDRY=true` | Bicep provisions the account + deploys the model. |
+| Connect to existing | as above, plus `FoundryResourceName`/`FoundryResourceGroup` set | `RunAsExisting(nameParam, rgParam)` / `PublishAsExisting(...)` / `AsExisting(...)` point at an already-provisioned account; the deployment name must match a model already there. |
 | Disabled | neither local nor Azure mode selected | No `chat` resource is wired; app registers no-op AI services. |
 
 ```csharp
@@ -241,6 +242,8 @@ if (chat is not null) api = api.WithReference(chat);       // injects Connection
 ```
 
 - `RunAsFoundryLocal()` runs the model on-device (no Azure subscription); it does not support Foundry Projects or Foundry-hosted agents.
+- Existing account: `AddFoundry("foundry").RunAsExisting(nameParam, rgParam)` (or `PublishAsExisting`/`AsExisting`) provisions nothing; still call `.AddDeployment("chat", ...)` with a name that already exists in that account.
+- Projects + server-hosted agents are an Axis-2 escalation: `foundry.AddProject("proj")` then `project.AddPromptAgent(model, "name", instructions).WithTool(...)`, or consume a pre-existing portal/IaC agent via the client SDK (`AIProjectClient.AsAIAgent(...)`). Prompt agents always deploy to Azure even under `aspire run` (no offline path), so keep them opt-in. Full patterns in [ai-integration.md](ai-integration.md) -> *Foundry Projects and Server-Hosted Agents*.
 - Gate Foundry Local behind an opt-in env var so a default `aspire run` boots without it (the host then registers a no-op `IChatClient`).
 - If code-hosted agents or workflow agent nodes call tools, select a local model whose Foundry Local task list includes `tools`. `qwen2.5-0.5b` is a small pragmatic default; `phi-4` is chat-only in Foundry Local `0.8.119`.
 - The consuming project registers the client at the host: `builder.AddAzureChatCompletionsClient("chat").AddChatClient()` (from `Aspire.Azure.AI.Inference`), where the connection name equals the deployment resource name. See [ai-integration.md](ai-integration.md).
