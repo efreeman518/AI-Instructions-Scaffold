@@ -180,80 +180,9 @@ Also set `CORECLR_ENABLE_PROFILING=0`, `COR_ENABLE_PROFILING=0`, `MSBUILDDISABLE
 
 ## Playwright Testing Against Uno WASM
 
-These rules apply to `Test.PlaywrightUI` tests that drive a running Uno WASM host.
+The Playwright-against-WASM test strategy - boot-once-per-describe, renderer detection (managed-DOM vs Skia canvas), coordinate-click for the managed-DOM renderer, the Skia canvas test bridge, browser diagnostics, and the slow-router timeout rule - is canonical in [testing-quality.md](testing-quality.md) section Hosted Browser UI (Test.PlaywrightUI). Use the `{APP}_WASM_BASE_URL` env var (the `{APP}_WASM_*` family) for standalone runs.
 
-### Boot Once Per Describe Block
-
-WASM cold-start takes 20-45 seconds. Never use the default `{ page }` Playwright fixture for Uno tests - it boots a new page per test and compounds wall-clock time.
-
-Use `test.describe.configure({ mode: "serial" })` with a shared `BrowserContext`/`Page` created in `beforeAll`. Call `waitForApp(sharedPage)` once in `beforeAll`, then reuse `sharedPage` across all tests in the block. Re-call `waitForApp` after in-test navigation - it re-checks without a full re-boot.
-
-```typescript
-test.describe("EntityCrud", () => {
-  test.describe.configure({ mode: "serial" });
-
-  test.beforeAll(async ({ browser }) => {
-    const baseURL = process.env.{APP}_UNO_BASE_URL;
-    if (!baseURL) throw new Error("{APP}_UNO_BASE_URL is required for standalone Uno WASM Playwright runs");
-    const context = await browser.newContext({ ignoreHTTPSErrors: true });
-    sharedPage = await context.newPage();
-    await sharedPage.goto(baseURL);
-    await waitForApp(sharedPage);
-  });
-});
-```
-
-`test.use({ viewport })` does **not** apply to a `beforeAll`-owned context. Pass viewport directly:
-
-```typescript
-context = await browser.newContext({ viewport: { width: 390, height: 844 }, ignoreHTTPSErrors: true });
-```
-
-Set `--timeout=120000` on any suite containing Uno WASM cold-start:
-
-```json
-"test:full": "npx playwright test --retries=0 --max-failures=4 --timeout=120000"
-```
-
-### Renderer Decides the Strategy
-
-Uno WASM ships two renderers and they need different test strategies:
-
-- **Managed/native DOM renderer** - controls map to DOM elements with `xamltype` / `xamlautomationid`. Use the coordinate-click approach below.
-- **Skia canvas renderer** - the app paints into a single `<canvas>` with **no per-control DOM**. DOM/text/role selectors return nothing and coordinate-clicking by scanning DOM text is impossible. Use the WASM canvas test bridge instead (see below); do not try to coordinate-click a canvas.
-
-Detect once: in the running app's console run `document.querySelectorAll('[xamltype]').length`. `0` with a lone `<canvas>` present means Skia.
-
-### Coordinate-Click for Invisible Elements (managed-DOM renderer)
-
-Standard Playwright visibility checks and `.click()` fail on Uno's canvas/shadow DOM. Use `getBoundingClientRect()` via `page.evaluate()` and `page.mouse.click()`. Retry in a loop since elements render asynchronously:
-
-```typescript
-for (let attempt = 0; attempt < 20; attempt++) {
-  const coords = await page.evaluate(() => {
-    for (const p of Array.from(document.querySelectorAll("p"))) {
-      const txt = (p.textContent ?? "").trim();
-      if (!txt.startsWith("E2E-")) continue; // filter by known prefix to avoid overlapping elements
-      const r = p.getBoundingClientRect();
-      if (r.width > 0 && r.height > 0 && r.y > 0 && r.x > 0)
-        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-    }
-    return null;
-  });
-  if (coords) { await page.mouse.click(coords.x, coords.y); break; }
-  await page.waitForTimeout(500);
-}
-```
-
-Filter by a known text prefix (e.g. `"E2E-"`) to avoid hitting status chips or other `<p>` elements that overlap the target.
-
-### Canvas Test Bridge (Skia renderer)
-
-When the app paints to a Skia canvas, there is nothing to coordinate-click. Scaffold a **browser-only test bridge** that publishes app state to `globalThis.__{app}TestState` and let Playwright wait on state, not DOM. The bridge is query-string gated (`?{app}TestMode=true`), default-off, browser-target only, and uses **real** Gateway local auth (no injected token). Full shape, contract, and a state-polling Playwright test: [../templates/uno-wasm-test-bridge-template.md](../templates/uno-wasm-test-bridge-template.md). Tag these tests `[TestCategory("WasmUI")]`.
-
-### Slow Router After Many Navigations
-
-After several in-session navigations, the WASM router can lag. Increase assertion timeouts for pages loaded later in the shared-page lifecycle (use 60 s after 3+ prior navigations).
+Platform-build specifics that affect those tests (clean `bin`+`obj`, stale-asset rebuild, targeted-build command) live in this file's Build sections above.
 
 ## Mobile Test Strategy
 

@@ -175,17 +175,25 @@ var foundryLocalEnabled =
     Environment.GetEnvironmentVariable("MYAPP_ENABLE_FOUNDRY_LOCAL") == "true";
 
 if (azureConfigured)
+{
     chat = builder.AddFoundry("foundry").AddDeployment("chat", FoundryModel.OpenAI.Gpt4oMini);
-    // Existing account instead of provisioning a new one (deployment "chat" must already exist):
-    //   var name = builder.AddParameter("foundry-name");
-    //   var rg = builder.AddParameter("foundry-rg");
-    //   chat = builder.AddFoundry("foundry").RunAsExisting(name, rg)
-    //       .AddDeployment("chat", FoundryModel.OpenAI.Gpt4oMini);
+}
 else if (foundryLocalEnabled)
+{
     chat = builder.AddFoundry("foundry").RunAsFoundryLocal()
         .AddDeployment("chat", FoundryModel.Local.Qwen2505b);
+}
 
-if (chat is not null) {app}Api = {app}Api.WithReference(chat); // CHAT_ENDPOINT / CHAT_APIKEY / CHAT_DEPLOYMENT
+if (chat is not null) {app}Api = {app}Api.WithReference(chat); // injects ConnectionStrings:chat and CHAT_* env values
+```
+
+To consume an **existing** Foundry account instead of provisioning a new one (the `chat` deployment must already exist), replace the `azureConfigured` branch with `RunAsExisting`:
+
+```csharp
+var name = builder.AddParameter("foundry-name");
+var rg = builder.AddParameter("foundry-rg");
+chat = builder.AddFoundry("foundry").RunAsExisting(name, rg)
+    .AddDeployment("chat", FoundryModel.OpenAI.Gpt4oMini);
 ```
 
 **Registration boundary:** the model client is registered at the **host** (`IHostApplicationBuilder.AddAzureChatCompletionsClient("chat").AddChatClient()` from `Aspire.Azure.AI.Inference`), NOT in the `IServiceCollection` AI-registration extension. The connection name passed to `AddAzureChatCompletionsClient` must equal the deployment resource name. The `IServiceCollection` extension then gates live agents on `IChatClient` presence and registers a no-op `IChatClient` when none was wired. See [../skills/ai-integration.md](../skills/ai-integration.md).

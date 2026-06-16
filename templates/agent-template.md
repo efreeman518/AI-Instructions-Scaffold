@@ -62,35 +62,34 @@ public interface I{Entity}Service
 namespace {Org}.{Project}.Infrastructure.AI.Agents;
 
 using System.ComponentModel;
-using Azure.AI.OpenAI;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
-using Microsoft.Extensions.Options;
 
 internal sealed class {Agent}AgentService : I{Agent}Agent
 {
     private readonly AIAgent _agent;
 
+    // Inject the IChatClient registered by AddAzureChatCompletionsClient("chat").AddChatClient().
+    // The model/deployment is bound at that registration, not here. When no chat client is wired,
+    // AddAiServices registers a no-op IChatClient, so this service still constructs and boots offline.
     public {Agent}AgentService(
-        AzureOpenAIClient openAiClient,
-        IOptions<AiSettings> settings,
+        IChatClient chatClient,
         I{Entity}Service entityService)
     {
         var systemPrompt = EmbeddedResource.Read("Prompts.{Agent}.system-prompt.txt");
 
-        _agent = openAiClient
-            .GetChatClient(settings.Value.AgentModelDeployment)
-            .AsAIAgent(
-                instructions: systemPrompt,
-                name: "{Agent}",
-                tools:
-                [
-                    AIFunctionFactory.Create(
-                        async ([Description("The {entity} ID (GUID)")] string id, CancellationToken ct) =>
-                            await entityService.GetAsync(Guid.Parse(id), ct),
-                        "Get{Entity}",
-                        "Get a {entity} by ID")
-                ]);
+        _agent = new ChatClientAgent(
+            chatClient,
+            instructions: systemPrompt,
+            name: "{Agent}",
+            tools:
+            [
+                AIFunctionFactory.Create(
+                    async ([Description("The {entity} ID (GUID)")] string id, CancellationToken ct) =>
+                        await entityService.GetAsync(Guid.Parse(id), ct),
+                    "Get{Entity}",
+                    "Get a {entity} by ID")
+            ]);
     }
 
     public async Task<AgentResponse> RunAsync(

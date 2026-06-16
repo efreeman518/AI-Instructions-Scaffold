@@ -70,8 +70,8 @@ Playwright requires a real hosted stack. It cannot run on `WebApplicationFactory
 ### Base URL Rules
 
 - Configure one base URL per UI surface/project. Do not share a hard-coded URL across Blazor, Uno, and React.
-- Make the base URL environment-driven (`{APP}_BLAZOR_BASE_URL`, `{APP}_UNO_BASE_URL`, `{APP}_REACT_BASE_URL`, or equivalent) for externally hosted stacks (CI, docker-compose, preview deployments).
-- When the app is Aspire-hosted, the C# suite resolves the URL programmatically: self-host the AppHost with `DistributedApplicationTestingBuilder`, wait for the UI resource to become healthy, then read its named `http` endpoint via `CreateHttpClient("{ui-resource}", "http")`. Full fixture shape: [../templates/test-templates-quality.md](../templates/test-templates-quality.md) section E2E Tests (Playwright). Vite/React resources may use a dynamic port; never assume `5173`, `5178`, or a prior run's URL.
+- Make the base URL environment-driven (`{APP}_BLAZOR_BASE_URL`, `{APP}_WASM_BASE_URL` for Uno WASM, `{APP}_REACT_BASE_URL`, or equivalent) for externally hosted stacks (CI, docker-compose, preview deployments). The Uno var uses the `{APP}_WASM_*` family to match the standalone WASM test harness.
+- When the app is Aspire-hosted, the C# suite resolves the URL programmatically: self-host the AppHost with `DistributedApplicationTestingBuilder`, wait for the UI resource to become healthy, then resolve its URL from `CreateHttpClient("{ui-resource}", "http").BaseAddress`. Full fixture shape: [../templates/test-templates-quality.md](../templates/test-templates-quality.md) section E2E Tests (Playwright). Vite/React resources may use a dynamic port; never assume `5173`, `5178`, or a prior run's URL.
 - Never ship a hard-coded URL fallback or `[Ignore]`d tests pointed at a guessed URL - when no base URL can be resolved (env var absent, Docker/AppHost unavailable), mark tests `Assert.Inconclusive` with a precise message.
 - Standalone Vite can use a conventional dev port, but hosted-stack Playwright must use the actual Aspire resource URL.
 
@@ -99,8 +99,8 @@ test.describe("EntityCrud", () => {
   test.describe.configure({ mode: "serial" });
 
   test.beforeAll(async ({ browser }) => {
-    const baseURL = process.env.{APP}_UNO_BASE_URL;
-    if (!baseURL) throw new Error("{APP}_UNO_BASE_URL is required for standalone Uno WASM Playwright runs");
+    const baseURL = process.env.{APP}_WASM_BASE_URL;
+    if (!baseURL) throw new Error("{APP}_WASM_BASE_URL is required for standalone Uno WASM Playwright runs");
     context = await browser.newContext({ ignoreHTTPSErrors: true });
     sharedPage = await context.newPage();
     await sharedPage.goto(baseURL);
@@ -135,6 +135,23 @@ Uno WASM with the **managed-DOM renderer** often needs coordinate-click interact
 - Compute center with `getBoundingClientRect()`.
 - Use `page.mouse.click(x, y)` (or down/up) with retry loop.
 - Filter target text with known prefix (for example `E2E-`) to avoid collisions.
+
+```typescript
+for (let attempt = 0; attempt < 20; attempt++) {
+  const coords = await page.evaluate(() => {
+    for (const p of Array.from(document.querySelectorAll("p"))) {
+      const txt = (p.textContent ?? "").trim();
+      if (!txt.startsWith("E2E-")) continue; // filter by known prefix to avoid overlapping elements
+      const r = p.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0 && r.y > 0 && r.x > 0)
+        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    }
+    return null;
+  });
+  if (coords) { await page.mouse.click(coords.x, coords.y); break; }
+  await page.waitForTimeout(500);
+}
+```
 
 ### Uno WASM: Canvas Test Bridge (Skia renderer)
 

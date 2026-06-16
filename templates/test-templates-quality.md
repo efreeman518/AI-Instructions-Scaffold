@@ -191,8 +191,11 @@ public class PlaywrightStackFixture
         // Otherwise self-host the Aspire AppHost and read the dynamic UI endpoint.
         try
         {
-            var builder = await DistributedApplicationTestingBuilder.CreateAsync<Projects.{App}_AppHost>(
-                args: ["--{App}:AspireTesting=true"]);
+            // Same flag the AppHost's IsAspireTesting() reads via Environment.GetEnvironmentVariable;
+            // set it before CreateAsync so the graph boots in testing mode (ephemeral containers,
+            // optional hosts off). Mirrors {APP}_ASPIRE_TESTING in the Aspire mesh fixture.
+            Environment.SetEnvironmentVariable("{APP}_ASPIRE_TESTING", "true");
+            var builder = await DistributedApplicationTestingBuilder.CreateAsync<Projects.{App}_AppHost>();
             _app = await builder.BuildAsync().WaitAsync(StartupTimeout);
             await _app.StartAsync().WaitAsync(StartupTimeout);
             await _app.ResourceNotifications

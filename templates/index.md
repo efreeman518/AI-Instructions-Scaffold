@@ -66,11 +66,13 @@ Scaffold Uno Platform (multi-target WASM + mobile + desktop), Blazor (Server or 
 
 > **Design Standard:** Each main entity gets two pages - `{Entity}ListPage` (list/search) and `{Entity}Page` (unified add/edit + children). No separate detail or create pages. See templates for the pattern.
 
+> `skills/ui-uno.md` is the index; the depth lives in four sub-skills loaded per task: `skills/ui-uno-shell.md` (app shell, host setup), `skills/ui-uno-mvux.md` (MVUX models/feeds), `skills/ui-uno-navigation.md` (routing, dirty-guard), `skills/ui-uno-platforms.md` (WASM/mobile build + Playwright). The Phase 5c load set is in [../ai/SKILL.md](../ai/SKILL.md) section Phase 5 file table.
+
 | Artifact | Template | Required Skill |
 |---|---|---|
-| Models + Services | `uno-ui-client-layer.md` | `skills/ui-uno.md` |
-| MVUX model (List + Page) | `uno-mvux-model-template.md` | `skills/ui-uno.md` |
-| XAML page (List + Entity) | `uno-xaml-page-template.md` | `skills/ui-uno.md` |
+| Models + Services | `uno-ui-client-layer.md` | `skills/ui-uno.md` (+ `ui-uno-mvux`) |
+| MVUX model (List + Page) | `uno-mvux-model-template.md` | `skills/ui-uno.md` (+ `ui-uno-mvux`) |
+| XAML page (List + Entity) | `uno-xaml-page-template.md` | `skills/ui-uno.md` (+ `ui-uno-shell`/`ui-uno-navigation`) |
 | WASM canvas test bridge (Skia renderer only) | `uno-wasm-test-bridge-template.md` | `skills/ui-uno-platforms.md` + `skills/testing-quality.md` |
 
 ### Blazor

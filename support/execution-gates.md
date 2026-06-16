@@ -9,7 +9,7 @@ Use this file for:
 
 Run-once operator setup and the Phase 3 pre-flight live in [operator-setup.md](operator-setup.md).
 
-If another file disagrees on validation gates or commands, this file wins. Session routing and load rules remain owned by [../START-AI.md](../START-AI.md) and [../ai/SKILL.md](../ai/SKILL.md). The 1-page binding-rule index (`GR-01`...`GR-12`) lives at [../GROUND-RULES.md](../GROUND-RULES.md); gates below cite the `GR-NN` they enforce.
+If another file disagrees on validation gates or commands, this file wins. Session routing and load rules remain owned by [../START-AI.md](../START-AI.md) and [../ai/SKILL.md](../ai/SKILL.md). The 1-page binding-rule index (`GR-01`...`GR-16`) lives at [../GROUND-RULES.md](../GROUND-RULES.md); gates below cite the `GR-NN` they enforce.
 
 ---
 

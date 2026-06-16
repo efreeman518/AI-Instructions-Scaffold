@@ -67,7 +67,7 @@ Rules:
 | `IInternalMessageBus` | internal publish/subscribe pipeline |
 | `IMessageHandler<T>` | event handler contract |
 
-**RequestContext constructor order:** `new RequestContext<string, Guid?>(correlationId, auditId, tenantId, roles)`.
+**RequestContext constructor order:** `new RequestContext<string, Guid?>(correlationId, auditId, tenantId, roles)`. Canonical signature: [ef-packages-reference.md](ef-packages-reference.md) (GR-14).
 
 ---
 
@@ -174,18 +174,7 @@ Tools below are the **recommended human-facing inspectors** for each local Aspir
 
 ## Local Explorer Ports (Non-Test Runs)
 
-Canonical pinned ports for local Aspire runs. Tests use dynamic ports - gate via `if (!isTesting)`. Full matrix and decision rules: [../skills/aspire.md](../skills/aspire.md) -> *Local Explorer Tooling*.
-
-| Resource | Host port | Default tool |
-|---|---:|---|
-| SQL Server | `38433` | VS Code SQL extension |
-| Redis | `6379` | RedisInsight (Aspire-managed) |
-| RedisInsight UI | `5540` | Browser |
-| Azurite Blob/Queue/Table | `10000`/`10001`/`10002` | Microsoft Azure Storage Explorer (desktop) |
-| Service Bus AMQP | `5672` | SDK |
-| Service Bus management | `5300` | Messentra |
-| Cosmos gateway | `8081` | SDK |
-| Cosmos Data Explorer | `1234` | Browser |
+Pinned ports for local Aspire runs (SQL `38433`, Redis `6379`, RedisInsight `5540`, Azurite `10000`/`10001`/`10002`, Service Bus AMQP `5672` / management `5300`, Cosmos gateway `8081` / Data Explorer `1234`). Tests use dynamic ports - gate via `if (!isTesting)`. Canonical matrix with per-resource decision rules: [../skills/aspire.md](../skills/aspire.md) -> *Local Explorer Tooling*.
 
 ---
 

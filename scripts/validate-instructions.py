@@ -474,6 +474,67 @@ def check_phase5_load_set(findings: Findings) -> None:
         findings.warn(skill_path, "Phase 5 load-set check matched 0 file tokens - table format may have changed")
 
 
+# --- Phase 5 reverse coverage (templates) -----------------------------------
+# check_phase5_load_set is one-directional: every token IN the table must
+# resolve to a file. This is the reverse: every template in templates/ must be
+# REACHABLE from the Phase 5 table (or be an explicitly-exempt Phase-1 universal
+# / structural index). Catches the recurring drift where a new template is added
+# and routed in templates/index.md but never wired into ai/SKILL.md's table, so
+# an agent following the "load only what the table lists" rule never loads it.
+# Templates only: Phase-4 skills (solution-structure, package-dependencies) are
+# legitimately absent from the Phase 5 table, so skills are out of scope here.
+PHASE5_TEMPLATE_EXEMPT = {
+    "design-decisions-template",  # Phase 1 universal (START-AI Phase Router)
+    "ubiquitous-language-template",  # Phase 1 universal
+    "index",  # the template index itself
+    "test-templates",  # test-template routing index, not a code template
+}
+
+
+def check_phase5_template_coverage(findings: Findings) -> None:
+    skill_path = INSTRUCTIONS_ROOT / PHASE5_SKILL_REL
+    templates_dir = INSTRUCTIONS_ROOT / "templates"
+    if not skill_path.exists() or not templates_dir.is_dir():
+        return
+    lines = skill_path.read_text(encoding="utf-8").splitlines()
+    start = next((i for i, ln in enumerate(lines) if ln.strip() == PHASE5_TABLE_HEADING), None)
+    if start is None:
+        return  # check_phase5_load_set already errors on a missing heading
+    end = next((j for j in range(start + 1, len(lines)) if lines[j].startswith("## ")), len(lines))
+
+    referenced: set[Path] = set()
+    for line in lines[start:end]:
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            continue
+        cells = [c.strip() for c in stripped.strip("|").split("|")]
+        if len(cells) < 4 or not re.match(r"\*\*5[a-e]\b", cells[0]):
+            continue
+        # Templates column (idx 2) and on-demand column (idx 3) can name templates.
+        for idx in (2, 3):
+            kind = LOADSET_COLUMN_KINDS[idx]
+            for span in BACKTICK_SPAN_PATTERN.findall(cells[idx]):
+                token = span.strip()
+                if not LOADSET_TOKEN_PATTERN.match(token):
+                    continue
+                for cand in _resolve_loadset_token(token, kind):
+                    if cand.parent == templates_dir and cand.exists():
+                        referenced.add(cand)
+
+    missing = []
+    for tmpl in sorted(templates_dir.glob("*.md")):
+        if tmpl.stem in PHASE5_TEMPLATE_EXEMPT:
+            continue
+        if tmpl not in referenced:
+            missing.append(tmpl.name)
+    for name in missing:
+        findings.err(
+            skill_path,
+            f"template templates/{name} is not reachable from the Phase 5 file table "
+            f"(add it to the matching sub-phase row, or to PHASE5_TEMPLATE_EXEMPT if it is a Phase-1/structural file)",
+        )
+
+
 # --- Golden-path schema integrity --------------------------------------------
 # The expected YAML blocks in support/golden-path-sample.md are the canonical
 # regression fixture for instruction changes. Keep them consistent with the
@@ -733,6 +794,7 @@ def main() -> int:
     check_maintenance_guards(findings)
     check_payload_shape(findings)
     check_phase5_load_set(findings)
+    check_phase5_template_coverage(findings)
     check_golden_path_schemas(findings)
     check_ef_package_api(findings)
 
