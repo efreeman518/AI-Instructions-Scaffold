@@ -406,7 +406,6 @@ FodyWeavers.xsd
 # instruction repo those files inevitably hardcode paths to specific generated
 # apps (e.g., a reference app). Keep them local/per-developer.
 .vscode/*
-!.vscode/settings.json
 !.vscode/extensions.json
 !.vscode/*.code-snippets
 

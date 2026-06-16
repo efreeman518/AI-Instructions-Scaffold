@@ -301,7 +301,7 @@ namespace Test.Aspire;
 /// visibility.
 /// Manual run (Docker Desktop must be running; start the local stack first - see
 /// eng/test/start-local-test-stack.ps1):
-///   rtk dotnet test src/Test/Test.Aspire/Test.Aspire.csproj --filter TestCategory=Aspire
+///   dotnet test src/Test/Test.Aspire/Test.Aspire.csproj --filter TestCategory=Aspire
 /// Set {APP}_RUN_ASPIRE_TESTS=false to skip the mesh tier (e.g. in fast CI lanes).
 /// </summary>
 [TestClass]

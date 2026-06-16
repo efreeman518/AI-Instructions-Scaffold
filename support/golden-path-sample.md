@@ -229,6 +229,107 @@ externalDependencyModes:
 
 ---
 
+## Focused AI/Aspire Schema Fixture
+
+This is a schema-only fixture for high-churn Aspire and AI resource declarations. It is not the default golden-path app shape.
+
+```yaml
+scaffoldMode: full
+testingProfile: comprehensive
+packageStrategy: local
+packagePrefix: WorkBoard
+customNugetFeeds: []
+localPackageLayers:
+  - Domain
+  - Domain.Contracts
+  - Data
+  - Data.Contracts
+  - Common
+  - Common.Contracts
+includeApi: true
+includeGateway: false
+includeFunctionApp: false
+includeScheduler: false
+includeUnoUI: false
+includeBlazorUI: false
+includeReactUI: false
+includeNotifications: false
+includeIaC: true
+includeGitHubActions: false
+includeAzd: false
+includeAiServices: true
+useAspire: true
+database: AzureSQL
+caching: FusionCache+Redis
+includeKeyVault: false
+deployTarget: ContainerApps
+tenantIdType: Guid
+entities:
+  - name: WorkItem
+    dataStore: sql
+    properties:
+      - name: Title
+        type: string
+        maxLength: 200
+        required: true
+      - name: DueDate
+        type: "DateTimeOffset?"
+aspireResources:
+  - name: foundry
+    service: Microsoft Foundry
+    appHostApi: AddFoundry
+    localMode: RunAsFoundryLocal
+    publishMode: provision
+    connectionNames: [chat]
+    docs: https://aspire.dev/integrations/azureai/
+  - name: search
+    service: Azure AI Search
+    appHostApi: AddAzureSearch
+    localMode: deployment-only
+    publishMode: provision
+    connectionNames: [Search]
+    docs: https://aspire.dev/integrations/cloud/azure/azureai-search/
+aiServices:
+  foundry:
+    projectName: workboard-ai
+    lifecycle: local-or-provision
+    connectionName: chat
+    models:
+      - name: gpt-4o
+        purpose: agent-reasoning
+        deploymentName: gpt-4o
+        localModel: Qwen2505b
+      - name: text-embedding-3-small
+        purpose: embedding
+        deploymentName: embeddings
+    agentHosting: code-hosted
+  search:
+    provider: AzureAISearch
+    indexes:
+      - name: workitems-index
+        sourceEntity: WorkItem
+    embeddingModel: text-embedding-3-small
+    embeddingDimensions: 1536
+    vectorizationStrategy: on-write
+  agents:
+    framework: AgentFramework
+    agents:
+      - name: WorkItemTriageAgent
+        type: ChatClientAgent
+        model: gpt-4o
+        systemPrompt: WorkItemTriageAgent.system-prompt.txt
+        tools: [SearchWorkItems]
+        groundingSource: workitems-index
+        humanInLoop: false
+externalDependencyModes:
+  sql: emulator
+  redis: emulator
+  keyVault: deployment-only
+  aiServices: lazy-optional
+```
+
+---
+
 ## Validation Commands
 
 Run these from the generated app root.

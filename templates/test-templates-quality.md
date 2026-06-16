@@ -391,9 +391,9 @@ Mutation tests are still MSTest classes. Stryker.NET is the separate runner: it 
 Install Stryker.NET as a repo-local dotnet tool. If `.config/dotnet-tools.json` does not exist yet, create it first.
 
 ```powershell
-rtk dotnet new tool-manifest
-rtk dotnet tool install dotnet-stryker
-rtk dotnet tool restore
+dotnet new tool-manifest
+dotnet tool install dotnet-stryker
+dotnet tool restore
 ```
 
 ### File: `Test/Test.Mutation/Test.Mutation.csproj`
@@ -466,12 +466,12 @@ namespace Test.Mutation.Domain;
 /// and reruns this filtered MSTest suite to decide which mutants are killed or survived.
 /// Run the suite from repo root:
 /// <code>
-/// rtk dotnet tool restore
-/// rtk dotnet test src/Test/Test.Mutation/Test.Mutation.csproj
+/// dotnet tool restore
+/// dotnet test src/Test/Test.Mutation/Test.Mutation.csproj
 /// </code>
 /// Then run Stryker from src/Test/Test.Mutation:
 /// <code>
-/// rtk dotnet tool run dotnet-stryker
+/// dotnet tool run dotnet-stryker
 /// </code>
 /// The HTML mutation report is written under StrykerOutput.
 /// </summary>
@@ -508,13 +508,13 @@ public class {Entity}MutationSamples
 Run commands:
 
 ```powershell
-rtk dotnet test src/Test/Test.Mutation/Test.Mutation.csproj
+dotnet test src/Test/Test.Mutation/Test.Mutation.csproj
 ```
 
 From `src/Test/Test.Mutation`:
 
 ```powershell
-rtk dotnet tool run dotnet-stryker
+dotnet tool run dotnet-stryker
 ```
 
 Add `**/StrykerOutput/` to `.gitignore`.

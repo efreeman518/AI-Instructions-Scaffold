@@ -17,10 +17,10 @@ Build one Uno target at a time. The project owns target selection through `Targe
 When the Uno project defaults to a fast single target such as browserwasm, restore all enabled Uno targets before Android/iOS package builds. `TargetFrameworkOverride` on build is not enough if `project.assets.json` was last restored for browserwasm only; the Android package can miss `Uno.WinUI.Runtime.Skia.Android` and crash before app code runs.
 
 ```powershell
-rtk dotnet restore src/UI/{Project}.Uno/{Project}.Uno.csproj -p:BuildAllUnoTargets=true -p:EnableUnoWasm=true
-rtk dotnet build src/UI/{Project}.Uno/{Project}.Uno.csproj -p:TargetFrameworkOverride=$(LatestStableTfm)-browserwasm -p:EnableUnoWasm=true --no-restore -m:1
-rtk dotnet build src/UI/{Project}.Uno/{Project}.Uno.csproj -p:TargetFrameworkOverride=$(LatestStableTfm)-android --no-restore -m:1
-rtk dotnet build src/UI/{Project}.Uno/{Project}.Uno.csproj -p:TargetFrameworkOverride=$(LatestStableTfm)-ios --no-restore -m:1
+dotnet restore src/UI/{Project}.Uno/{Project}.Uno.csproj -p:BuildAllUnoTargets=true -p:EnableUnoWasm=true
+dotnet build src/UI/{Project}.Uno/{Project}.Uno.csproj -p:TargetFrameworkOverride=$(LatestStableTfm)-browserwasm -p:EnableUnoWasm=true --no-restore -m:1
+dotnet build src/UI/{Project}.Uno/{Project}.Uno.csproj -p:TargetFrameworkOverride=$(LatestStableTfm)-android --no-restore -m:1
+dotnet build src/UI/{Project}.Uno/{Project}.Uno.csproj -p:TargetFrameworkOverride=$(LatestStableTfm)-ios --no-restore -m:1
 ```
 
 Use serial builds (`-m:1`) for platform sweeps. Uno platform targets share `obj/` assets and `project.assets.json`; parallel builds can race and produce misleading restore/build failures.
@@ -138,8 +138,8 @@ After any rebuild, `WasmAppHost` serves a new `package_<hash>/` directory. The o
 A standalone WASM server (the one Playwright targets) must serve static assets from the **current** `bin/<config>/net{X}.0-browserwasm/wwwroot` output, not a stale `bin/<config>/browser-wasm/wwwroot` folder left by an older Uno/SDK build. When both exist, builds and test runs disagree about which assets are live and Playwright loads yesterday's app. Build the WASM target explicitly before browser tests, then point the server at the fresh output:
 
 ```powershell
-rtk dotnet restore src/UI/{Project}.Uno/{Project}.Uno.csproj -p:BuildAllUnoTargets=true -p:EnableUnoWasm=true
-rtk dotnet build src/UI/{Project}.Uno/{Project}.Uno.csproj -p:TargetFrameworkOverride=net{X}.0-browserwasm -p:EnableUnoWasm=true --no-restore -m:1
+dotnet restore src/UI/{Project}.Uno/{Project}.Uno.csproj -p:BuildAllUnoTargets=true -p:EnableUnoWasm=true
+dotnet build src/UI/{Project}.Uno/{Project}.Uno.csproj -p:TargetFrameworkOverride=net{X}.0-browserwasm -p:EnableUnoWasm=true --no-restore -m:1
 ```
 
 If a `browser-wasm/` sibling lingers, delete it so it cannot win asset resolution. The local test stack script ([../templates/local-test-stack-template.md](../templates/local-test-stack-template.md)) does this build step for you.

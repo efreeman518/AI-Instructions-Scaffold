@@ -1,4 +1,3 @@
-````markdown
 # AI Integration
 
 Use this only when the current slice actually needs semantic retrieval, grounded Q&A, or bounded tool-driven automation. Default to search first, agent second, workflows or hosted agents last.
@@ -549,4 +548,3 @@ Test function tools independently - they are plain C# methods that wrap domain s
 - [Agent Framework Overview](https://learn.microsoft.com/en-us/agent-framework/overview/)
 - [Agent Framework - Workflows](https://learn.microsoft.com/en-us/agent-framework/workflows/)
 - [Azure AI Search - .NET SDK](https://learn.microsoft.com/en-us/azure/search/search-howto-dotnet-sdk)
-````

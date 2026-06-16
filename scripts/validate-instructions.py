@@ -27,6 +27,9 @@ Checks:
     real file. The table references targets by backtick short-name, not by
     markdown link, so check_links does not cover them - a renamed or deleted
     skill/template would otherwise drift silently.
+  - Whole-file Markdown fence guard: no instruction file may wrap itself in a
+    top-level code fence, because that hides headings and links from renderers
+    and from the link/anchor checks below.
   - Golden-path schema integrity: the expected Phase 1 / Phase 2 YAML blocks in
     support/golden-path-sample.md stay consistent with schemas/*.schema.json
     (required keys, declared keys, enum values). Structural line-parse checks
@@ -84,6 +87,10 @@ LINK_PATTERN = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
 
 # Fenced code blocks can contain scaffold examples with placeholder links.
 FENCED_CODE_PATTERN = re.compile(r"(^|\n)[ \t]{0,3}(`{3,}|~{3,})[^\n]*\n.*?\n[ \t]{0,3}\2[ \t]*(?=\n|$)", re.DOTALL)
+
+# A whole instruction file wrapped in a fence renders as one code block, not as
+# documentation. This also makes the link/anchor checks below strip the file.
+WHOLE_FILE_FENCE_PATTERN = re.compile(r"^\s*(`{3,}|~{3,})[A-Za-z0-9_-]*\s*\n.*\n\s*\1\s*$", re.DOTALL)
 
 # Markdown headings (ATX style) for the section-anchor check.
 HEADING_PATTERN = re.compile(r"^#{1,6}\s+(.+?)\s*$", re.MULTILINE)
@@ -250,6 +257,12 @@ def check_phase_labels(path: Path, findings: Findings) -> None:
         if token not in CANONICAL_PHASES:
             line_no = text.count("\n", 0, match.start()) + 1
             findings.err(path, f"line {line_no}: unrecognized phase token '{token}' (canonical: 1-5, 5a-5e)")
+
+
+def check_whole_file_fence(path: Path, findings: Findings) -> None:
+    text = path.read_text(encoding="utf-8")
+    if WHOLE_FILE_FENCE_PATTERN.match(text):
+        findings.err(path, "whole file is wrapped in a Markdown code fence; remove the outer fence so headings and links render")
 
 
 def collect_headings(path: Path, cache: dict[Path, list[str]]) -> list[str]:
@@ -545,6 +558,7 @@ GOLDEN_PATH_REL = "support/golden-path-sample.md"
 GOLDEN_PATH_BLOCKS = [
     ("Phase 1 domain-specification", "### `.scaffold/domain-specification.yaml`", "schemas/domain-specification.schema.json"),
     ("Phase 2 resource-implementation", "## Expected Phase 2 Output", "schemas/resource-implementation.schema.json"),
+    ("Focused AI/Aspire resource-implementation", "## Focused AI/Aspire Schema Fixture", "schemas/resource-implementation.schema.json"),
 ]
 YAML_FENCE_PATTERN = re.compile(r"```yaml\r?\n(.*?)\r?\n```", re.DOTALL)
 TOP_KEY_LINE_PATTERN = re.compile(r"^([A-Za-z][A-Za-z0-9]*):(.*)$")
@@ -786,6 +800,7 @@ def main() -> int:
     md_files = iter_markdown_files()
     headings_cache: dict[Path, list[str]] = {}
     for path in md_files:
+        check_whole_file_fence(path, findings)
         check_links(path, findings)
         check_phase_labels(path, findings)
         check_section_anchors(path, findings, headings_cache)

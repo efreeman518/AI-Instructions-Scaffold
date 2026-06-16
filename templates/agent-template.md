@@ -1,4 +1,3 @@
-````markdown
 # Agent Template
 
 Use this only when search alone is not enough and a single model needs to choose among a few bounded application-service tools. Default to one `ChatClientAgent`. Add middleware, agent-to-agent composition, or a server-hosted Foundry agent only after the simple path is proven insufficient.
@@ -199,4 +198,3 @@ group.MapPost("/agent/{agent-route}/chat", async (
 .WithName("Chat{Agent}")
 .WithSummary("Send a message to the {Agent} agent");
 ```
-````

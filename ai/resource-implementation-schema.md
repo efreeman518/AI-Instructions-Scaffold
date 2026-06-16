@@ -50,19 +50,7 @@ useAspire: true
 
 ## Scaffold Configuration
 
-```yaml
-scaffoldMode: full              # full | lite | api-only
-testingProfile: balanced        # minimal | balanced | comprehensive
-functionProfile: starter        # starter | full
-unoProfile: starter             # starter | full
-
-packageStrategy: local          # feed | local | hybrid
-packagePrefix: ""               # required; e.g. "EF", "Contoso", "AcmePay"
-customNugetFeeds: []            # one or more URLs when feed/hybrid; must be [] when local
-localPackageLayers: [Domain, Domain.Contracts, Data, Data.Contracts, Common, Common.Contracts]  # >=1 required when local or hybrid; must be [] when feed
-applicationStyle: service       # service | cqrs | switch
-repositoryContractStyle: hybrid # per-entity | hybrid | generic-only
-```
+Use the canonical defaults above as the complete baseline. The reference tables below explain valid values and when to override them; do not duplicate a second defaults block here.
 
 ### Package Strategy Reference
 
@@ -353,8 +341,6 @@ Define AI integration resources when `includeAiServices: true`. Maps Phase 1 `ai
 
 ```yaml
 aiServices:
-  includeAiServices: true
-
   # --- Microsoft Foundry ---
   foundry:
     projectName: ""                    # Microsoft Foundry project name (only when using a project + agents)

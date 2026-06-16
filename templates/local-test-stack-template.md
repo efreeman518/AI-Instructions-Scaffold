@@ -76,7 +76,7 @@ function Invoke-DotNetCleanEnv([string[]]$Arguments) {
     $env:MSBUILDDISABLENODEREUSE = '1'
     $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
     $env:DOTNET_NOLOGO = '1'
-    try { & rtk dotnet @Arguments }
+    try { & dotnet @Arguments }
     finally {
         foreach ($name in $saved.Keys) {
             if ($null -eq $saved[$name]) { Remove-Item "Env:$name" -ErrorAction SilentlyContinue }
@@ -127,7 +127,7 @@ if (-not $SkipAspire) {
     $env:{APP}_ASPIRE_STARTUP_TIMEOUT_SECONDS = "$AspireStartupTimeoutSeconds"
     Start-Process pwsh -ArgumentList @(
         '-NoProfile','-Command',
-        "rtk dotnet run --project `"$repo/src/Host/Aspire/AppHost/AppHost.csproj`""
+        "dotnet run --project `"$repo/src/Host/Aspire/AppHost/AppHost.csproj`""
     ) | Out-Null
 }
 
@@ -168,11 +168,11 @@ if (-not $SkipMobile) {
         $env:PATH = "$sdk\platform-tools;$sdk\emulator;$env:PATH"
 
         Step 'Verifying Appium uiautomator2'
-        if (-not ((appium driver list --installed 2>$null) -match 'uiautomator2')) { rtk appium driver install uiautomator2 }
+        if (-not ((appium driver list --installed 2>$null) -match 'uiautomator2')) { appium driver install uiautomator2 }
 
         Step 'Ensuring Appium server (127.0.0.1:4723)'
         try { $null = Invoke-WebRequest 'http://127.0.0.1:4723/status' -TimeoutSec 3 }
-        catch { Start-Process pwsh -ArgumentList '-NoProfile','-Command','rtk appium --address 127.0.0.1 --port 4723' | Out-Null }
+        catch { Start-Process pwsh -ArgumentList '-NoProfile','-Command','appium --address 127.0.0.1 --port 4723' | Out-Null }
 
         Step 'Ensuring an online emulator'
         if (-not ((adb devices) -match 'device$')) {
@@ -206,10 +206,10 @@ Write-Host @"
   Appium:   http://127.0.0.1:4723  (Android gateway from emulator: http://10.0.2.2:$GatewayPort/)
 
   Rerun individual tiers:
-    rtk dotnet test .\{SolutionName}.slnx --filter "TestCategory!=Load"
-    rtk dotnet test src/Test/Test.Aspire/Test.Aspire.csproj           --filter TestCategory=Aspire
-    rtk dotnet test src/Test/Test.PlaywrightUI/Test.PlaywrightUI.csproj --filter TestCategory=WasmUI
-    rtk dotnet test src/Test/Test.Mobile/Test.Mobile.csproj           --filter TestCategory=MobileUI
+    dotnet test .\{SolutionName}.slnx --filter "TestCategory!=Load"
+    dotnet test src/Test/Test.Aspire/Test.Aspire.csproj           --filter TestCategory=Aspire
+    dotnet test src/Test/Test.PlaywrightUI/Test.PlaywrightUI.csproj --filter TestCategory=WasmUI
+    dotnet test src/Test/Test.Mobile/Test.Mobile.csproj           --filter TestCategory=MobileUI
 "@ -ForegroundColor Green
 ```
 
@@ -226,11 +226,11 @@ Generate these into `.vscode/tasks.json` so Test Explorer users have one-click s
     { "label": "Start local test stack", "type": "shell", "command": "pwsh -File eng/test/start-local-test-stack.ps1" },
     { "label": "Build WASM",            "type": "shell", "command": "pwsh -File eng/test/start-local-test-stack.ps1 -SkipAspire -SkipMobile" },
     { "label": "Install Playwright Chromium", "type": "shell", "command": "pwsh src/Test/Test.PlaywrightUI/bin/Debug/net{X}.0/playwright.ps1 install chromium" },
-    { "label": "Build Android APK",     "type": "shell", "command": "rtk dotnet restore src/UI/{Project}.Uno/{Project}.Uno.csproj -p:BuildAllUnoTargets=true; rtk dotnet build src/UI/{Project}.Uno/{Project}.Uno.csproj -p:TargetFrameworkOverride=net{X}.0-android -p:EnableUnoMobileTargets=true --no-restore -m:1" },
-    { "label": "Test: all non-load",    "type": "shell", "command": "rtk dotnet test .\\{SolutionName}.slnx --filter \"TestCategory!=Load\"", "group": { "kind": "test", "isDefault": true } },
-    { "label": "Test: Aspire",          "type": "shell", "command": "rtk dotnet test src/Test/Test.Aspire/Test.Aspire.csproj --filter TestCategory=Aspire" },
-    { "label": "Test: WASM",            "type": "shell", "command": "rtk dotnet test src/Test/Test.PlaywrightUI/Test.PlaywrightUI.csproj --filter TestCategory=WasmUI" },
-    { "label": "Test: Mobile",          "type": "shell", "command": "rtk dotnet test src/Test/Test.Mobile/Test.Mobile.csproj --filter TestCategory=MobileUI" }
+    { "label": "Build Android APK",     "type": "shell", "command": "dotnet restore src/UI/{Project}.Uno/{Project}.Uno.csproj -p:BuildAllUnoTargets=true; dotnet build src/UI/{Project}.Uno/{Project}.Uno.csproj -p:TargetFrameworkOverride=net{X}.0-android -p:EnableUnoMobileTargets=true --no-restore -m:1" },
+    { "label": "Test: all non-load",    "type": "shell", "command": "dotnet test .\\{SolutionName}.slnx --filter \"TestCategory!=Load\"", "group": { "kind": "test", "isDefault": true } },
+    { "label": "Test: Aspire",          "type": "shell", "command": "dotnet test src/Test/Test.Aspire/Test.Aspire.csproj --filter TestCategory=Aspire" },
+    { "label": "Test: WASM",            "type": "shell", "command": "dotnet test src/Test/Test.PlaywrightUI/Test.PlaywrightUI.csproj --filter TestCategory=WasmUI" },
+    { "label": "Test: Mobile",          "type": "shell", "command": "dotnet test src/Test/Test.Mobile/Test.Mobile.csproj --filter TestCategory=MobileUI" }
   ]
 }
 ```

@@ -186,7 +186,7 @@ Browser diagnostics captured by the harness:
 /// The shared WasmAppHost fixture starts Aspire, restores/builds browserwasm, and resolves
 /// dynamic endpoints. The test asserts on published state and saves a screenshot artifact.
 /// Manual run (Docker must be running; local stack script is optional):
-///   rtk dotnet test src/Test/Test.PlaywrightUI/Test.PlaywrightUI.csproj --filter TestCategory=WasmUI
+///   dotnet test src/Test/Test.PlaywrightUI/Test.PlaywrightUI.csproj --filter TestCategory=WasmUI
 /// </summary>
 [TestClass]
 [TestCategory("WasmUI")]

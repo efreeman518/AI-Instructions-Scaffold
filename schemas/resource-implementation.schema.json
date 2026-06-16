@@ -203,6 +203,79 @@
         },
         "required": ["customNugetFeeds", "localPackageLayers"]
       }
+    },
+    {
+      "if": { "properties": { "includeAiServices": { "const": true } }, "required": ["includeAiServices"] },
+      "then": {
+        "required": ["aiServices"],
+        "properties": {
+          "aiServices": {
+            "required": ["foundry"],
+            "properties": {
+              "foundry": {
+                "required": ["models"],
+                "properties": {
+                  "models": { "minItems": 1 }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "aiServices": {
+            "properties": {
+              "foundry": {
+                "properties": { "lifecycle": { "const": "existing" } },
+                "required": ["lifecycle"]
+              }
+            },
+            "required": ["foundry"]
+          }
+        },
+        "required": ["aiServices"]
+      },
+      "then": {
+        "properties": {
+          "aiServices": {
+            "properties": {
+              "foundry": {
+                "required": ["resourceName", "resourceGroup"]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "aiServices": {
+            "properties": {
+              "foundry": {
+                "properties": { "agentHosting": { "enum": ["prompt-agent", "pre-existing"] } },
+                "required": ["agentHosting"]
+              }
+            },
+            "required": ["foundry"]
+          }
+        },
+        "required": ["aiServices"]
+      },
+      "then": {
+        "properties": {
+          "aiServices": {
+            "properties": {
+              "foundry": {
+                "required": ["projectName", "projectEndpoint"]
+              }
+            }
+          }
+        }
+      }
     }
   ],
   "$defs": {
@@ -393,7 +466,6 @@
     "aiServices": {
       "type": "object",
       "properties": {
-        "includeAiServices": { "type": "boolean" },
         "foundry": {
           "type": "object",
           "properties": {
@@ -432,11 +504,24 @@
         "agents": {
           "type": "object",
           "properties": {
-            "framework": { "type": "string" },
-            "agents": { "type": "array", "items": { "type": "object" } },
+            "framework": { "type": "string", "enum": ["AgentFramework"] },
+            "agents": { "type": "array", "items": { "$ref": "#/$defs/aiAgent" } },
             "workflow": { "type": "object" }
           }
         }
+      }
+    },
+    "aiAgent": {
+      "type": "object",
+      "required": ["name", "type", "model"],
+      "properties": {
+        "name": { "type": "string" },
+        "type": { "type": "string", "enum": ["ChatClientAgent", "FoundryAgent", "CustomAgent"] },
+        "model": { "type": "string" },
+        "systemPrompt": { "type": "string" },
+        "tools": { "type": "array", "items": { "type": "string" } },
+        "groundingSource": { "type": "string" },
+        "humanInLoop": { "type": "boolean" }
       }
     },
     "compliance": {

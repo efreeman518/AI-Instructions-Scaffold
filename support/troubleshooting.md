@@ -148,8 +148,8 @@ When a third-party library (scheduler, queue, dashboard, job runner) uses EF-bac
    ```
 2. Restore/build the Uno project:
    ```powershell
-   rtk dotnet restore src/UI/{Project}.Uno/{Project}.Uno.csproj -p:BuildAllUnoTargets=true -p:EnableUnoWasm=true
-   rtk dotnet build src/UI/{Project}.Uno/{Project}.Uno.csproj -p:TargetFrameworkOverride={tfm}-browserwasm -p:EnableUnoWasm=true --no-restore -m:1
+   dotnet restore src/UI/{Project}.Uno/{Project}.Uno.csproj -p:BuildAllUnoTargets=true -p:EnableUnoWasm=true
+   dotnet build src/UI/{Project}.Uno/{Project}.Uno.csproj -p:TargetFrameworkOverride={tfm}-browserwasm -p:EnableUnoWasm=true --no-restore -m:1
    ```
 
 Do not switch renderers, change launch ports, or rewrite app startup before ruling this out.

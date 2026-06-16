@@ -190,11 +190,11 @@ Uno UI:
 ```powershell
 uno-check
 Remove-Item -Recurse -Force src/UI/{Project}.Uno/bin/Debug/$(LatestStableTfm)-browserwasm, src/UI/{Project}.Uno/obj/Debug/$(LatestStableTfm)-browserwasm -ErrorAction SilentlyContinue
-rtk dotnet restore src/UI/{Project}.Uno/{Project}.Uno.csproj -p:BuildAllUnoTargets=true -p:EnableUnoWasm=true
-rtk dotnet build src/UI/{Project}.Uno/{Project}.Uno.csproj -p:TargetFrameworkOverride=$(LatestStableTfm)-browserwasm -p:EnableUnoWasm=true --no-restore -m:1
-rtk dotnet build src/UI/{Project}.Uno/{Project}.Uno.csproj -p:TargetFrameworkOverride=$(LatestStableTfm)-android --no-restore -m:1
-rtk dotnet build src/UI/{Project}.Uno/{Project}.Uno.csproj -p:TargetFrameworkOverride=$(LatestStableTfm)-ios --no-restore -m:1
-rtk dotnet build src/Host/{Project}.Uno.WasmHost/{Project}.Uno.WasmHost.csproj
+dotnet restore src/UI/{Project}.Uno/{Project}.Uno.csproj -p:BuildAllUnoTargets=true -p:EnableUnoWasm=true
+dotnet build src/UI/{Project}.Uno/{Project}.Uno.csproj -p:TargetFrameworkOverride=$(LatestStableTfm)-browserwasm -p:EnableUnoWasm=true --no-restore -m:1
+dotnet build src/UI/{Project}.Uno/{Project}.Uno.csproj -p:TargetFrameworkOverride=$(LatestStableTfm)-android --no-restore -m:1
+dotnet build src/UI/{Project}.Uno/{Project}.Uno.csproj -p:TargetFrameworkOverride=$(LatestStableTfm)-ios --no-restore -m:1
+dotnet build src/Host/{Project}.Uno.WasmHost/{Project}.Uno.WasmHost.csproj
 ```
 
 Run only the targets selected in `.scaffold/resource-implementation.yaml`. Keep platform builds serial (`-m:1`) to avoid shared `obj/` asset races. The `BuildAllUnoTargets=true` restore is required when the project defaults to browserwasm; it prevents mobile builds from packaging a browser-only NuGet asset graph.
@@ -202,7 +202,7 @@ Run only the targets selected in `.scaffold/resource-implementation.yaml`. Keep 
 For Uno WASM, clean both target `bin` and target `obj` before a validation rebuild. If `WasmUI` tests are generated, run one smoke test before marking the UI validated:
 
 ```powershell
-rtk dotnet test src/Test/Test.PlaywrightUI/Test.PlaywrightUI.csproj --filter TestCategory=WasmUI
+dotnet test src/Test/Test.PlaywrightUI/Test.PlaywrightUI.csproj --filter TestCategory=WasmUI
 ```
 
 The `WasmUI` harness is default-on. It starts Aspire in testing mode when Docker is present and marks tests `Assert.Inconclusive` only when prerequisites are missing or `{APP}_WASM_TESTS_ENABLED=false`.
@@ -305,20 +305,20 @@ Required profile gate (full regression):
 Commands:
 
 ```powershell
-rtk dotnet test
+dotnet test
 ```
 
 Run mutation test prerequisites from repo root when the project exists:
 
 ```powershell
-rtk dotnet tool restore
-rtk dotnet test src/Test/Test.Mutation/Test.Mutation.csproj
+dotnet tool restore
+dotnet test src/Test/Test.Mutation/Test.Mutation.csproj
 ```
 
 Then run Stryker from `src/Test/Test.Mutation`:
 
 ```powershell
-rtk dotnet tool run dotnet-stryker
+dotnet tool run dotnet-stryker
 ```
 
 IaC (if enabled):

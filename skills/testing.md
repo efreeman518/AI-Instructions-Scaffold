@@ -176,17 +176,17 @@ Category boundaries that matter:
 ```powershell
 # Canonical "all normal tests" - excludes Load (NBomber). Heavy tiers (Aspire/WasmUI/MobileUI)
 # self-mark Inconclusive when Docker/emulator/Appium is absent, so this is safe to run anywhere.
-rtk dotnet test .\{SolutionName}.slnx --filter "TestCategory!=Load"
+dotnet test .\{SolutionName}.slnx --filter "TestCategory!=Load"
 
 # Scoped runs
-rtk dotnet test --filter "TestCategory=Endpoint"
-rtk dotnet test --filter "TestCategory=Integration"
-rtk dotnet test --filter "TestCategory=Aspire"
-rtk dotnet test --filter "TestCategory=E2E"
-rtk dotnet test --filter "TestCategory=PlaywrightUI"
-rtk dotnet test --filter "TestCategory=WasmUI"
-rtk dotnet test --filter "TestCategory=MobileUI"
-rtk dotnet test src/Test/Test.Mutation/Test.Mutation.csproj --filter "TestCategory=Mutation"
+dotnet test --filter "TestCategory=Endpoint"
+dotnet test --filter "TestCategory=Integration"
+dotnet test --filter "TestCategory=Aspire"
+dotnet test --filter "TestCategory=E2E"
+dotnet test --filter "TestCategory=PlaywrightUI"
+dotnet test --filter "TestCategory=WasmUI"
+dotnet test --filter "TestCategory=MobileUI"
+dotnet test src/Test/Test.Mutation/Test.Mutation.csproj --filter "TestCategory=Mutation"
 ```
 
 > `Test.Benchmarks` uses BenchmarkDotNet `[Benchmark]`, not `[TestMethod]`, so `dotnet test` discovers nothing there - it never pollutes the `TestCategory!=Load` run. `Test.Mutation` samples are ordinary fast MSTest and may run under the canonical filter; Stryker itself is the separate runner.

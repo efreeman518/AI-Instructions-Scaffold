@@ -118,7 +118,7 @@ The full viewer (CSS + JS + HTML shell) lives in [../templates/tech-design-templ
 Run after creating or editing any `.mmd` file. Fails fast on the first diagram that does not render.
 
 ```powershell
-rtk powershell -NoProfile -Command '& {
+powershell -NoProfile -Command '& {
   $fail = @()
   Get-ChildItem "docs\assets\tech-design-diagrams\*.mmd" | Sort-Object Name | ForEach-Object {
     $out = [System.IO.Path]::ChangeExtension($_.FullName, ".svg")
@@ -137,13 +137,13 @@ Run before declaring the tech-design docs done. All checks must exit clean.
 
 ```powershell
 # 1. No live Mermaid in either doc
-rtk rg -n -e '```mermaid' -e 'class="mermaid"' -e 'mermaid\.initialize' -e 'mermaid@' docs\tech-design.md docs\tech-design.html
+rg -n -e '```mermaid' -e 'class="mermaid"' -e 'mermaid\.initialize' -e 'mermaid@' docs\tech-design.md docs\tech-design.html
 
 # 2. Whitespace/CRLF damage on the SVG payload
-rtk git diff --check
+git diff --check
 
 # 3. Every .md SVG reference resolves on disk
-rtk powershell -NoProfile -Command '& {
+powershell -NoProfile -Command '& {
   $bad=@(); Select-String -Path docs\tech-design.md -Pattern "assets/tech-design-diagrams/[^)]+\.svg" -AllMatches |
     ForEach-Object { $_.Matches } | ForEach-Object {
       $rel="docs/" + $_.Value

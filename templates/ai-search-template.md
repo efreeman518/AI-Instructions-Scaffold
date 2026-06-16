@@ -1,4 +1,3 @@
-````markdown
 # AI Search Template
 
 Use this when the slice needs retrieval over existing data. Start with keyword or semantic search. Add vectorization only after search-quality testing shows a clear gap.
@@ -254,4 +253,3 @@ await indexClient.CreateOrUpdateIndexAsync(index);
 ```
 
 When index naming is provided by resource mapping, use `{SearchIndex}` as the index name token.
-````
