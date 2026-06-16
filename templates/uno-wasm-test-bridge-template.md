@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Generates** | `src/UI/{Project}.Uno/Testing/{Project}TestBridge.wasm.cs`, `Test/Test.PlaywrightUI/Uno/{Entity}CanvasTests.cs` (or `.ts` for Node Playwright) |
-| **Requires** | An Uno WASM target that renders through the **Skia canvas** renderer (single `<canvas>`, no per-control DOM), a running Gateway for real local auth, [testing-quality.md](../skills/testing-quality.md) (Hosted Browser UI) |
+| **Generates** | `src/UI/{Project}.Uno/Testing/{Project}TestBridge.wasm.cs`, `Test/Test.PlaywrightUI/Uno/WasmAppHost.cs`, `WasmTestHarness.cs`, `WasmTestSettings.cs`, `AssemblyInfo.cs`, `Test/Test.PlaywrightUI/Uno/{Entity}CanvasTests.cs` (or `.ts` for Node Playwright) |
+| **Requires** | An Uno WASM target that renders through the **Skia canvas** renderer (single `<canvas>`, no per-control DOM), a Gateway for real local auth, an Aspire AppHost when the app needs API/resources, [testing-quality.md](../skills/testing-quality.md) (Hosted Browser UI) |
 | **Phase** | Bridge added with the Uno host (5c); canvas tests authored in 5d |
 | **Protocol** | Tests-after. The bridge is a browser-only diagnostic surface, never a production code path. |
 
@@ -53,6 +53,7 @@ Rules:
 3. **Real local auth.** When `{app}TestAuth=true`, drive the **real** local auth flow through the Gateway with the supplied email. Do not inject a fake token - that bypasses the wiring the test exists to prove.
 4. **Onboarding states.** Support at least `complete` and `fresh` so a test can exercise both the returning-user and first-run shells.
 5. **Publish on every state transition.** Re-publish `__{app}TestState` after navigation, auth change, and onboarding change so the harness can await the next state without a full reboot.
+6. **Startup error shape.** In the WASM startup path, publish exception type and message only. Avoid `Exception.ToString()` there; Mono can double fault while formatting stack traces after runtime/class-library mismatches.
 
 ## Bridge (representative shape)
 
@@ -115,6 +116,65 @@ Wire `Initialize()` into the WASM startup path (before the shell renders) and ca
 
 > **MVUX state caveat (WASM).** Do not expose test-observed collections through MVUX state casts that work on desktop but throw under the WASM trimmer/runtime. Read from a browser-safe immutable surface (a plain snapshot or `IImmutableList`) when building the `Publish(...)` payload.
 
+## WasmUI harness contract
+
+When the app needs API, Gateway, SQL, Redis, storage, or auth, generate an AppHost-backed `WasmUI` harness. It must run by default in Test Explorer and only opt out when `{APP}_WASM_TESTS_ENABLED=false`.
+
+Required fixture behavior:
+
+- Check Docker with a short timeout. Missing Docker returns `Assert.Inconclusive` with the exact fix. Docker present means start Aspire and real resources.
+- Clean both `bin/<configuration>/<tfm>-browserwasm` and `obj/<configuration>/<tfm>-browserwasm` before a test-owned rebuild.
+- Restore with `BuildAllUnoTargets=true` and `EnableUnoWasm=true`.
+- Build one target at a time with `TargetFrameworkOverride=<tfm>-browserwasm`, `EnableUnoWasm=true`, `--no-restore`, and `-m:1`. Do not use `-f`.
+- Clear coverage/profiler environment variables for child `dotnet` commands; set profiling disabled flags and `MSBUILDDISABLENODEREUSE=1`.
+- Write a test-owned stamp file after a successful clean rebuild. Freshness checks require that stamp so old developer builds are not silently accepted.
+- Start the Aspire AppHost in testing mode. Keep required backing resources live. Disable only optional hosts such as scheduler, admin, external mappers, notifications, or other non-test-critical processes.
+- Wait for required resources to become healthy before using them.
+- Resolve Gateway and UI base URLs through named Aspire endpoints. Use `CreateHttpClient(resource, "http")`; do not assume fixed local ports.
+- Warm up real Gateway auth before browser navigation.
+- Bound every startup step with its own timeout and progress log.
+- Stop/dispose the Aspire graph in assembly cleanup. If explicit Docker cleanup is needed, scope it to this test run only.
+
+Generated assembly:
+
+```csharp
+// Test/Test.PlaywrightUI/AssemblyInfo.cs
+[assembly: DoNotParallelize]
+```
+
+Required files:
+
+- `WasmTestSettings.cs`: reads `{APP}_WASM_TESTS_ENABLED`, `{APP}_WASM_BROWSER`, `{APP}_WASM_HEADLESS`, `{APP}_WASM_TEST_EMAIL`, `{APP}_WASM_STARTUP_TIMEOUT_SECONDS`, and `{APP}_WASM_PAGE_LOAD_TIMEOUT_SECONDS`. Treat only `false`, `0`, or `no` as opt-out.
+- `WasmAppHost.cs`: owns Docker preflight, clean restore/build, AppHost startup, resource health waits, named endpoint resolution, Gateway auth warm-up, and cleanup.
+- `WasmTestHarness.cs`: owns Playwright startup, browser diagnostics, URL building, bridge-state polling, canvas assertions, screenshot artifacts, and failure messages.
+
+`WasmAppHost` should expose one entry point:
+
+```csharp
+internal static Task<WasmTestSettings> EnsureStartedAsync(WasmTestSettings settings, TestContext context);
+```
+
+`WasmTestHarness` should expose one test wrapper:
+
+```csharp
+internal static Task RunAsync(
+    WasmTestSettings settings,
+    TestContext context,
+    Func<WasmTestSettings, IPage, Task> test);
+```
+
+Browser diagnostics captured by the harness:
+
+- Console messages.
+- Page errors.
+- Failed requests.
+- HTTP responses with status 400 or higher.
+- `window.onerror`.
+- `unhandledrejection`.
+- Current URL and `document.readyState`.
+- HTML snippet, script list, canvas count, body text.
+- Last `__{app}TestState` JSON.
+
 ## Playwright: wait on state, not DOM
 
 ### File: `Test/Test.PlaywrightUI/Uno/{Entity}CanvasTests.cs`
@@ -123,39 +183,46 @@ Wire `Initialize()` into the WASM startup path (before the shell renders) and ca
 /// <summary>
 /// Skia-canvas WASM smoke for {Entity}. Tier: Test.PlaywrightUI (browser) - waits on the
 /// globalThis.__{app}TestState bridge because the Skia renderer exposes no per-control DOM.
-/// Boots the app once per class (WASM cold-start is slow); asserts on published state and
-/// saves a screenshot artifact for visual confirmation.
-/// Manual run (start the local stack first - see eng/test/start-local-test-stack.ps1):
+/// The shared WasmAppHost fixture starts Aspire, restores/builds browserwasm, and resolves
+/// dynamic endpoints. The test asserts on published state and saves a screenshot artifact.
+/// Manual run (Docker must be running; local stack script is optional):
 ///   rtk dotnet test src/Test/Test.PlaywrightUI/Test.PlaywrightUI.csproj --filter TestCategory=WasmUI
 /// </summary>
 [TestClass]
 [TestCategory("WasmUI")]
-public class {Entity}CanvasTests : PageTest
+public class {Entity}CanvasTests
 {
-    private static readonly string BaseUrl =
-        Environment.GetEnvironmentVariable("{APP}_UNO_BASE_URL") ?? "https://localhost:7069";
-
-    public override BrowserNewContextOptions ContextOptions() => new() { IgnoreHTTPSErrors = true };
+    public TestContext TestContext { get; set; } = null!;
 
     [TestMethod]
+    [Timeout(300000)]
     public async Task Given_TestMode_When_AppBoots_Then_ReachesTodaySectionAuthenticated()
     {
-        var url = $"{BaseUrl}/?{app}TestMode=true&{app}TestAuth=true" +
-                  $"&{app}TestEmail=wasm-test@local.test&{app}TestOnboarding=complete&{app}TestSection=today";
-        await Page.GotoAsync(url);
-
-        // Wait on published state, never on canvas pixels or DOM text.
-        await Assertions.Expect(async () =>
+        var settings = WasmTestSettings.From(TestContext);
+        if (!settings.Enabled)
         {
-            var ready = await Page.EvaluateAsync<bool?>("() => globalThis.__{app}TestState?.ready === true");
-            Assert.IsTrue(ready == true);
-        }).ToPassAsync(new() { Timeout = 120_000 });
+            Assert.Inconclusive(settings.DisabledMessage);
+        }
 
-        var state = await Page.EvaluateAsync<JsonElement>("() => globalThis.__{app}TestState");
-        Assert.AreEqual("authenticated", state.GetProperty("auth").GetString());
-        Assert.AreEqual("today", state.GetProperty("section").GetString());
+        await WasmTestHarness.RunAsync(settings, TestContext, async (activeSettings, page) =>
+        {
+            var url = WasmTestHarness.BuildUrl(
+                activeSettings,
+                onboarding: "complete",
+                section: "today");
 
-        await Page.ScreenshotAsync(new() { Path = "artifacts/{entity}-canvas-today.png", FullPage = true });
+            await WasmTestHarness.NavigateAsync(page, activeSettings, url);
+            var state = await WasmTestHarness.WaitForStateAsync(
+                page,
+                activeSettings,
+                s => s.Status == "ready" && s.Auth == "authenticated" && s.Section == "today",
+                "ready authenticated today");
+
+            Assert.AreEqual("authenticated", state.Auth);
+            Assert.AreEqual("today", state.Section);
+            await WasmTestHarness.AssertCanvasRenderedAsync(page, activeSettings);
+            await WasmTestHarness.SaveScreenshotAsync(page, activeSettings, TestContext, "{entity}-canvas-today");
+        });
     }
 }
 ```
@@ -169,5 +236,12 @@ For Node/TS Playwright, the same shape applies: `await page.waitForFunction(() =
 - [ ] `{app}TestAuth=true` drives **real** Gateway local auth, not an injected token.
 - [ ] Both `complete` and `fresh` onboarding states are reachable via the query string.
 - [ ] Tests await `__{app}TestState` fields; no DOM/role/text selector is used against the canvas.
+- [ ] `WasmUI` tests start Aspire in testing mode when the app needs AppHost resources.
+- [ ] Docker missing marks `Assert.Inconclusive` with a fix; Docker present starts real resources.
+- [ ] Child `dotnet` restore/build commands clear profiler env vars.
+- [ ] WASM clean rebuild deletes both target `bin` and target `obj`, then writes a test-owned stamp.
+- [ ] Named Aspire endpoints are used for Gateway/UI URLs; no fixed local port fallback ships in tests.
+- [ ] Browser diagnostics are included in every navigation/state-timeout failure.
+- [ ] Assembly-level `[DoNotParallelize]` exists for AppHost-backed `WasmUI`.
 - [ ] Each canvas test saves a screenshot artifact.
 - [ ] Canvas tests carry `[TestCategory("WasmUI")]` and a class `<summary>` with a manual-run command.

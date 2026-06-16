@@ -204,6 +204,7 @@ To make ListView items navigable (e.g., clicking a task row opens its detail pag
 
 ### MVUX Pitfalls
 
+- **Every `Button.Command` silently no-ops (feeds bind, lists render, commands do nothing)**: the first argument to `UseNavigation(...)` in the host config is missing `ReactiveViewModelMappings.ViewModelMappings`. Without it, navigation sets each page's `DataContext` to the **raw MVUX record** - feed properties are real and bind fine, but command methods are only surfaced as `ICommand` on the generated `Bindable{Model}`, so `{x:Bind ViewModel.Command}` resolves against the wrong object and does nothing. There is no exception; the only console signal is `The [{CommandName}] property getter does not exist on type [...Model]`. Fix: `.UseNavigation(ReactiveViewModelMappings.ViewModelMappings, RegisterRoutes, configure: ...)` (see [ui-uno-shell.md](ui-uno-shell.md) host-config block).
 - **`Feed.Async` type inference**: `Feed.Async(service.GetAsync)` may fail with CS0411/CS0453 when the return type is a reference type or the delegate signature is ambiguous. Always use an explicit lambda: `Feed.Async(async ct => await service.GetAsync(ct))`.
 - **`IListFeed` return type**: `ListFeed.Async(...)` callbacks must return `IImmutableList<T>`. Call `.ToImmutableList()` on results. Requires `using System.Collections.Immutable;` (add as global using in csproj, see Project File Rules).
 - **Nullable state**: `IState<T?>` with `State.UpdateAsync` produces CS8714 warnings. Suppress with `#nullable disable` in the record or accept the warning - it's cosmetic.
@@ -413,57 +414,31 @@ return await _http.GetFromJsonAsync<CategoryDto>(url, ct);
 
 #### Pagination contract
 
-1-based `pageIndex`. The server API expects `pageIndex` (not `pageNumber`) and treats it as **1-based**. Never send `0`. The hand-written client stub must match that wire name and base exactly - using `pageNumber` or 0-based indexing silently returns page 1 for every request.
+**Reuse the shared contract types - do not hand-roll envelopes.** Reference `EF.Common.Contracts`
+(directly, or via the `{Project}.Application.Models` project that already pulls it in - same source
+of truth the Blazor client uses) and bind to its `SearchRequest<TFilter>` / `PagedResponse<T>` /
+`DefaultRequest<T>` / `DefaultResponse<T>` directly. Re-deriving client-side `SearchRequest` /
+`PagedResponse` classes is the root cause of the silent paging bugs below: a hand-rolled envelope
+drifts from the server on the wire name (`pageIndex` vs `pageNumber`) and on the index base, and
+each drift fails silently (you get the same page on every request, or an off-by-one page counter).
 
-```csharp
-public class SearchRequest<TFilter> where TFilter : class, new()
-{
-    [JsonPropertyName("filter")] public TFilter Filter { get; set; } = new();
+**The page-index base (0- vs 1-based) is a property of the running API, not a constant - verify it
+empirically.** Request page 0 vs page 1 against a seeded list with `PageSize = 1` and inspect which
+one returns the first row; that tells you the base. Do not assume. Once known, send that base
+consistently and do **no** offset conversion in the response parser (the server echoes back whatever
+base it used; adding `+1`/`-1` desyncs the UI page counter).
 
-    // Internal 1-based value; never exposed on the wire under this name.
-    [JsonIgnore] public int PageNumber { get; set; } = 1;
+Debugging checklist when paging misbehaves - inspect the raw request/response JSON in devtools:
 
-    // What the server actually reads - same 1-based value, wire name "pageIndex".
-    [JsonPropertyName("pageIndex")]
-    public int PageIndex { get => PageNumber; set => PageNumber = value; }
+- **"Always returns the same page"**: the wire field name is wrong (`pageNumber` instead of
+  `pageIndex`), or the base you are sending does not match the server. Confirm the field name and
+  re-verify the base empirically.
+- **Pager shows the correct total pages but the "current page" is one off, or "Next" returns the
+  rows just shown**: a response-side setter is adding/removing an offset (`PageNumber = value + 1`).
+  Pass the server's value through unchanged.
 
-    [JsonPropertyName("pageSize")] public int PageSize { get; set; } = 50;
-}
-```
-
-When debugging paging that "always returns page 1": inspect the serialized request body in devtools. If you see `"pageNumber"` in the payload, or `"pageIndex": 0`, the contract is wrong - the server is silently coercing both to page 1.
-
-**Response side must also stay 1-based - no offset conversion in `PagedResponse`.** The server echoes the same 1-based `pageIndex` in responses. A client-side `PagedResponse.PageIndex` setter that treats the incoming value as 0-based (`PageNumber = value + 1`) silently desyncs the UI page counter by one - first page shows as "Page 2", "Next" jumps past the actual next page, etc. The response parser must pass `pageIndex` through unchanged:
-
-```csharp
-public class PagedResponse<T>
-{
-    [JsonPropertyName("pageNumber")] public int PageNumber { get; set; }
-
-    // Server emits 1-based pageIndex - keep client PageNumber 1-based too.
-    [JsonPropertyName("pageIndex")]
-    public int PageIndex { get => PageNumber; set => PageNumber = value; }
-    // ...
-}
-```
-
-Symptom to watch for: pager displays the correct total pages but the "current page" number is one higher than the data actually shown, or "Next" returns the same rows as the page just shown. Inspect the raw response JSON - if server returns `"pageIndex": 1` but client state shows `PageNumber = 2`, the setter is adding an offset.
-
-Client-side wrapper classes:
-
-```csharp
-public class DefaultRequest<T>
-{
-    [JsonPropertyName("item")]
-    public T Item { get; set; } = default!;
-}
-
-public class DefaultResponse<T>
-{
-    [JsonPropertyName("item")]
-    public T? Item { get; set; }
-}
-```
+Reusing `EF.Common.Contracts` removes both classes of bug because the wire shape is defined once,
+server-side and client-side, by the same types.
 
 ## Auth Rules
 

@@ -71,6 +71,8 @@ This table is the single source of truth. Phase 2 records the selected tiers (Qu
 - **Self-skips, never red.** Degrade to `Assert.Inconclusive` when the external prerequisite is missing (Docker/AppHost, WASM host/browser, emulator/Appium). The message names the missing prerequisite and the fix (start Docker, run `eng/test/start-local-test-stack.ps1`, or set the opt-out). No vague "skipped".
 - **CI lanes set the opt-out.** Fast lanes that must not pay Docker/emulator cost set `{APP}_RUN_ASPIRE_TESTS=false` (etc.). `--filter "TestCategory!=Load"` stays safe everywhere because absent-infra tiers self-skip.
 - The mesh preflight helper shape is in [../templates/test-templates-aspire.md](../templates/test-templates-aspire.md) (Opt-out + preflight). Mirror it for `WasmUI` and `Test.Mobile`.
+- **AppHost-backed WasmUI is real mesh UI.** If the Uno WASM app depends on API, Gateway, SQL, Redis, storage, or auth, the `WasmUI` fixture starts the Aspire AppHost in testing mode, keeps required resources live, disables only optional hosts, and resolves Gateway/UI URLs from named endpoints. Do not generate standalone browser tests against guessed local ports for that case.
+- **Bound heavy startup.** `Aspire`, `WasmUI`, and `MobileUI` fixtures log every long startup step and apply explicit per-step timeouts. A single hanging restore, AppHost start, browser navigation, or bridge-state wait must fail that step with diagnostics, not hang Test Explorer.
 
 ## Project Layout
 

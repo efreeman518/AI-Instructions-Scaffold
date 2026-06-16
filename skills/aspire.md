@@ -269,6 +269,14 @@ public static IHostApplicationBuilder AddServiceDefaults(
 }
 ```
 
+**Non-negotiable:** do NOT add `http.AddHeaderPropagation()` here unless a host also registers the
+`UseHeaderPropagation` middleware AND configures which headers to propagate. The handler alone (no
+middleware, no configured headers) throws `InvalidOperationException: HeaderPropagationValues.Headers
+not initialized` the moment an `HttpClient` is used outside an inbound HTTP request scope - e.g. a
+Blazor Server circuit, a background service, or any startup task. Forward cross-cutting context
+(tenant, correlation) explicitly with a per-client `DelegatingHandler` instead (see the
+`TenantHeaderHandler` pattern in [ui-blazor.md](ui-blazor.md) section Dev Tenant Header).
+
 ---
 
 ## Hosting Package Discovery Rule
@@ -726,7 +734,11 @@ This bypasses Aspire orchestration and surfaces startup exceptions (DI failures,
 
 ## Uno.Sdk Incompatibility
 
-Uno.Sdk projects (`<Project Sdk="Uno.Sdk/..."`) do not expose the `GetTargetPath` MSBuild target that Aspire uses for project introspection. Adding an Uno project reference to AppHost causes `MSB4057`. **Comment out the Uno ProjectReference and AddProject call in AppHost.** Run Uno WASM separately.
+Uno.Sdk projects (`<Project Sdk="Uno.Sdk/..."`) do not expose the `GetTargetPath` MSBuild target that Aspire uses for project introspection. Adding the Uno SDK project directly to AppHost causes `MSB4057`.
+
+Do not register the Uno SDK project directly. Host browserwasm through the ASP.NET Core wrapper under `src/Host/{Project}.Uno.WasmHost/`, then register that wrapper in AppHost. The wrapper participates in Aspire, so AppHost-backed `WasmUI` tests can start Gateway/API/resources and resolve the UI URL from the wrapper resource's named endpoint.
+
+If a legacy scaffold already added the Uno SDK project to AppHost, remove that direct `ProjectReference` / `AddProject` pair and replace it with the wrapper host. Running Uno separately is only a temporary manual diagnostic path, not the scaffold pattern.
 
 ---
 

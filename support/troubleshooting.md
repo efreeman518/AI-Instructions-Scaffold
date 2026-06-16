@@ -134,6 +134,26 @@ When a third-party library (scheduler, queue, dashboard, job runner) uses EF-bac
 
 **Prevention:** Never create transient output directories (test results, screenshots, build artifacts) inside the Uno app project. Configure tools to write outputs into their own project directories (e.g., Playwright `outputDir` pointing to `Test/Test.PlaywrightUI/test-results`).
 
+## WASM Runtime/Class Library Mismatch
+
+**Symptom:** Browser console reports `Your mono runtime and class libraries are out of sync` and names `System.Private.CoreLib.dll`.
+
+**Likely root cause:** Mixed browserwasm output. The target `bin/<configuration>/<tfm>-browserwasm` was rebuilt, but target `obj/<configuration>/<tfm>-browserwasm` still contains stale WebCIL/runtime intermediates.
+
+**Fix:**
+1. Delete both target directories:
+   ```powershell
+   Remove-Item -Recurse -Force src/UI/{Project}.Uno/bin/Debug/{tfm}-browserwasm
+   Remove-Item -Recurse -Force src/UI/{Project}.Uno/obj/Debug/{tfm}-browserwasm
+   ```
+2. Restore/build the Uno project:
+   ```powershell
+   rtk dotnet restore src/UI/{Project}.Uno/{Project}.Uno.csproj -p:BuildAllUnoTargets=true -p:EnableUnoWasm=true
+   rtk dotnet build src/UI/{Project}.Uno/{Project}.Uno.csproj -p:TargetFrameworkOverride={tfm}-browserwasm -p:EnableUnoWasm=true --no-restore -m:1
+   ```
+
+Do not switch renderers, change launch ports, or rewrite app startup before ruling this out.
+
 ---
 
 ## Aspire Multi-Consumer Database Wiring
@@ -188,8 +208,8 @@ For phase gates and validation commands, see [execution-gates.md](execution-gate
 
 | Symptom | Root Cause | Fix |
 |---|---|---|
-| Search returns empty/0 results | `SearchRequest.PageSize` defaults to 0 | Send `{ PageSize = 100, PageIndex = 1 }` |
-| Search returns 500 / negative OFFSET | `PageIndex = 0` with nonzero `PageSize` | Set `PageIndex = 1` (1-based) |
+| Search returns empty/0 results | `SearchRequest.PageSize` defaults to 0 | Send a nonzero `PageSize` (e.g. 100) and a `PageIndex` valid for the base the repo expects - see the `PageIndex pitfall` note in [repository-template.md](../templates/repository-template.md) |
+| Search returns 500 / negative OFFSET | `PageIndex = 0` reaches `ComposeIQueryable` (which does `pageIndex - 1`) without a guard | Guard in the repo with `Math.Max(1, request.PageIndex)`; see the `PageIndex pitfall` note in [repository-template.md](../templates/repository-template.md) |
 | Tenant-scoped queries return empty | `IRequestContext.TenantId` is null in test host | Override request context with fixed `TestTenantId` |
 | All writes return `NotImplementedException` | Wrong `SaveChangesAsync` overload used | Use `SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, ct)` |
 | Delete test passes but entity still exists | `Delete(entity)` not called | Call `repoTrxn.Delete(entity)` before save |
@@ -209,18 +229,22 @@ For phase gates and validation commands, see [execution-gates.md](execution-gate
 | ProblemDetails stack traces leak in CI | Debug diagnostics enabled in all builds | Wrap diagnostic customization in `#if DEBUG` |
 | StructureValidator not found | Missing static validator namespace import | Add `using {Namespace}.Application.Services.Validation;` |
 | WASM build `DirectoryNotFoundException` (`unoresizetizer`) | Resizetizer manifest-path issue | See fix snippet in `skills/ui-uno-platforms.md` -> *UnoSplashScreen WASM Build Failure* |
+| WASM browser reports mono runtime/class libraries out of sync | Target `obj/<config>/<tfm>-browserwasm` contains stale WebCIL/runtime intermediates after only `bin` was rebuilt | Delete both target `bin` and target `obj`; restore/build with `TargetFrameworkOverride=<tfm>-browserwasm` and `-m:1` |
+| WasmUI tests look dead in Test Explorer | Harness requires `{APP}_WASM_TESTS_ENABLED=true` instead of default-on false-only opt-out | Treat only `{APP}_WASM_TESTS_ENABLED=false` as opt-out; missing Docker is `Assert.Inconclusive`, Docker present starts Aspire |
+| WasmUI startup hangs with no useful failure | Long steps lack per-step timeouts/progress logs and browser diagnostics | Add bounded startup steps plus console/page error/request/HTML/script/canvas/body/bridge-state diagnostics |
+| WasmUI passes locally but fails under VS coverage/profiler | Test runner profiler env vars leak into child `dotnet restore` / `dotnet build` | Clear `CORECLR_*`, `COR_*`, and Coverlet profiler vars for child processes; set profiling disabled flags |
 | `NotSupportedException` deserializing `Result<T>` in tests | `Result<T>` lacks parameterless constructor | Use `JsonDocument` parsing instead of `ReadFromJsonAsync<Result<T>>()`. Search endpoints serialize just the `PagedResponse<T>` value, not the wrapper. |
 | Aspire dashboard never opens / blank terminal | Missing `Properties/launchSettings.json` in AppHost | Create launchSettings.json with OTLP endpoints - see [aspire.md](../skills/aspire.md) -> Preflight |
-| `MSB4057` "GetTargetPath" target missing | Uno.Sdk project referenced from AppHost | Comment out Uno ProjectReference and AddProject - run Uno WASM separately |
+| `MSB4057` "GetTargetPath" target missing | Uno.Sdk project referenced directly from AppHost | Remove the direct Uno ProjectReference/AddProject and register the ASP.NET Core `{Project}.Uno.WasmHost` wrapper instead |
 | Functions storage/messaging clients refuse `127.0.0.1:10000/10001/10002` | `local.settings.json` fallbacks (`UseDevelopmentStorage=true`, empty Service Bus strings) beat Aspire-injected env values; Azurite under Aspire uses dynamic ports | Give Functions its own `.WithReference(...)` / host storage wiring and resolve shared client connection strings env-first before `local.settings.json` fallbacks. See [function-app.md](../skills/function-app.md) -> Aspire Integration and [aspire.md](../skills/aspire.md) -> Azure Service Bus Topics and Subscriptions. |
 | Audit rows show wrong user id / correlation id looks like the audit id | `RequestContext` constructor arguments were passed in the wrong order | Use `new RequestContext<string, Guid?>(correlationId, auditId, tenantId, roles)`. See [api-host-wiring.md](../patterns/api-host-wiring.md) -> Request Context Resolution. |
 | Event contracts drift between layers (Domain vs Application) | Bus payload records defined in `Domain.*.Events` and/or publisher still named `IDomainEventPublisher` | Move cross-process payloads to `Application.Contracts.Events` and publish through `IIntegrationEventPublisher`. Keep domain events in Domain only for aggregate-local invariants/dispatch. |
 | EF `fail:` log spam on every scheduler/host restart | `GenerateCreateScript()` runs CREATE against existing tables | Gate with `INFORMATION_SCHEMA.TABLES` existence check - see [data-persistence-advanced.md](data-persistence-advanced.md) -> Third-Party Operational Store Schemas |
 | `MSB3027` file lock / build fails with PID holding DLL | Orphaned `dotnet.exe` from prior run | `Get-Process -Name dotnet` then `Stop-Process -Name dotnet -Force` |
 | SQL container starts but auth fails under Aspire | `sql-password` parameter not in user secrets | `dotnet user-secrets set "Parameters:sql-password" "<pw>" --project AppHost` |
-| UI pager shows wrong "current page" / Next returns same rows | Client `PagedResponse.PageIndex` setter adds 0->1 offset on server-echoed 1-based `pageIndex` | Remove offset: setter/getter must pass `pageIndex` through unchanged. See [ui-uno-mvux.md](../skills/ui-uno-mvux.md) -> *Pagination contract* |
+| UI pager shows wrong "current page" / Next returns same rows | A hand-rolled client `PagedResponse.PageIndex` setter adds/removes an offset against the server-echoed value | Reuse `EF.Common.Contracts` `PagedResponse<T>` instead of redefining it; pass `pageIndex` through unchanged. Verify the API's base empirically. See [ui-uno-mvux.md](../skills/ui-uno-mvux.md) -> *Pagination contract* |
 | Checklist/child state (e.g. `IsCompleted`) lost on new-parent save | UI does separate `ParentService.Create` then per-child `ChildService.Create` loop; server's `Child.Create(...)` factory doesn't accept the field | Bundle children into parent DTO for a single-payload save; Updater `createFunc` calls `Update()` after `Create()` for fields not in the factory signature. See [updater-template.md](../templates/updater-template.md) -> *createFunc must apply ALL DTO fields* and [ui-uno-mvux.md](../skills/ui-uno-mvux.md) -> *Buffered Child Items in Create Mode* |
-| Menu click stays on stacked sub-page (detail) / no-ops | Relative `NavigateRouteAsync("TaskList")` resolves against currently-visible Visibility-sibling | Use absolute route `/Main/{sibling}` via the parent-page navigator. See [ui-uno-navigation.md](../skills/ui-uno-navigation.md) -> *Menu Navigation: Always Land On Top Page* |
+| Menu click stays on stacked sub-page (detail) / no-ops | Navigating against the wrong navigator: a rooted `/Main/{sibling}` walks up to Shell's `FrameNavigator` (already on Main) and no-ops, while a relative route on the parent can report success without flipping sibling `Visibility` | Target the **inner** Visibility-region navigator (`RootGrid.Navigator()`) with a **relative** route, then run `ForceSiblingVisibility` and pop each FrameView's inner Frame. Never use a rooted `/Main/X` for sibling switching. See [ui-uno-navigation.md](../skills/ui-uno-navigation.md) -> *Menu Navigation: Always Land On Top Page* |
 | `Assert.IsGreaterThanOrEqualTo` reports "Actual value <1> is not greater than or equal to expected value <2>" | Args inverted - signature is `(lowerBound, value)` (asserts `value >= lowerBound`) | Reorder: `Assert.IsGreaterThanOrEqualTo(lowerBound: 1, value: summary.OverdueTasks)` |
 | Mock-data assertion break when seed rows are added (`Expected:<3> Actual:<14>`) | Tests hardcode absolute counts/positions against a moving mock seed | Prefer `IsNotEmpty`, `Assert.Contains`, or assertions on a specific entity Id; reserve exact counts for sealed fixtures |
 | Aspire test suite hangs indefinitely | `[assembly: DoNotParallelize]` + no `[Timeout]` on a single hanging test blocks entire run | Add `[Timeout(300000)]` (5 min) to every Aspire integration test method; `[Timeout(120000)]` for Testcontainers-SQL-only tests |
@@ -322,5 +346,7 @@ When blocked, log in `HANDOFF.md` (see [template](HANDOFF.md)):
 - Current phase
 - Next engineer action (link to [execution-gates.md](execution-gates.md))
 
-If instruction gaps are discovered, append to `support/UPDATE-INSTRUCTIONS.md`.
+If instruction gaps are discovered:
+- In an installed consumer app, append to `.scaffold/INSTRUCTION-GAPS.md`. Do not modify `.instructions/` files.
+- In this instruction repository, append to `support/UPDATE-INSTRUCTIONS.md`.
 

@@ -325,7 +325,7 @@ private async Task<TableData<TaskItemDto>> LoadServerData(TableState state, Canc
 {
     var req = new SearchRequest<TaskItemSearchFilter>
     {
-        PageIndex = state.Page + 1,  // MudTable is 0-based; server API is 1-based
+        PageIndex = state.Page + 1,  // MudTable.Page is 0-based; +1 only if the API is 1-based (verify - see below)
         PageSize = state.PageSize,
         Filter = new TaskItemSearchFilter { SearchTerm = _searchTerm }
     };
@@ -338,4 +338,4 @@ private async Task<TableData<TaskItemDto>> LoadServerData(TableState state, Canc
 }
 ```
 
-`MudTable.Page` is 0-based, the API is 1-based. Do the `+1` at the boundary here so the rest of the code sees the server's 1-based convention.
+`MudTable.Page` is 0-based. The API's page-index base (0- vs 1-based) is a property of the running backend - verify it empirically (request page 0 vs page 1 against a seeded list and see which returns the first row). Convert MudTable's 0-based page to whatever base the API expects at this boundary (the `+1` shown is correct only when the API is 1-based) so the rest of the code deals in a single convention.

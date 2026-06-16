@@ -21,6 +21,8 @@ Each harness has a project-memory file (auto-loaded on session start) and, where
 
 All harnesses follow the same flow: scaffold sessions boot from `.instructions/START-AI.md`, resume from `HANDOFF.md` if present, run one phase, write `HANDOFF.md`, stop. Vertical-slice sessions load `.instructions/support/vertical-slice-checklist.md` and generate one full entity stack against the gate. **Brownfield adoption** replaces the Phase 1 interview with a code-inspection pass that derives `.scaffold/domain-specification.yaml`, `.scaffold/UBIQUITOUS-LANGUAGE.md`, and `.scaffold/DESIGN-DECISIONS.md` from the existing solution; the project then continues into Phase 2 identically to a greenfield scaffold. Detail: [ai/adopt-codebase.md](ai/adopt-codebase.md).
 
+In installed app repositories, `.instructions/` is runtime payload and should be treated as read-only during scaffold work. Record instruction feedback in `.scaffold/INSTRUCTION-GAPS.md`; maintainers fold approved gaps back into this source repo later.
+
 Canonical execution rules: [START-AI.md](START-AI.md) (session model, phase router) and [support/execution-gates.md](support/execution-gates.md) (gate commands).
 
 ### Install into a new app

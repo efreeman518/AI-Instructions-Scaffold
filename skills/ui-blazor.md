@@ -184,7 +184,9 @@ No `UseAntiforgery`/`UseHttpsRedirection` - WASM host is a static SPA.
 </Router>
 ```
 
-**Non-negotiable:** `@rendermode="InteractiveServer"` on both `HeadOutlet` and `Routes`. Without it the page renders statically - buttons, forms, MudBlazor dialogs all no-op with no error.
+**Non-negotiable:** `@rendermode="InteractiveServer"` on both `HeadOutlet` and `Routes`. Registering an interactive render mode in `Program.cs` (`AddInteractiveServerComponents` + `AddInteractiveServerRenderMode`) does nothing on its own - no component opts in, so Blazor serves everything as **static SSR** and every interaction (theme toggle, dialogs, grid actions, buttons) silently no-ops with no error. The component must opt in via `@rendermode`.
+
+Naming trap: the bare shorthand `InteractiveServer` (used above) requires `@using static Microsoft.AspNetCore.Components.Web.RenderMode` (present in `_Imports.razor` below). The qualified form `@rendermode="RenderMode.InteractiveServer"` works with the default imports and no `using static`. Pick one; do not mix a bare shorthand with missing imports (compile error) or a missing `@rendermode` (dead interactivity).
 
 ## `_Imports.razor`
 
@@ -312,7 +314,7 @@ public interface I{Project}ApiClient
 - **Create / Update** expect `{"item": {dto}}`. Wrap: `new DefaultRequest<T> { Item = dto }`. Sending the bare DTO deserializes `Item` as `null` and the server returns an NRE.
 - **Get / Create / Update** return `{"item": {dto}}`. Unwrap: `response.Item`.
 - **Search** accepts `SearchRequest<TFilter>` directly (not wrapped) and returns `PagedResponse<T>` with `data` (items) and `total` (count).
-- **Pagination is 1-based on the wire** - `PageIndex` starts at 1, **not** 0. The server silently coerces 0 to 1 and you get page 1 on every request.
+- **Reuse the shared `SearchRequest<T>` / `PagedResponse<T>` from `EF.Common.Contracts`** (via the `{Project}.Application.Models` reference) - do not redefine envelopes in the Blazor project. The page-index base (0- vs 1-based) is a property of the running API, not a constant: verify it empirically (request page 0 vs page 1 against a seeded list and inspect which returns the first row) before wiring the pager. Do not hard-code an assumed base - sending the wrong one silently returns the same page on every request.
 
 See [ui-uno-mvux.md](ui-uno-mvux.md) -> *Client-API Contract Rules* for the detailed payload diagrams; the same contract applies.
 
@@ -382,7 +384,7 @@ The `{Entity}Page` (unified add/edit) and any upload or paged-list surface use t
 - **Unsaved-changes prompt on navigation** - `RegisterLocationChangingHandler` + baseline / `_bypassDirtyCheck`.
 - **Editing parent aggregates with child collections** - local child state, single Create/Update call (no per-child API calls).
 - **File uploads (multipart)** - service overload, `[Multipart]` endpoint/Refit, `MudFileUpload` call site.
-- **Server-side table paging** - `MudTable ServerData` with the 0-based -> 1-based boundary `+1`.
+- **Server-side table paging** - `MudTable ServerData` with the page-base conversion at the boundary (MudTable is 0-based; convert to the base the API expects - verify empirically).
 - **MudBlazor `ShowMessageBoxAsync` fallback** - `ConfirmDialog.razor` when the extension is absent.
 
 ## MudBlazor API Gotchas
@@ -519,7 +521,7 @@ Add both the HTTPS and HTTP dev URLs declared in `launchSettings.json`.
 - [ ] `App.razor` and `Routes.razor` apply `@rendermode="InteractiveServer"` (Server) or use `Router` under the WASM root (WASM)
 - [ ] `MainLayout.razor` wires all four Mud providers, `FloatService.StateHasChanged` bound in `OnInitialized`, cleared in `Dispose`
 - [ ] Refit interface uses `DefaultRequest<T>` for POST/PUT bodies, `DefaultResponse<T>` for single-item returns, `SearchRequest<T>`/`PagedResponse<T>` for search
-- [ ] `SearchRequest.PageIndex` passed 1-based to the API
+- [ ] `SearchRequest.PageIndex` uses the base the API actually expects (verified empirically; reuse `EF.Common.Contracts` `SearchRequest`/`PagedResponse`, do not redefine)
 - [ ] MudBlazor: `ShowMessageBoxAsync` (not `ShowMessageBox`), `Expanded` (not `IsInitiallyExpanded`), `<MudChip T="...">`
 - [ ] Gateway `CorsSettings.AllowedOrigins` includes the Blazor dev URLs
 - [ ] Pages: Dashboard, {Entity}List (server paging + filters), {Entity}Page (new/edit), Settings, Error

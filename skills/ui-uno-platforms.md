@@ -17,10 +17,10 @@ Build one Uno target at a time. The project owns target selection through `Targe
 When the Uno project defaults to a fast single target such as browserwasm, restore all enabled Uno targets before Android/iOS package builds. `TargetFrameworkOverride` on build is not enough if `project.assets.json` was last restored for browserwasm only; the Android package can miss `Uno.WinUI.Runtime.Skia.Android` and crash before app code runs.
 
 ```powershell
-dotnet restore src/UI/{Project}.Uno/{Project}.Uno.csproj -p:BuildAllUnoTargets=true
-dotnet build src/UI/{Project}.Uno/{Project}.Uno.csproj -p:TargetFrameworkOverride=$(LatestStableTfm)-browserwasm --no-restore -m:1
-dotnet build src/UI/{Project}.Uno/{Project}.Uno.csproj -p:TargetFrameworkOverride=$(LatestStableTfm)-android --no-restore -m:1
-dotnet build src/UI/{Project}.Uno/{Project}.Uno.csproj -p:TargetFrameworkOverride=$(LatestStableTfm)-ios --no-restore -m:1
+rtk dotnet restore src/UI/{Project}.Uno/{Project}.Uno.csproj -p:BuildAllUnoTargets=true -p:EnableUnoWasm=true
+rtk dotnet build src/UI/{Project}.Uno/{Project}.Uno.csproj -p:TargetFrameworkOverride=$(LatestStableTfm)-browserwasm -p:EnableUnoWasm=true --no-restore -m:1
+rtk dotnet build src/UI/{Project}.Uno/{Project}.Uno.csproj -p:TargetFrameworkOverride=$(LatestStableTfm)-android --no-restore -m:1
+rtk dotnet build src/UI/{Project}.Uno/{Project}.Uno.csproj -p:TargetFrameworkOverride=$(LatestStableTfm)-ios --no-restore -m:1
 ```
 
 Use serial builds (`-m:1`) for platform sweeps. Uno platform targets share `obj/` assets and `project.assets.json`; parallel builds can race and produce misleading restore/build failures.
@@ -138,10 +138,43 @@ After any rebuild, `WasmAppHost` serves a new `package_<hash>/` directory. The o
 A standalone WASM server (the one Playwright targets) must serve static assets from the **current** `bin/<config>/net{X}.0-browserwasm/wwwroot` output, not a stale `bin/<config>/browser-wasm/wwwroot` folder left by an older Uno/SDK build. When both exist, builds and test runs disagree about which assets are live and Playwright loads yesterday's app. Build the WASM target explicitly before browser tests, then point the server at the fresh output:
 
 ```powershell
-rtk dotnet build src/UI/{Project}.Uno/{Project}.Uno.csproj -f net{X}.0-browserwasm -p:EnableUnoWasm=true
+rtk dotnet restore src/UI/{Project}.Uno/{Project}.Uno.csproj -p:BuildAllUnoTargets=true -p:EnableUnoWasm=true
+rtk dotnet build src/UI/{Project}.Uno/{Project}.Uno.csproj -p:TargetFrameworkOverride=net{X}.0-browserwasm -p:EnableUnoWasm=true --no-restore -m:1
 ```
 
 If a `browser-wasm/` sibling lingers, delete it so it cannot win asset resolution. The local test stack script ([../templates/local-test-stack-template.md](../templates/local-test-stack-template.md)) does this build step for you.
+
+### Clean Browser WASM Output Before Test-Owned Rebuilds
+
+When a test fixture rebuilds Uno WASM, clean both target-specific output roots before the build:
+
+```text
+src/UI/{Project}.Uno/bin/<configuration>/net{X}.0-browserwasm
+src/UI/{Project}.Uno/obj/<configuration>/net{X}.0-browserwasm
+```
+
+Cleaning only `bin/` can leave stale WebCIL/runtime intermediates in `obj/`. If the browser reports `Your mono runtime and class libraries are out of sync` and names `System.Private.CoreLib.dll`, suspect stale mixed WASM output first. Clean both folders, then restore/build with `TargetFrameworkOverride`; do not switch renderers or rewrite startup code until this is ruled out.
+
+After a test-owned clean rebuild succeeds, write a stamp file inside the fresh target output, for example `bin/Debug/net{X}.0-browserwasm/.{app}-wasm-test-build.stamp`. Freshness checks must require that stamp plus current source timestamps. This prevents Test Explorer from silently accepting an old developer build that happens to have `index.html`.
+
+### Child Dotnet Build Environment
+
+WASM test fixtures often shell out to `dotnet restore` / `dotnet build` from inside a test runner. Clear coverage/profiler variables for those child processes so Visual Studio Test Explorer or coverage tools do not leak profiler hooks into MSBuild:
+
+```text
+CORECLR_PROFILER
+CORECLR_PROFILER_PATH
+CORECLR_PROFILER_PATH_32
+CORECLR_PROFILER_PATH_64
+COR_PROFILER
+COR_PROFILER_PATH
+COR_PROFILER_PATH_32
+COR_PROFILER_PATH_64
+COVERLET_ENABLE_PROFILING
+COVERLET_PROFILER_PATH
+```
+
+Also set `CORECLR_ENABLE_PROFILING=0`, `COR_ENABLE_PROFILING=0`, `MSBUILDDISABLENODEREUSE=1`, `DOTNET_CLI_TELEMETRY_OPTOUT=1`, and `DOTNET_NOLOGO=1` in the child process environment.
 
 ---
 
@@ -160,9 +193,11 @@ test.describe("EntityCrud", () => {
   test.describe.configure({ mode: "serial" });
 
   test.beforeAll(async ({ browser }) => {
+    const baseURL = process.env.{APP}_UNO_BASE_URL;
+    if (!baseURL) throw new Error("{APP}_UNO_BASE_URL is required for standalone Uno WASM Playwright runs");
     const context = await browser.newContext({ ignoreHTTPSErrors: true });
     sharedPage = await context.newPage();
-    await sharedPage.goto("https://localhost:7069");
+    await sharedPage.goto(baseURL);
     await waitForApp(sharedPage);
   });
 });

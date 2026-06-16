@@ -71,7 +71,7 @@ Playwright requires a real hosted stack. It cannot run on `WebApplicationFactory
 
 - Configure one base URL per UI surface/project. Do not share a hard-coded URL across Blazor, Uno, and React.
 - Make the base URL environment-driven (`{APP}_BLAZOR_BASE_URL`, `{APP}_UNO_BASE_URL`, `{APP}_REACT_BASE_URL`, or equivalent) for externally hosted stacks (CI, docker-compose, preview deployments).
-- When the app is Aspire-hosted, the C# suite resolves the URL programmatically: self-host the AppHost with `DistributedApplicationTestingBuilder`, wait for the UI resource to become healthy, then read its dynamic endpoint via `GetEndpoint("{ui-resource}")`. Full fixture shape: [../templates/test-templates-quality.md](../templates/test-templates-quality.md) section E2E Tests (Playwright). Vite/React resources may use a dynamic port; never assume `5173`, `5178`, or a prior run's URL.
+- When the app is Aspire-hosted, the C# suite resolves the URL programmatically: self-host the AppHost with `DistributedApplicationTestingBuilder`, wait for the UI resource to become healthy, then read its named `http` endpoint via `CreateHttpClient("{ui-resource}", "http")`. Full fixture shape: [../templates/test-templates-quality.md](../templates/test-templates-quality.md) section E2E Tests (Playwright). Vite/React resources may use a dynamic port; never assume `5173`, `5178`, or a prior run's URL.
 - Never ship a hard-coded URL fallback or `[Ignore]`d tests pointed at a guessed URL - when no base URL can be resolved (env var absent, Docker/AppHost unavailable), mark tests `Assert.Inconclusive` with a precise message.
 - Standalone Vite can use a conventional dev port, but hosted-stack Playwright must use the actual Aspire resource URL.
 
@@ -99,9 +99,11 @@ test.describe("EntityCrud", () => {
   test.describe.configure({ mode: "serial" });
 
   test.beforeAll(async ({ browser }) => {
+    const baseURL = process.env.{APP}_UNO_BASE_URL;
+    if (!baseURL) throw new Error("{APP}_UNO_BASE_URL is required for standalone Uno WASM Playwright runs");
     context = await browser.newContext({ ignoreHTTPSErrors: true });
     sharedPage = await context.newPage();
-    await sharedPage.goto("https://localhost:7069");
+    await sharedPage.goto(baseURL);
     await waitForApp(sharedPage);
   });
 
@@ -137,6 +139,32 @@ Uno WASM with the **managed-DOM renderer** often needs coordinate-click interact
 ### Uno WASM: Canvas Test Bridge (Skia renderer)
 
 If the app paints to a single Skia `<canvas>`, there are no per-control DOM nodes - DOM/text/role selectors and coordinate-clicking all fail structurally. Scaffold a browser-only test bridge that publishes app state to `globalThis.__{app}TestState` (query-string gated, default-off, real Gateway local auth) and have Playwright wait on state. Tag these `[TestCategory("WasmUI")]`. Full pattern: [../templates/uno-wasm-test-bridge-template.md](../templates/uno-wasm-test-bridge-template.md). Detect the renderer with `document.querySelectorAll('[xamltype]').length` - `0` plus a lone `<canvas>` means Skia.
+
+When the WASM app needs API, Gateway, SQL, Redis, storage, auth, or other Aspire resources, the `WasmUI` harness must start the AppHost graph. Do not treat it as a standalone browser-only suite. The harness starts Aspire in testing mode, disables only optional hosts, waits for required resources to become healthy, warms up auth through the real Gateway, and resolves UI/Gateway URLs from named Aspire endpoints. Use `CreateHttpClient(resource, "http")` for endpoint discovery and probes; never assume fixed local ports during a test run.
+
+Every startup step must have its own timeout and progress log: Docker preflight, host lock, WASM restore, clean rebuild, AppHost builder creation, graph build, graph start, resource health, Gateway auth warm-up, UI endpoint readiness, and browser state wait. Missing Docker marks `Assert.Inconclusive` with the exact fix. Docker present means start Aspire and real backing resources.
+
+Generated `WasmUI` assemblies must include `[assembly: DoNotParallelize]`. AppHost-backed browser classes fight over containers, ports, WASM output, and cold-start state when MSTest runs them in parallel.
+
+### Uno WASM: Browser Diagnostics
+
+Browser diagnostics are part of the harness, not an optional debugging add-on. Capture these on navigation failure, bridge-state timeout, page error, or Playwright exception:
+
+- Console messages.
+- Page errors.
+- Failed requests.
+- HTTP responses with status 400 or higher.
+- `window.onerror`.
+- `unhandledrejection`.
+- Current URL.
+- `document.readyState`.
+- First HTML snippet.
+- Script URL list.
+- Canvas count.
+- Body text snippet.
+- Last bridge state JSON.
+
+Install the `window.onerror` / `unhandledrejection` capture with `AddInitScriptAsync` before navigating so early Mono/WASM failures are retained.
 
 ### Uno WASM: Slow Router After Many Navigations
 
@@ -182,6 +210,10 @@ All test projects must be registered in the `.slnx` so both Test Explorers disco
 - [ ] Mutation suite uses normal MSTest classes, `TestCategory=Mutation`, focused Stryker mutate globs, and ignored `StrykerOutput/`.
 - [ ] Hosted Playwright stack is reachable and base URL is correct.
 - [ ] Aspire-hosted UI tests use the current resource URL, not a stale dashboard URL or default Vite port.
+- [ ] AppHost-backed `WasmUI` tests start the Aspire graph in testing mode, keep required resources live, and disable only optional hosts.
+- [ ] `WasmUI` tests use named Aspire endpoints and `CreateHttpClient(resource, "http")`, not fixed local ports.
+- [ ] `WasmUI` assemblies are `[assembly: DoNotParallelize]`.
+- [ ] WASM browser diagnostics capture console, errors, failed requests, response errors, URL, HTML, scripts, canvas count, body text, and bridge state.
 - [ ] Selector strategy is stable for the target UI tech.
 - [ ] UI assertions are structural, not seed/count-dependent.
 - [ ] Timeout profile matches UI runtime behavior (Uno WASM cold-start: 120s).

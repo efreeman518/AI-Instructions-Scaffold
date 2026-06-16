@@ -51,7 +51,7 @@ Do not duplicate DTO semantics by hand when shared/generated contracts are avail
 - UI calls the Gateway by default, never the API host directly when Gateway is enabled.
 - Prefer relative `/api` routes in app code. Use `VITE_API_BASE_URL` only in Vite dev proxy/Aspire wiring.
 - Normalize `DefaultResponse<T>` / paged search envelopes in one API client layer.
-- Preserve 1-based page indexes if the backend contract is 1-based; do not silently switch the UI to 0-based API calls.
+- Match the backend's page-index base exactly; verify it empirically (request page 0 vs page 1 against a seeded list) rather than assuming, and do not silently switch the UI to a different base than the API uses.
 - For aggregate roots, create/update the aggregate with nested child collections in one save when backend mappers/updaters support it. Do not add child API calls on create just because the UI has child controls.
 - Dev tenant/auth headers must follow the Gateway/API dev-auth rules. Never hard-code production tokens or tenant IDs in the React app.
 

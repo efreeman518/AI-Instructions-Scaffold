@@ -156,7 +156,7 @@ public sealed class AggregateBoundaryTests : BaseTest
 
 ## E2E Tests (Playwright)
 
-> **Uno WASM vs MudBlazor:** The template below uses standard HTML selectors (MudBlazor / server-rendered Blazor). For Uno WASM with the managed-DOM renderer, use the boot-once shared-page pattern and coordinate-click helpers in [../skills/testing-quality.md](../skills/testing-quality.md) section Hosted Browser UI. For Uno WASM that renders to a **Skia canvas** (no per-control DOM), use the state bridge in [uno-wasm-test-bridge-template.md](uno-wasm-test-bridge-template.md) and tag tests `[TestCategory("WasmUI")]`.
+> **Uno WASM vs MudBlazor:** The template below uses standard HTML selectors (MudBlazor / server-rendered Blazor). For Uno WASM with the managed-DOM renderer, use the boot-once shared-page pattern and coordinate-click helpers in [../skills/testing-quality.md](../skills/testing-quality.md) section Hosted Browser UI. For Uno WASM that renders to a **Skia canvas** (no per-control DOM), use the state bridge and AppHost-backed harness in [uno-wasm-test-bridge-template.md](uno-wasm-test-bridge-template.md), tag tests `[TestCategory("WasmUI")]`, and add `[assembly: DoNotParallelize]`.
 >
 > **Data-assertion rule:** Never assert specific row counts, page counts, or seeded titles (e.g. `"Showing 1 to 10 of 14"`, `"Build dashboard UI"`). These break against shared dev databases with accumulating test data. Assert structural UI strings only: headers, labels, empty-state text.
 >
@@ -166,13 +166,14 @@ public sealed class AggregateBoundaryTests : BaseTest
 
 ### File: `Test/Test.PlaywrightUI/PlaywrightStackFixture.cs`
 
-When `useAspire: true`, the suite hosts the stack itself with `DistributedApplicationTestingBuilder` (package `Aspire.Hosting.Testing` + a project reference to the AppHost), waits for the UI resource, and reads its dynamic URL. `{ui-resource}` is the AppHost resource name of the UI under test (e.g. the React/Vite or Blazor resource). An explicit `{APP}_UI_BASE_URL` always wins, so CI can target a docker-compose stack or preview deployment without booting Aspire.
+When `useAspire: true`, the suite hosts the stack itself with `DistributedApplicationTestingBuilder` (package `Aspire.Hosting.Testing` + a project reference to the AppHost), waits for the UI resource, and reads its dynamic URL from a named endpoint. `{ui-resource}` is the AppHost resource name of the UI under test (e.g. the React/Vite or Blazor resource). An explicit `{APP}_UI_BASE_URL` always wins, so CI can target a docker-compose stack or preview deployment without booting Aspire.
 
 ```csharp
 [TestClass]
 public class PlaywrightStackFixture
 {
     private static DistributedApplication? _app;
+    private static readonly TimeSpan StartupTimeout = TimeSpan.FromMinutes(5);
 
     /// <summary>Startup failure captured by AssemblyInit; null when a base URL was resolved.</summary>
     public static Exception? StartupError { get; private set; }
@@ -190,13 +191,17 @@ public class PlaywrightStackFixture
         // Otherwise self-host the Aspire AppHost and read the dynamic UI endpoint.
         try
         {
-            var builder = await DistributedApplicationTestingBuilder.CreateAsync<Projects.{App}_AppHost>();
-            _app = await builder.BuildAsync();
-            await _app.StartAsync();
+            var builder = await DistributedApplicationTestingBuilder.CreateAsync<Projects.{App}_AppHost>(
+                args: ["--{App}:AspireTesting=true"]);
+            _app = await builder.BuildAsync().WaitAsync(StartupTimeout);
+            await _app.StartAsync().WaitAsync(StartupTimeout);
             await _app.ResourceNotifications
                 .WaitForResourceHealthyAsync("{ui-resource}")
-                .WaitAsync(TimeSpan.FromMinutes(3));
-            BaseUrl = _app.GetEndpoint("{ui-resource}").ToString().TrimEnd('/');
+                .WaitAsync(StartupTimeout);
+
+            using var endpointClient = _app.CreateHttpClient("{ui-resource}", "http");
+            BaseUrl = endpointClient.BaseAddress?.ToString().TrimEnd('/')
+                ?? throw new InvalidOperationException("No http endpoint found for {ui-resource}.");
         }
         catch (Exception ex)
         {

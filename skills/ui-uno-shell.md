@@ -97,7 +97,7 @@ Uno Platform uses an **MSBuild SDK package** (`Uno.Sdk`), not a .NET workload. N
 
 1. **SDK version**: Use the latest stable `Uno.Sdk` line that supports the project's target .NET TFM. An older `Uno.Sdk` line can bundle a `Uno.Wasm.Bootstrap` that does not support the current TFM; check Uno release notes when bumping the TFM.
 2. **TargetFramework clearing**: When `Directory.Build.props` sets a singular `<TargetFramework>` for non-Uno projects, the Uno csproj MUST add `<TargetFramework />` before `<TargetFrameworks>` to clear the inherited value. Otherwise MSBuild merges both, causing `NETSDK1005`. **Do not rely on guarding the root prop with `Condition="'$(UnoSingleProject)' != 'true'"`** - that guard is evaluated during the early `Directory.Build.props` import, *before* the Uno `.csproj` PropertyGroup sets `UnoSingleProject=true`, so the singular `<TargetFramework>` still wins over `<TargetFrameworks>` and the build fails with `NETSDK1005`. Clearing it in the Uno csproj (`<TargetFramework />`) is the reliable fix; alternatively scope the root `<TargetFramework>` so it never reaches Uno heads.
-3. **Targeted builds**: Build one platform at a time with `-p:TargetFrameworkOverride=$(LatestStableTfm)-browserwasm`, `-android`, or `-ios`. Do not use `-f`; the conditional `TargetFrameworks` property owns the effective target. Default builds target browserwasm only. Before Android/iOS package builds, run `dotnet restore src/UI/{Project}.Uno/{Project}.Uno.csproj -p:BuildAllUnoTargets=true`, then build the selected target with `--no-restore`; this keeps mobile Skia runtime packages in the NuGet asset graph.
+3. **Targeted builds**: Build one platform at a time with `-p:TargetFrameworkOverride=$(LatestStableTfm)-browserwasm`, `-android`, or `-ios`. Do not use `-f`; the conditional `TargetFrameworks` property owns the effective target. Default builds target browserwasm only. For browserwasm test rebuilds, clean target `bin` and target `obj`, restore with `-p:BuildAllUnoTargets=true -p:EnableUnoWasm=true`, then build with `-p:TargetFrameworkOverride=$(LatestStableTfm)-browserwasm -p:EnableUnoWasm=true --no-restore -m:1`. Before Android/iOS package builds, run `dotnet restore src/UI/{Project}.Uno/{Project}.Uno.csproj -p:BuildAllUnoTargets=true`, then build the selected target with `--no-restore`; this keeps mobile Skia runtime packages in the NuGet asset graph.
 4. **Entry point**: Uno SDK may not auto-generate `Program.Main` on the latest TFMs. For browserwasm, use the Chefs-style host builder entry point:
 
 ```csharp
@@ -269,15 +269,30 @@ public partial record ShellModel
         _ = Start();
     }
 
-    public async Task Start() => await _navigator.NavigateRouteAsync(this, "Main/{FirstPage}");
+    public async Task Start() => await _navigator.NavigateRouteAsync(this, "Main");
 }
 ```
+
+Navigate to `"Main"` only - **not** the full leaf path `"Main/{FirstPage}"`. The `Main` route's
+`IsDefault` nested child (see [ui-uno-mvux.md](ui-uno-mvux.md) section Route Registration Pattern)
+auto-loads the first content page *inside* MainPage's content region.
+
+**Frame-vs-Visibility trap.** With the canonical responsive-menu MainPage (content host is a
+Visibility region: `uen:Region.Navigator="Visibility"`, see
+[ui-uno-navigation.md](ui-uno-navigation.md)), navigating the full leaf path `"Main/{FirstPage}"`
+**flattens to the leaf** and renders it directly in Shell's `Frame` *without instantiating
+MainPage* - so the app loses all chrome (no header, side-nav, or theme toggle) and `MainPage`'s ctor
+never runs. The navigation still reports `success=True`, which masks the bug. Navigating just
+`"Main"` displays MainPage and lets its `IsDefault` route fill the content region. (If MainPage's
+content host were a plain `<Frame />` region instead of a Visibility region, the leaf path would
+work - but the scaffold's responsive menu uses a Visibility region, so always navigate `"Main"`.)
+Verified on Uno.Sdk 6.5.36 / Uno.Extensions Navigation / net10.0-browserwasm.
 
 ### Shell Non-Negotiables
 
 - `ExtendedSplashScreen.Content` contains `<Frame />` - **never omit this**. The app will appear to load (spinner disappears) but show a blank screen because there is no navigation target.
 - Shell code-behind implements `IContentControlProvider` - required by `NavigateAsync<Shell>()` to bind the `Frame`.
-- `ShellModel` calls `NavigateRouteAsync` in the constructor (fire-and-forget via `_ = Start()`) - this triggers the first navigation immediately after the host finishes loading.
+- `ShellModel` calls `NavigateRouteAsync(this, "Main")` in the constructor (fire-and-forget via `_ = Start()`) - this triggers the first navigation immediately after the host finishes loading. Navigate `"Main"`, never `"Main/{FirstPage}"` (see the Frame-vs-Visibility trap above).
 
 Configure everything through `IApplicationBuilder`:
 
@@ -326,6 +341,27 @@ Non-negotiables:
 - Always call Gateway URL from config. Use `AndroidGatewayBaseUrl` for emulator/device Android, `IosGatewayBaseUrl` for iOS, and `GatewayBaseUrl` as the browserwasm/default fallback.
 - Register auth + HTTP + navigation in one place.
 - Keep service registration in host config, not in views/models.
+
+## Theme (IThemeService)
+
+`ThemeService` (enabled via the `ThemeService` `<UnoFeatures>` entry) needs a **navigation/view
+scope that carries the Window** - its ctor is `ThemeService(Window, IDispatcher, ISettings,
+ILogger)`.
+
+- **Never resolve `IThemeService` from `App.Host.Services`** (the root provider). The root scope has
+  no `Window`, so `App.Host.Services.GetService<IThemeService>()` from `OnLaunched` or page
+  code-behind throws `NullReferenceException` in `ThemeService..ctor`. On WASM this crashes the
+  dispatcher mid-launch and the app chrome never renders (the failure looks like a navigation/chrome
+  bug, not a theme bug).
+- **Constructor-inject `IThemeService` into a model** (e.g. `MainModel`) and apply the default/
+  initial theme + the toggle command there - the model is resolved within the navigation scope, so
+  the Window is present. This matches the Uno Chefs `ThemeService` recipe.
+- **Do not apply the initial theme in `App.OnLaunched`** - the scope is not ready yet. Apply it from
+  the first model that owns chrome.
+
+(Contrast: `IFormGuard` in [ui-uno-navigation.md](ui-uno-navigation.md) *is* safe to resolve from
+`App.Host.Services` because it is a plain singleton with no `Window` dependency. The root-scope rule
+is specific to services like `ThemeService` that capture the Window.)
 
 ## Mock vs Live API
 

@@ -27,7 +27,8 @@ Phase 1 is the universal core (stack-agnostic). Phases 2-5 run under the C#/.NET
 1. If this file is installed in a target app repository, load `.instructions/START-AI.md`.
 2. If working in the instruction repository itself, load `START-AI.md`.
 3. Follow the phase router and one-phase-per-session rule.
-4. Record scaffold gaps in `.scaffold/INSTRUCTION-GAPS.md` (create the `.scaffold/` directory at project root if absent).
+4. Treat installed `.instructions/` files in code repositories as read-only. Do not modify them during scaffold work.
+5. Record scaffold gaps in `.scaffold/INSTRUCTION-GAPS.md` (create the `.scaffold/` directory at project root if absent).
 
 For normal coding, review, docs, or maintenance tasks, ignore scaffold phase
 rules and use regular project context only.
