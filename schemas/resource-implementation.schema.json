@@ -398,6 +398,10 @@
           "type": "object",
           "properties": {
             "projectName": { "type": "string" },
+            "lifecycle": { "type": "string", "enum": ["local-or-provision", "existing"] },
+            "resourceName": { "type": "string" },
+            "resourceGroup": { "type": "string" },
+            "connectionName": { "type": "string" },
             "models": {
               "type": "array",
               "items": {
@@ -406,11 +410,13 @@
                 "properties": {
                   "name": { "type": "string" },
                   "purpose": { "type": "string", "enum": ["agent-reasoning", "embedding", "completion"] },
-                  "deploymentName": { "type": "string" }
+                  "deploymentName": { "type": "string" },
+                  "localModel": { "type": "string" }
                 }
               }
             },
-            "useFoundryAgentService": { "type": "boolean" }
+            "agentHosting": { "type": "string", "enum": ["code-hosted", "prompt-agent", "pre-existing"] },
+            "projectEndpoint": { "type": "string" }
           }
         },
         "search": {

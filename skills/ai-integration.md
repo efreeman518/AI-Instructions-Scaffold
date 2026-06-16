@@ -63,7 +63,7 @@ Notes:
 1. **Search-only first** when the requirement is findability, retrieval, or grounded Q&A over existing data.
 2. **Single agent second** when the model must choose among a few application-service tools.
 3. **Workflows last** when the process is durable, branching, resumable, or needs explicit approvals/checkpoints.
-4. **Foundry Agent Service only when justified** by hosted memory, centralized tool catalogs, or operational requirements that a code-hosted agent cannot meet.
+4. **Server-hosted Foundry agents only when justified** by hosted memory, centralized tool catalogs, portal/IaC-managed agent definitions, or operational requirements a code-hosted agent cannot meet. Server-hosted agents (Aspire `AddPromptAgent`, or pre-existing agents driven by the client SDK) always require Azure - start code-hosted.
 5. **Keyword or semantic search before vector or hybrid**. Add embeddings only when search quality testing shows a clear gap.
 6. **Do not scaffold empty AI folders**. Add only the Search, Agents, and Workflows folders that are enabled.
 
@@ -72,14 +72,14 @@ Notes:
 - **Need retrieval over business data?** Start with Azure AI Search.
 - **Need the model to call internal business operations?** Add one `ChatClientAgent` with a few function tools that delegate to existing application services.
 - **Need long-running or branching AI processes?** Add `Microsoft.Agents.Workflows`.
-- **Need hosted memory or Foundry-managed tools?** Add Foundry Agent Service after the simpler code-hosted path is proven insufficient.
+- **Need hosted memory, portal/IaC-managed agent definitions, or Foundry-managed tools?** Use a server-hosted Foundry agent (Aspire `AddProject` + `AddPromptAgent`, or a pre-existing agent via the client SDK) after the simpler code-hosted path is proven insufficient.
 
 ## Technology Choices
 
 - **Foundry Models / Azure OpenAI client:** default model host for completions, embeddings, and tool-calling.
 - **Azure AI Search:** default retrieval tier.
-- **Microsoft Agent Framework:** default code-side agent SDK.
-- **Foundry Agent Service:** optional hosted agent backend.
+- **Microsoft Agent Framework:** default code-side agent SDK (`ChatClientAgent` over the injected `IChatClient`).
+- **Foundry projects + server-hosted agents:** optional hosted agent backend - Aspire `AddProject` + `AddPromptAgent`, or a pre-existing portal/IaC agent consumed via `AIProjectClient.AsAIAgent(...)`. Azure-only.
 - **Agent Framework Workflows:** optional explicit orchestration layer.
 
 Useful primitives:
@@ -102,10 +102,10 @@ Useful primitives:
 - Add only when enabled:
     - `Azure.Search.Documents` + `Aspire.Hosting.Azure.Search` for search
     - `Azure.AI.OpenAI` only if a component needs the Azure OpenAI client directly (embeddings, a FlowEngine Azure-OpenAI connector)
-    - `Azure.AI.Agents.Persistent` for Foundry Agent Service
+    - `Azure.AI.Projects` + `Microsoft.Agents.AI.Foundry` (prerelease) when consuming a Foundry **project** or **server-hosted/pre-existing agent** from app code (the `AIProjectClient.AsAIAgent(...)` path). `Microsoft.Agents.AI.Foundry` carries no stable release - pin with reason.
     - `Microsoft.Agents.Workflows` for workflow orchestration
 
-Version all packages in `Directory.Packages.props`. The two preview-only Aspire packages above carry no stable release; pin them with a one-line inline reason (the version-pinning exception).
+Version all packages in `Directory.Packages.props`. The preview-only packages above (`Aspire.Hosting.Foundry`, `Aspire.Azure.AI.Inference`, `Microsoft.Agents.AI.Foundry`) carry no stable release; pin them with a one-line inline reason (the version-pinning exception).
 
 ---
 
@@ -185,7 +185,7 @@ public sealed class SupportTriageAgentService : ISupportTriageAgent
 
 - **Middleware:** add only after the core run path works and there is a concrete need for logging, redaction, authorization, or safety interception.
 - **Agent-as-tool composition:** add only when one agent owns a distinct bounded capability that should stay isolated from the outer agent.
-- **Foundry Agent Service:** use only when server-side memory, hosted tools, or centralized management are real requirements.
+- **Server-hosted Foundry agents:** use only when server-side memory, hosted tools, or centralized/portal-managed agent definitions are real requirements. See *Foundry Projects and Server-Hosted Agents* below.
 - **Workflows:** use only for branching, resumable, or human-in-the-loop flows. Do not introduce workflows for a single linear task.
 
 If you add one of these escalations, keep the first pass narrow: one middleware policy, one subordinate agent, or one workflow path.
@@ -322,16 +322,21 @@ No-op stubs return empty results or a `Result.Failure("AI service not configured
     "UseSearch": true,
     "UseAgents": false,
     "UseVectorSearch": false,
-    "UseFoundryAgentService": false,
     "FoundryEndpoint": "https://ai-foundry-{resource}.services.ai.azure.com/",
     "AgentModelDeployment": "gpt-4o-deploy",
     "EmbeddingModelDeployment": "embedding-deploy",
     "SearchEndpoint": "https://{search-resource}.search.windows.net",
     "SearchIndexName": "products-index",
-    "FoundryAgentServiceEndpoint": ""
+
+    "FoundryResourceName": "",
+    "FoundryResourceGroup": "",
+    "FoundryProjectEndpoint": "",
+    "FoundryAgentName": ""
   }
 }
 ```
+
+Endpoint keys by axis: `FoundryEndpoint` selects/configures the real Azure path (inference). `FoundryResourceName` + `FoundryResourceGroup` target an **existing** Azure Foundry account (the `RunAsExisting`/`PublishAsExisting` parameters). `FoundryProjectEndpoint` + `FoundryAgentName` drive the **server-hosted/pre-existing agent** client path (`AIProjectClient.AsAIAgent(...)`). All four are empty by default and opt-in.
 
 > **Stub rule:** Generate all AI settings with `// TODO: [CONFIGURE]` comments. Use empty strings for endpoints - never hardcode real URLs.
 
@@ -343,13 +348,23 @@ Only wire AI resources through Aspire if the solution already uses an AppHost. D
 
 Use the Foundry hosting integration (`Aspire.Hosting.Foundry`) so the same model graph runs locally on Foundry Local and provisions Azure on publish. This package and the Inference client (`Aspire.Azure.AI.Inference`) are preview-only - pin them with an inline reason in `Directory.Packages.props` (the version-pinning exception). The deployment resource name (`"chat"` below) is the connection name consumers bind to.
 
-Recommended modes:
+### Two axes: lifecycle x consumption
 
-| Mode | AppHost condition | Result |
-|---|---|---|
-| Foundry Local | app-specific env var, e.g. `MYAPP_ENABLE_FOUNDRY_LOCAL=true`, and no Azure mode selected | Runs local model with `RunAsFoundryLocal()`; no Azure subscription needed. |
-| Real Azure AI Foundry | publish mode, `AiServices:FoundryEndpoint`, or app-specific env var, e.g. `MYAPP_USE_AZURE_FOUNDRY=true` | Provisions or connects to an Azure Foundry deployment. |
-| Disabled | neither local nor Azure mode selected | No `chat` resource is wired; app registers no-op AI services. |
+"Aspire Foundry" is two independent choices. Keeping them apart removes the confusion:
+
+- **Axis 1 - where the Foundry resource comes from** (the `AddFoundry` lifecycle).
+- **Axis 2 - what you consume** (raw model inference vs. a project + server-hosted agents).
+
+**Axis 1 - lifecycle** (`FoundryResource : AzureProvisioningResource`, so the general `Aspire.Hosting.Azure` existing-resource APIs apply):
+
+| Mode | AppHost call | Result | Azure? |
+|---|---|---|---|
+| Foundry Local | `AddFoundry("foundry").RunAsFoundryLocal().AddDeployment("chat", FoundryModel.Local.Qwen2505b)` | Runs the model on-device; inference only. | No |
+| Provision new | `AddFoundry("foundry").AddDeployment("chat", FoundryModel.OpenAI.Gpt4oMini)` | Bicep creates the account + deploys the model on publish (and in run mode when `Azure:SubscriptionId/ResourceGroupPrefix/Location` provisioning secrets are set). | Yes (your sub) |
+| Connect to existing | `AddFoundry("foundry").RunAsExisting(nameParam, rgParam)` (also `PublishAsExisting`, `AsExisting`) then `.AddDeployment("chat", ...)` | Points at an account you already provisioned; provisions nothing. The deployment name must match a model already deployed there. | Yes (existing) |
+| Disabled | (no `AddFoundry`) | No `chat` resource is wired; app registers no-op AI services. | No |
+
+**Axis 2 - consumption:** raw inference (`IChatClient` over a `FoundryDeploymentResource`, below) is the default and works with all three lifecycle modes. Projects + server-hosted agents are an escalation - see *Foundry Projects and Server-Hosted Agents*.
 
 ```csharp
 // AppHost. Publish (or configured real endpoint/override) -> Azure deployment;
@@ -364,6 +379,14 @@ var foundryLocalEnabled =
 if (azureConfigured)
 {
     chat = builder.AddFoundry("foundry").AddDeployment("chat", FoundryModel.OpenAI.Gpt4oMini);
+
+    // Connect to an EXISTING Azure Foundry account instead of provisioning a new one:
+    // the deployment "chat" must already exist in that account. RunAsExisting binds in run
+    // mode; PublishAsExisting binds the published graph. Parameters resolve from config/secrets.
+    // var name = builder.AddParameter("foundry-name");
+    // var rg = builder.AddParameter("foundry-rg");
+    // chat = builder.AddFoundry("foundry").RunAsExisting(name, rg)
+    //     .AddDeployment("chat", FoundryModel.OpenAI.Gpt4oMini);
 }
 else if (foundryLocalEnabled)
 {
@@ -416,6 +439,61 @@ dotnet run --project src/Host/Aspire/AppHost
 ```
 
 If the target Azure environment requires keyless managed-identity inference instead of the generated connection secret, update the host-side `AddAzureChatCompletionsClient("chat")` registration to use the required credential overload. Do that before classifying failures as model or prompt failures.
+
+---
+
+## Foundry Projects and Server-Hosted Agents
+
+The default agent path is **code-hosted**: a `ChatClientAgent` running in your process over the injected `IChatClient` (above). It works with every Axis-1 lifecycle mode and boots offline as a no-op. Escalate to a **server-hosted** Foundry agent only for hosted memory, centralized/portal-managed tool catalogs, or versioned agent definitions managed outside your code. Server-hosted agents are **Azure-only** - they have no Foundry Local path.
+
+A Foundry **project** is the container that deployments, agents, connections, and tools live under. `RunAsFoundryLocal()` does not support projects or server-hosted agents.
+
+### Aspire-modeled project + prompt agent
+
+`Aspire.Hosting.Foundry` models the project and a declarative **prompt agent**. Tools are project-level resources, reusable across agents. The project reference injects `PROJ_URI` (the project endpoint, `https://<acct>.services.ai.azure.com/api/projects/<project>`), `PROJ_CONNECTIONSTRING`, and `PROJ_APPLICATIONINSIGHTSCONNECTIONSTRING`.
+
+> **Prompt agents always deploy to Azure Foundry, even under `aspire run`** - local services talk to the cloud-provisioned agent. There is no offline mode. Keep this behind an explicit opt-in so a default run still boots without Azure.
+
+```csharp
+// AppHost - opt-in, Azure-only.
+var foundry = builder.AddFoundry("foundry");
+var project = foundry.AddProject("proj");
+var chat = project.AddModelDeployment("chat", FoundryModel.OpenAI.Gpt41);
+
+// Tools are project resources (reusable across agents).
+var codeInterp = project.AddCodeInterpreterTool("code-interp");
+var webSearch = project.AddWebSearchTool("web-search");
+// var aiSearch = project.AddAISearchTool("search-tool").WithReference(search);
+
+var agent = project.AddPromptAgent(chat, "assistant-agent",
+        instructions: "You are an assistant for {Project}.")
+    .WithTool(codeInterp)
+    .WithTool(webSearch);
+
+api.WithReference(agent);   // or .WithReference(project) to consume the project endpoint directly
+```
+
+### Pre-existing agents via the client SDK
+
+When agents are created in the Foundry portal or by IaC, do not model them in Aspire. Connect to the existing project endpoint (Axis-1 existing mode, or `builder.AddConnectionString(...)`) and drive the agent with the Microsoft Agent Framework Foundry client. Add `Azure.AI.Projects` + `Microsoft.Agents.AI.Foundry` (prerelease) + `Azure.Identity`.
+
+```csharp
+using Azure.AI.Projects;
+using Azure.Identity;
+using Microsoft.Agents.AI;
+
+var project = new AIProjectClient(new Uri(projectEndpoint), new DefaultAzureCredential());
+
+// Code-first responses agent (no server-side agent resource is created):
+AIAgent responsesAgent = project.AsAIAgent(
+    model: agentModelDeployment, name: "Assistant", instructions: systemPrompt);
+
+// Or bind to a pre-existing versioned agent created in the portal/IaC, by name:
+var record = await project.AgentAdministrationClient.GetAgentAsync(agentName);
+AIAgent foundryAgent = project.AsAIAgent(record);
+```
+
+Both results are standard `AIAgent` instances (sessions, tools, middleware, streaming) - the same surface the code-hosted `ChatClientAgent` exposes, so the application-facing `I{Agent}Agent` contract is unchanged. Use `DefaultAzureCredential` (prefer `ManagedIdentityCredential` in production); the project endpoint comes from `AiServices:FoundryProjectEndpoint` (or the Aspire-injected `PROJ_URI`).
 
 ---
 

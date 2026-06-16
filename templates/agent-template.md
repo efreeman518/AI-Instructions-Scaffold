@@ -1,9 +1,25 @@
 ````markdown
 # Agent Template
 
-Use this only when search alone is not enough and a single model needs to choose among a few bounded application-service tools. Default to one `ChatClientAgent`. Add middleware, agent-to-agent composition, or Foundry Agent Service only after the simple path is proven insufficient.
+Use this only when search alone is not enough and a single model needs to choose among a few bounded application-service tools. Default to one `ChatClientAgent`. Add middleware, agent-to-agent composition, or a server-hosted Foundry agent only after the simple path is proven insufficient.
 
 This template is self-contained. Do not load `service-template.md` just to confirm the application-service contract for `GetAsync(...)`.
+
+## Code-Hosted vs Server-Hosted Agents
+
+- **Code-hosted (`ChatClientAgent`) - default.** The agent runs in your process over the injected `IChatClient`. Works with every Foundry lifecycle mode (Local / provision-new / existing) and boots offline as a no-op. This template builds this shape.
+- **Server-hosted Foundry agent - escalation, Azure-only.** Either modeled in the AppHost (`project.AddPromptAgent(...)`, always deploys to Azure even under `aspire run`) or created in the portal/IaC and consumed by the client SDK. The application-facing `I{Agent}Agent` contract is identical because both produce a `Microsoft.Agents.AI.AIAgent`; only construction differs:
+
+```csharp
+// Server-hosted: connect to a Foundry project and bind to a pre-existing agent by name,
+// or create a code-first responses agent. Endpoint comes from AiServices:FoundryProjectEndpoint
+// (or the Aspire-injected PROJ_URI). Requires Azure.AI.Projects + Microsoft.Agents.AI.Foundry.
+var project = new AIProjectClient(new Uri(projectEndpoint), new DefaultAzureCredential());
+var record = await project.AgentAdministrationClient.GetAgentAsync(agentName);
+AIAgent agent = project.AsAIAgent(record);   // or: project.AsAIAgent(model, name, instructions)
+```
+
+See [../skills/ai-integration.md](../skills/ai-integration.md) -> *Foundry Projects and Server-Hosted Agents*. The rest of this template covers the default code-hosted shape.
 
 ## Default Shape
 
@@ -156,7 +172,7 @@ You are {Agent}, an AI assistant for {Project}.
 
 - Middleware: add only for a concrete cross-cutting need such as auth propagation, redaction, or audit logging.
 - Agent-as-tool composition: add only when another agent owns a distinct bounded capability that should stay isolated.
-- Foundry Agent Service: add only when hosted memory, hosted tools, or centralized operations are real requirements.
+- Server-hosted Foundry agent: switch only when hosted memory, hosted tools, or portal/IaC-managed agent definitions are real requirements (see *Code-Hosted vs Server-Hosted Agents* above).
 
 ## DI Registration
 
