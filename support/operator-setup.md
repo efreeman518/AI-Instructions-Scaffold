@@ -28,6 +28,7 @@ Run once per machine/repo before beginning any scaffolding phase.
 - [ ] Uno.Check installed (`dotnet tool install -g uno.check`) *(if using Uno UI)*
 - [ ] Uno browserwasm workload installed (`dotnet workload install wasm-tools`) *(if using Uno browserwasm)*
 - [ ] Uno Android workload installed (`dotnet workload install android`) and Android SDK/emulator tools available *(if using Uno Android)*
+- [ ] Node.js LTS/npm available (`node --version`, `npm --version`) - Appium's runtime; install before the Appium CLI *(if running Uno Android/iOS Appium UI tests)*
 - [ ] Appium CLI + UiAutomator2 driver installed and `appium driver doctor uiautomator2` passes required checks *(if running Uno Android device/emulator UI tests)*
 - [ ] Uno iOS workload installed (`dotnet workload install ios`) and macOS runner/Mac host identified for simulator/device tests *(if using Uno iOS beyond compile planning)*
 - [ ] Kiota CLI installed (`dotnet tool install -g Microsoft.OpenApi.Kiota`) *(if using Uno UI)*

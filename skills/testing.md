@@ -47,7 +47,7 @@ public class {Entity}WorkflowTests { ... }
 | `balanced` | Minimal + Integration (component) + Architecture + Test.Support |
 | `comprehensive` | Balanced + Aspire mesh + PlaywrightUI + Load + Benchmarks + Mutation |
 
-Rule: start balanced, then add hosted UI and performance suites when slices stabilize. Separate two switches that are easy to conflate (see [Capability-Gated Test Tiers](#capability-gated-test-tiers-the-early-decision-drives-the-rest)): **generation** (does the test project exist?) is driven by the early Phase 2 capability pick + `testingProfile`; **runtime gating** (does a generated tier run, or self-skip?) is default-on for a selected tier, with a local false-only opt-out.
+Rule: start balanced, then add hosted UI and performance suites when slices stabilize. Separate two switches that are easy to conflate (see [Capability-Gated Test Tiers](#capability-gated-test-tiers-the-early-decision-drives-the-rest)): **generation** (does the test project exist?) is driven by the early Phase 2 capability pick + `testingProfile`; **runtime gating** (does a generated tier run, or self-skip?) is default-on for a selected tier with a local false-only opt-out - except `Test.Mobile`, which is opt-IN (default off) because its emulator/Appium/APK preconditions are too heavy for the canonical lane.
 
 The `resource-implementation.yaml` test booleans drive **generation**: `comprehensive` implies `includeAspireTests` + `includePlaywrightUITests` (plus Load/Benchmarks/Mutation) when those flags are omitted. Setting a flag explicitly overrides the profile default. `includeMobileTests` (`Test.Mobile`, Uno native Appium) and the Skia-canvas `WasmUI` bridge tier require `includeUnoUI`; generate them in balanced+ when Uno is in scope. Do not confuse `includeE2ETests` (`Test.E2E`, WebApplicationFactory + Testcontainers SQL) with `includePlaywrightUITests` (`Test.PlaywrightUI`, browser-driven) - they are distinct tiers.
 
@@ -55,19 +55,20 @@ The `resource-implementation.yaml` test booleans drive **generation**: `comprehe
 
 The early Phase 2 capability pick - `scaffoldMode` plus the `include*UI` / `useAspire` host flags ([resource-implementation-schema.md](../ai/resource-implementation-schema.md) Question 2) - determines which tiers exist **at all**. An `api-only` / no-UI scaffold has none of the rows below: no project, no category, no env var, no setup-script branch, no VS Code task. Do not default these on; a tier appears only because a capability was selected early.
 
-| Early Phase 2 pick | Tier (project / category) | Local opt-out var | Stack-script branch + VS Code tasks |
+| Early Phase 2 pick | Tier (project / category) | Local gating var | Stack-script branch + VS Code tasks |
 |---|---|---|---|
 | `api-only` / no UI | none of PlaywrightUI / WasmUI / Mobile | - | - |
 | `includeBlazorUI` / `includeReactUI` (+ comprehensive or `includePlaywrightUITests`) | `Test.PlaywrightUI` / `PlaywrightUI` (DOM) | none (generation-gated) | Playwright install |
-| `includeUnoUI`, Skia renderer (+ comprehensive or `includePlaywrightUITests`) | `Test.PlaywrightUI` / `WasmUI` (canvas bridge) | `{APP}_WASM_TESTS_ENABLED` | Build WASM, Playwright install; tasks: Build WASM, Test: WASM |
-| `includeUnoUI` (+ balanced or `includeMobileTests`) | `Test.Mobile` / `MobileUI` (Appium) | `{APP}_MOBILE_TESTS_ENABLED` | Android SDK + emulator + Appium; tasks: Build Android APK, Test: Mobile |
-| `useAspire: true` (+ comprehensive or `includeAspireTests`) | `Test.Aspire` / `Aspire` (mesh) | `{APP}_RUN_ASPIRE_TESTS` | AppHost start; task: Test: Aspire |
+| `includeUnoUI`, Skia renderer (+ comprehensive or `includePlaywrightUITests`) | `Test.PlaywrightUI` / `WasmUI` (canvas bridge) | `{APP}_WASM_TESTS_ENABLED` (opt-out; default on) | Build WASM, Playwright install; tasks: Build WASM, Test: WASM |
+| `includeUnoUI` (+ balanced or `includeMobileTests`) | `Test.Mobile` / `MobileUI` (Appium) | `{APP}_MOBILE_TESTS_ENABLED` (opt-IN; default off) | Android SDK + emulator + Appium; tasks: Build Android APK, Test: Mobile |
+| `useAspire: true` (+ comprehensive or `includeAspireTests`) | `Test.Aspire` / `Aspire` (mesh) | `{APP}_RUN_ASPIRE_TESTS` (opt-out; default on) | AppHost start; task: Test: Aspire |
 
 This table is the single source of truth. Phase 2 records the selected tiers (Question 9), [../ai/contract-scaffolding.md](../ai/contract-scaffolding.md) generates exactly those projects, and the [local test stack](../templates/local-test-stack-template.md) script / VS Code tasks expose only their branches.
 
 **For a tier the early decision generated:**
 
-- **Runs by default.** It is discoverable in Test Explorer and runs under `--filter "TestCategory!=Load"`. The `{APP}_*_TESTS` var is a **local convenience** to silence it (treat any value other than a case-insensitive `false` as "run") - not an enable flag the developer must know to turn the tier on.
+- **Runs by default (Aspire + WasmUI).** Each is discoverable in Test Explorer and runs under `--filter "TestCategory!=Load"`. Its `{APP}_*_TESTS` var is a **local convenience** to silence it (treat any value other than a case-insensitive `false` as "run") - not an enable flag the developer must know to turn the tier on.
+- **Exception - `Test.Mobile` is opt-IN, default off.** Mobile needs an emulator/device, a running Appium server, and a separately built platform APK - too heavy to run in the canonical lane. Treat `{APP}_MOBILE_TESTS_ENABLED` as an **enable** flag: only a case-insensitive `true` (or `1`/`yes`) activates the tier; unset/false makes each test a no-op skip. Keep `[TestCategory("MobileUI")]` on every test so a lane can also exclude it by filter. This is the one tier that defaults off; Aspire and WasmUI stay default-on per the bullet above.
 - **Self-skips, never red.** Degrade to `Assert.Inconclusive` when the external prerequisite is missing (Docker/AppHost, WASM host/browser, emulator/Appium). The message names the missing prerequisite and the fix (start Docker, run `eng/test/start-local-test-stack.ps1`, or set the opt-out). No vague "skipped".
 - **CI lanes set the opt-out.** Fast lanes that must not pay Docker/emulator cost set `{APP}_RUN_ASPIRE_TESTS=false` (etc.). `--filter "TestCategory!=Load"` stays safe everywhere because absent-infra tiers self-skip.
 - The mesh preflight helper shape is in [../templates/test-templates-aspire.md](../templates/test-templates-aspire.md) (Opt-out + preflight). Mirror it for `WasmUI` and `Test.Mobile`.
@@ -436,7 +437,7 @@ The build/start/health-gate/connection-string mechanics live in [../templates/te
 - [ ] `Test.Integration` (component) references no `AppHost`/`Aspire.Hosting.Testing`; tests instantiate one class vs one standalone Testcontainer and guard on `StartupError` (Inconclusive on failure).
 - [ ] `Test.Aspire` (mesh) starts the graph lazily via `EnsureStartedAsync` (`[ClassInitialize]`); `AspireMeshLifecycle.[AssemblyCleanup]` stops it once, bounded by `.WaitAsync(CleanupTimeout)`.
 - [ ] Mesh tests carry `[TestCategory("Aspire")]` (not `Integration`); startup deadline reads `{APP}_ASPIRE_STARTUP_TIMEOUT_SECONDS`.
-- [ ] Aspire/WasmUI/Mobile tiers are default-on with false-only opt-out and self-mark `Inconclusive` (precise message) when prerequisites are missing.
+- [ ] Aspire/WasmUI tiers are default-on with false-only opt-out; `Test.Mobile` is opt-IN (`{APP}_MOBILE_TESTS_ENABLED=true` activates; default off = no-op skip). All active tiers self-mark `Inconclusive` (precise message) when prerequisites are missing.
 - [ ] `dotnet test --filter "TestCategory!=Load"` is documented as the canonical local "all normal tests" run.
 - [ ] Mesh tests are `[DoNotParallelize]`; no endpoint-contract tests in either integration project.
 - [ ] Every test class has a class-level `<summary>` (scope / tier + why / quirks).
