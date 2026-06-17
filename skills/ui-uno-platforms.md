@@ -216,6 +216,18 @@ $env:{APP}_ANDROID_APP_PATH = "src/UI/{Project}.Uno/bin/Debug/$(LatestStableTfm)
 dotnet test src/Test/Test.Mobile/Test.Mobile.csproj --filter TestCategory=MobileUI
 ```
 
+### Appium Selector Rules (Uno on Android)
+
+Uno renders to a Skia canvas, not native widgets, so the accessibility tree Appium sees is narrow and specific. These rules are load-bearing - guessing wastes whole emulator runs:
+
+- **Target by `AutomationProperties.Name`, not `AutomationProperties.AutomationId`.** On Android, Name surfaces as the node `content-desc`; AutomationId does **not** surface as `resource-id`. A selector keyed on AutomationId finds nothing. Add `AutomationProperties.Name` to every control a test drives (text boxes, buttons, list rows). Bind a row's Name to its title (`AutomationProperties.Name="{Binding Title}"`) so rows are addressable. Keep AutomationId too - it is what the WASM Playwright layer keys on, so one annotation pass serves both.
+- **Element text and entered values also land in `content-desc`.** Match list items, headings, and typed-in values by `content-desc` (or `text`). A single XPath `//*[@content-desc=$v or @text=$v]` is the reliable primitive.
+- **`ComboBox` renders as `android.widget.Spinner`; its dropdown options are not reliably exposed to uiautomator2.** Treat priority/status/category selection as **best-effort** (try, short timeout, dismiss-and-continue on miss) - never a hard assertion that can fail the whole lifecycle. Assert CRUD on title, description, checklist, comment, and list presence instead.
+- **Scroll off-screen controls into view.** Form sections below the fold (checklist, comments) are absent from the tree until scrolled. Use `UiScrollable(new UiSelector().scrollable(true).instance(0)).scrollIntoView(new UiSelector().descriptionContains("<Name>"))` as a fallback before timing out.
+- **Diagnose with Appium `PageSource`, not `adb shell uiautomator dump`.** The adb dump fails with `ERROR: could not get idle state` because the Skia canvas never reports idle; Appium's uiautomator2 disables idle waits and returns a usable tree. Save the page source on failure and read it to confirm how a control surfaces before adjusting selectors.
+- **Text entry works via `SendKeys`** (Uno text boxes surface as `EditText`). Start Appium with `--relaxed-security` so a `mobile: shell` -> `input text` fallback is available for the rare field that rejects `SendKeys`.
+- **Backend reachability + boot stability.** The app reaches a local backend at `http://10.0.2.2:{gatewayHttpPort}` (the Android gateway base URL), not `localhost`. A freshly booted software-GPU emulator often throws a transient "System UI isn't responding" ANR - dismiss it and disable the three animation scales before driving the app.
+
 ---
 
 ## Generated Code Intervention Rule
