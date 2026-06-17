@@ -208,6 +208,14 @@ After Phase 4 creates projects, re-run `dotnet restore` to confirm all `<package
 | _e.g., Azure MCP_ | _5d, 5e_ | _IaC validation, resource checks_ | _[ ]_ |
 | _e.g., Playwright MCP_ | _5d_ | _Hosted browser test debugging_ | _[ ]_ |
 
+### Model Tier
+
+Optional. Default is high-capability for every phase (see [../README.md](../README.md) section Model Tier by Phase). Record a deliberate per-phase choice here only when this project warrants one; any downgrade must name the build/test gate that protects the affected work. Tiers are named by characteristic, never by model id (**GR-08**).
+
+| Phase | Tier | Note |
+|---|---|---|
+| _e.g., 5d_ | _fast_ | _mechanical CI/doc generation only; gated on green `dotnet test`_ |
+
 ### Online Resources
 
 For libraries/services with no CLI or MCP server, record documentation and repo URLs the AI can fetch during implementation.

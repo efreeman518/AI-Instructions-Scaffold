@@ -299,6 +299,34 @@ Phase 3 analyzes `.scaffold/resource-implementation.yaml` technology choices and
 
 **CLI -> MCP -> online resources:** Prefer CLI tools first (lowest token cost), then MCP servers for interactive exploration, then documentation URLs and GitHub repos the AI can fetch during implementation.
 
+## Model Tier by Phase
+
+> **Quality first - the scaffold is built once and read for the project's life.** The default tier is **high-capability for every phase**. A cheaper tier is an opt-in cost lever only where the work is mechanical and fully build/test-verified; it is never a recommendation, and never appropriate on reasoning-heavy phases. When uncertain, stay higher. Model tier is operator- and harness-controlled (the operator selects it at session start, since the workflow is one phase per session); if your harness cannot select a model, ignore this section and continue. Per **GR-08** this guidance names capability tiers by characteristic only - never a model id or version, which would go stale on every release.
+
+### Tiers
+
+| Tier | Use for | Characteristics |
+|---|---|---|
+| Reasoning | Domain modeling, ambiguity resolution, design, integration nuance | Deepest multi-step reasoning; highest cost; slowest |
+| Balanced | Well-specified implementation against a fixed design | Solid coding capability; moderate cost |
+| Fast | Deterministic, mechanical, fully build/test-verifiable work | Lowest cost; fastest; weakest reasoning |
+
+### Recommended tier by phase
+
+| Phase | Recommended tier | Cost-lever note |
+|---|---|---|
+| 1 - Domain discovery (interview) | Reasoning | Never downgrade - ambiguity and dependency-ordered decisions set everything downstream |
+| 2 - Resource definition | Reasoning | Technology and dependency-mode choices |
+| 3 - Implementation planning | Reasoning | Sequencing and open-question resolution |
+| 4 - Contract scaffolding | Reasoning | Errors here cascade into all of Phase 5; fast tier only to re-generate boilerplate after the design is fixed, gated on a green build |
+| 5a/5b - Foundation + app core (TDD) | Reasoning / Balanced | Keep high for domain logic and test design |
+| 5c - Optional hosts | Balanced | |
+| 5d - Quality + delivery | Balanced | Fast tier for mechanical config/doc generation only under green tests |
+| 5e - Integration (auth + AI) | Reasoning | Auth and AI wiring carry the most subtle failure modes |
+| Cross-cutting: rollback structural decisions, mixed-store consistency design ([support/OPERATIONS.md](support/OPERATIONS.md)) | Reasoning | Structural calls are expensive to get wrong |
+
+When in doubt, stay on the higher tier - the token saving is one-time, the output is permanent.
+
 ## Where Things Live
 
 A short map of the repo so you know which directory owns what kind of content. Useful when deciding where to put a new instruction or fix.

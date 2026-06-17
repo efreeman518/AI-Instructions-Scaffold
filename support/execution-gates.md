@@ -42,6 +42,19 @@ Gate passes when build and the scoped test command succeed (plus any sub-phase-s
 
 ---
 
+## Verification Evidence Rule
+
+A gate is only as trustworthy as the evidence behind it. Apply on every phase and sub-phase:
+
+- A gate's `Result`, a `testStatus` value, a `hostGates` value, or a `Completed` entry stays blank (or `not-started`) until the command has actually run in this session.
+- Paste observed output - passing/ignored/inconclusive counts, exit code, the resource-Running line - never the output you expect. If you did not run it, it is not green.
+- `dotnet test` is not green on a non-zero exit code or any aborted assembly, regardless of individual test results.
+- If a command was skipped (out of scope, blocked, deferred), say so explicitly with the reason - do not leave a reader to infer it passed.
+
+This guards the most common handoff defect: a `HANDOFF.md` that reports success the session never demonstrated.
+
+---
+
 ## Phase Gates
 
 ## 4 - Contract Scaffolding
