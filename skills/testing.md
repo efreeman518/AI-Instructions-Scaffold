@@ -406,6 +406,8 @@ For React/Vite, use the same pattern around `AddViteApp(...)` and pass the Gatew
 
 The build/start/health-gate/connection-string mechanics live in [../templates/test-templates-aspire.md](../templates/test-templates-aspire.md) section AspireTestHost. The lazy `EnsureStartedAsync` above runs them on first use, and `[AssemblyCleanup]` lives in `AspireMeshLifecycle`. Key rules preserved here: pass `Parameters:*` via `configureBuilder` host configuration (never env vars), set `DisableDashboard = true` explicitly, give every async Aspire call its own `.WaitAsync(timeout, ct)`, and bound `[AssemblyCleanup]` with `CleanupTimeout`, catching `TimeoutException`.
 
+**Resource logging off by default.** Set `appOptions.EnableResourceLogging = false` for test hosts - the logs flood the TRX and bury real failures. Read resource *state* from `AspireApp.ResourceNotifications` in failure diagnostics (always available), and expose raw logs only through an internal diagnostic override (`{APP}_ASPIRE_RESOURCE_LOGGING=true`) that belongs in troubleshooting docs, not the normal test opt-in surface. This is a diagnostic switch, not a test-selection flag - keep it out of the capability-gated tier table. Full pattern: [../templates/test-templates-aspire.md](../templates/test-templates-aspire.md) section *Resource logging off by default*.
+
 ---
 
 ## Template Map

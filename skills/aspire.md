@@ -132,6 +132,30 @@ Only include `AddViteApp(...)` when `includeReactUI: true`. If Gateway is disabl
 
 ---
 
+## Gateway Reverse-Proxy Destinations Under Aspire (DCP)
+
+When `includeGateway: true`, the Gateway's YARP cluster destinations must be supplied by the AppHost as resolved endpoints - **not** read from the Gateway's own `appsettings.json`/`launchSettings.json`.
+
+DCP (the Aspire orchestrator) starts every child resource with `--no-launch-profile`, so the Gateway's launch profile and any fixed-port destination addresses baked into its config are not applied. A destination pointing at `http://localhost:<fixed-port>` will not reach the API resource, which DCP binds to a dynamic port. The route resolves to nothing and browser/Gateway calls 502/404 in a way that looks like a routing bug but is a wiring gap.
+
+Inject the destination from AppHost using the resolved endpoint and double-underscore config keys:
+
+```csharp
+var gateway = builder.AddProject<Projects.{Gateway}_Gateway>("{gateway}")
+    .WithReference(api)
+    .WithEnvironment("ReverseProxy__Routes__api-route__Match__Path", "/api/{**catch-all}")
+    .WithEnvironment("ReverseProxy__Clusters__api-cluster__Destinations__api__Address", api.GetEndpoint("http"))
+    .WaitFor(api);
+```
+
+- `api.GetEndpoint("http")` resolves to the address DCP actually assigned - the only value that works under both `dotnet run` and `Test.Aspire`.
+- The env keys mirror the `ReverseProxy:Routes:*` / `ReverseProxy:Clusters:*` structure the Gateway binds; `__` maps to the config `:` separator.
+- Keep the Gateway's static `appsettings.json` route/cluster shape for standalone (non-Aspire) runs, but never rely on its destination *addresses* under Aspire - the AppHost override wins and must be present.
+
+This is why the Gateway belongs in the default test graph: the AppHost is the only component that knows the resolved API endpoint, so a Gateway smoke test that bypasses the AppHost cannot route correctly.
+
+---
+
 ## Publish-Mode Branch (deployTarget: ContainerApps)
 
 Key the deployable graph on `builder.ExecutionContext.IsPublishMode` so the SAME model runs locally (run mode) and provisions Azure resources on publish. Swap the local-only resource types for the unified `AddAzure*` types and guard every emulator/run-only affordance behind the execution context.
@@ -271,6 +295,15 @@ public static IHostApplicationBuilder AddServiceDefaults(
     return builder;
 }
 ```
+
+`MapDefaultEndpoints` maps two probes with distinct semantics - keep both:
+
+```csharp
+app.MapHealthChecks("/healthz", new HealthCheckOptions { Predicate = _ => true }).AllowAnonymous();        // liveness: all checks
+app.MapHealthChecks("/readyz",  new HealthCheckOptions { Predicate = r => r.Tags.Contains("ready") }).AllowAnonymous(); // readiness: only "ready"-tagged
+```
+
+`/healthz` (liveness) reports every registered check; `/readyz` (readiness) reports only checks tagged `ready` (e.g. DB reachable, migrations applied). Gate "is this host ready to serve?" on `/readyz`, not `/healthz` - a host can be live before its dependencies are ready. Tests and orchestration gate on `WaitForResourceHealthyAsync` + `/readyz`, never on a resource merely reaching `Running`.
 
 **Non-negotiable:** do NOT add `http.AddHeaderPropagation()` here unless a host also registers the
 `UseHeaderPropagation` middleware AND configures which headers to propagate. The handler alone (no

@@ -77,7 +77,7 @@ Playwright requires a real hosted stack. It cannot run on `WebApplicationFactory
 
 ### Baseline Rules
 
-- Use Page Object Model.
+- Use Page Object Model. **Language split:** author page objects in **C# only for stable, strongly-typed smoke paths that benefit from typed orchestration** - the Gateway/Blazor happy path is the canonical case. Keep React and Uno page/test helpers in **TypeScript** unless a concrete maintenance reason (e.g. an MSTest runner that must own the flow) justifies a C# wrapper. Do not port a working TypeScript suite to C# for uniformity's sake; the renderer-specific helpers (canvas bridge, coordinate-click) live more naturally in TS.
 - Prefer stable selectors (`data-testid`).
 - Isolate test data with unique names/ids.
 - Assert structural UI strings, not data-dependent counts.
@@ -126,6 +126,16 @@ React/Vite SPAs should use the normal Playwright page fixture unless the app has
 - Child collection assertions in the same CRUD flow when create/edit screens support comments, checklist items, tags, attachments, or similar children.
 
 If using Node Playwright and a shell wrapper mangles `npx`, invoke the local CLI directly with `node node_modules/@playwright/test/cli.js`.
+
+### C# Host Wrapping a TypeScript Playwright Suite
+
+When `Test.PlaywrightUI` is a C# MSTest project that drives an existing TypeScript Playwright suite (so Aspire can select runnable hosts in C#, then hand off browser execution to TS), the child-process runner must be disciplined or failures vanish into test-host timeout noise:
+
+- **Invoke `node` against the local CLI, not `npx`.** Resolve `node_modules/@playwright/test/cli.js` relative to the project directory and start `node.exe`/`node` with it via `ProcessStartInfo.ArgumentList`. `npx` can resolve through a broken local npm shim and silently run the wrong binary; a missing `node` on PATH should surface as a clear `Node.js is not available on PATH` error, not a generic Win32 failure.
+- **Capture stdout and stderr even on cancellation.** Start the async reads (`ReadToEndAsync`) before awaiting exit, and return both streams in the result on the cancellation path too - a Playwright failure that arrives as the test host cancels must still reach the TRX, not disappear.
+- **Kill the entire process tree.** On `OperationCanceledException`, call `process.Kill(entireProcessTree: true)` (swallow `InvalidOperationException` if it already exited), then `await WaitForExitAsync(CancellationToken.None)` so orphaned browser/node children do not leak and hold locks.
+- **Gate on the CLI being installed.** Expose an `IsInstalled` check (`File.Exists(cliPath)`) and mark the test `Assert.Inconclusive` with the install step when the suite has not been provisioned, never red.
+- **Register the C# wrapper in the `.slnx`.** A `Test.PlaywrightUI` project with a .NET wrapper must be in the solution file or `dotnet test` over the solution silently skips it - the suite passes by being invisible. The TypeScript-only projects (React/Uno) are still run by their own Playwright config; only the .NET wrapper needs `.slnx` registration.
 
 ### Uno WASM: DOM/Click Strategy (managed-DOM renderer)
 

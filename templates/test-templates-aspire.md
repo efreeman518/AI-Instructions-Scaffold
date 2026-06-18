@@ -67,6 +67,13 @@ internal static class AspireTestHost
     /// <summary>Cleanup deadline. StopAsync should return promptly; the bound prevents a stuck shutdown.</summary>
     private static readonly TimeSpan CleanupTimeout = TimeSpan.FromMinutes(1);
 
+    /// <summary>
+    /// Internal diagnostic switch (NOT a test-selection opt-in). Resource logging is off by default to keep
+    /// TRX output readable; set <c>{APP}_ASPIRE_RESOURCE_LOGGING=true</c> only while diagnosing a startup or
+    /// routing failure. Document it under troubleshooting, never in the normal test opt-in surface.
+    /// </summary>
+    internal const string ResourceLoggingEnvironmentVariable = "{APP}_ASPIRE_RESOURCE_LOGGING";
+
     /// <summary>Guards the lazy single-start so concurrent <c>[ClassInitialize]</c> calls boot the graph once.</summary>
     private static readonly SemaphoreSlim Gate = new(1, 1);
 
@@ -75,6 +82,9 @@ internal static class AspireTestHost
 
     /// <summary>Shared Aspire app started once for all mesh tests.</summary>
     internal static DistributedApplication? AspireApp { get; private set; }
+
+    /// <summary>True when the resource-logging diagnostic override was set for this run. Default false.</summary>
+    internal static bool ResourceLoggingEnabled { get; private set; }
 
     /// <summary>
     /// Starts the Aspire graph on first call and returns immediately afterwards. Mesh test classes call this
@@ -107,6 +117,8 @@ internal static class AspireTestHost
         if (EnsureFuncToolAvailable())
             _environment.Set("{APP}_INCLUDE_FUNCTIONS", "true");
 
+        ResourceLoggingEnabled = IsEnabled(ResourceLoggingEnvironmentVariable);
+
         var appHostProgramType = Type.GetType("Program, AppHost", throwOnError: true)!;
 
         var builder = await DistributedApplicationTestingBuilder.CreateAsync(
@@ -115,7 +127,9 @@ internal static class AspireTestHost
             configureBuilder: (appOptions, hostSettings) =>
             {
                 appOptions.DisableDashboard = true; // explicit > implicit default
-                appOptions.EnableResourceLogging = true;
+                // Quiet by default - resource logs flood the TRX and make failures unreadable. The
+                // diagnostic override re-enables them; state comes from ResourceNotifications, not logs.
+                appOptions.EnableResourceLogging = ResourceLoggingEnabled;
 
                 // Pass parameters through IConfiguration, NOT env-var mutation, so test isolation stays clean.
                 hostSettings.Configuration ??= new();
@@ -172,6 +186,10 @@ internal static class AspireTestHost
 
     /// <summary>Checks if Azure Functions Core Tools (func.exe) is available on PATH.</summary>
     internal static bool EnsureFuncToolAvailable() => FunctionsCoreToolsDiscovery.EnsureFuncToolAvailable();
+
+    /// <summary>True only when the named env var is a case-insensitive "true". Used for diagnostic overrides.</summary>
+    private static bool IsEnabled(string variableName) =>
+        string.Equals(Environment.GetEnvironmentVariable(variableName), "true", StringComparison.OrdinalIgnoreCase);
 }
 ```
 
@@ -215,6 +233,55 @@ public class AspireMeshLifecycle
 8. **Configurable startup timeout** - `DefaultTimeout` reads `{APP}_ASPIRE_STARTUP_TIMEOUT_SECONDS` (default 600 s) so cold containers (first image pull, post-prune) do not time out at a hardcoded 5 min.
 9. **Default-on, false-only opt-out** - the mesh tier is discoverable and runs by default so Test Explorer surfaces it. Honour `{APP}_RUN_ASPIRE_TESTS=false` and a missing-Docker/AppHost preflight by marking dependent tests `Assert.Inconclusive` with a precise message - never red. Fast CI lanes set the opt-out; they do not rely on an enable flag.
 10. **Test containers are ephemeral; the SDK owns teardown.** The AppHost gates `ContainerLifetime.Persistent` + `WithDataVolume` on `!IsAspireTesting()` (see [../skills/aspire.md](../skills/aspire.md), Rules), so the graph this fixture boots uses **ephemeral** containers. `AspireApp.StopAsync()`/`DisposeAsync()` in `AspireTestHost.StopAsync` removes **exactly** the containers this run started. **Never** add a `docker rm` sweep filtered by image, name prefix, or the generic `com.microsoft.dotnet.aspire.container.name` label - that deletes other projects' and sessions' containers, including intentional persistent stacks. The mesh tier needs no Docker cleanup beyond `DisposeAsync`.
+
+### Resource logging off by default
+
+State comes from notifications; raw logs only via the diagnostic override.
+
+Aspire resource logging floods the TRX and makes a real failure impossible to find. Keep it **off by default** and read resource *state* from `ResourceNotifications`, which is always available regardless of the logging switch. Surface the raw logs only through the internal diagnostic override.
+
+- **`DumpResourceState`** uses `AspireApp.ResourceNotifications.TryGetCurrentState(name, out var e)` and prints `State`, `HealthStatus`, `ExitCode`, and start/stop timestamps. This is the primary failure diagnostic - it works with logging off.
+- **`DumpResourceLogsAsync`** must be **guarded**: resolve `ResourceLoggerService` via `AspireApp.Services.GetService<ResourceLoggerService>()` (note `GetService`, not `GetRequiredService`). When it is `null` (logging disabled), print a one-line hint naming the override var and return - never throw. Wrap the `GetAllAsync` enumeration in a `try/catch (InvalidOperationException)` so missing/closed log streams degrade to a message, not a test failure.
+
+```csharp
+private static void DumpResourceState(string resourceName)
+{
+    if (AspireApp is null) return;
+    if (!AspireApp.ResourceNotifications.TryGetCurrentState(resourceName, out var resourceEvent))
+    {
+        Console.WriteLine($"{resourceName} state: not found");
+        return;
+    }
+    var s = resourceEvent.Snapshot;
+    Console.WriteLine($"{resourceName} state: {s.State}; health: {s.HealthStatus}; exit: {s.ExitCode}; started: {s.StartTimeStamp:O}; stopped: {s.StopTimeStamp:O}");
+}
+
+private static async Task DumpResourceLogsAsync(string resourceName, CancellationToken ct)
+{
+    if (AspireApp is null) return;
+
+    var logs = AspireApp.Services.GetService<ResourceLoggerService>();
+    if (logs is null)
+    {
+        // Logging disabled (the default) - state already came from DumpResourceState above.
+        Console.WriteLine($"{resourceName}: resource logging disabled; set {ResourceLoggingEnvironmentVariable}=true to capture Aspire resource logs.");
+        return;
+    }
+
+    try
+    {
+        await foreach (var batch in logs.GetAllAsync(resourceName).WithCancellation(ct))
+            foreach (var line in batch)
+                Console.WriteLine($"{resourceName}: {line}");
+    }
+    catch (InvalidOperationException ex)
+    {
+        Console.WriteLine($"{resourceName}: resource logs unavailable: {ex.Message}");
+    }
+}
+```
+
+Call both from a test's failure path before rethrowing (`DumpResourceState(name); await DumpResourceLogsAsync(name, ct); throw;`). `ResourceLoggerService` lives in `Aspire.Hosting.ApplicationModel`.
 
 ### Cleanup: ephemeral-by-default, per-run label only as a fallback
 
@@ -444,10 +511,12 @@ Aspire's emulators (Service Bus, Azurite) are best-effort under `DistributedAppl
     <ProjectReference Include="..\..\Host\{Host}.Api\{Host}.Api.csproj" />
     <ProjectReference Include="..\..\Application\{Project}.Application.Models\{Project}.Application.Models.csproj" />
     <ProjectReference Include="..\..\Infrastructure\{Project}.Infrastructure.Storage\{Project}.Infrastructure.Storage.csproj" />
-    <ProjectReference Include="..\..\Host\Aspire\AppHost\AppHost.csproj" />
+    <ProjectReference Include="..\..\Host\Aspire\AppHost\AppHost.csproj" AdditionalProperties="SkipUnoWasmBuild=true" />
   </ItemGroup>
 </Project>
 ```
+
+> **`SkipUnoWasmBuild=true` on the AppHost reference.** When the AppHost registers a Uno WASM wrapper host (`{Project}.Uno.WasmHost`), referencing AppHost transitively drags in the Uno WASM build - minutes of `wasm-tools` work that a mesh test never needs. Pass `AdditionalProperties="SkipUnoWasmBuild=true"` on **every** test project that references AppHost (`Test.Aspire`, the C# `Test.PlaywrightUI` host) so they compile fast without forcing the browser-asset build. Omit it only when the scaffold has no Uno UI. The full-solution build still produces the WASM assets - this flag scopes out the cost for AppHost-referencing *test* projects, not the solution.
 
 ---
 
@@ -465,6 +534,7 @@ Aspire's emulators (Service Bus, Azurite) are best-effort under `DistributedAppl
 - [ ] Mesh classes preflight via `MeshPreflight.SkipReason()` -> `Assert.Inconclusive` on `{APP}_RUN_ASPIRE_TESTS=false` or missing Docker (never red).
 - [ ] Test-booted containers are **ephemeral** (AppHost gates persistent lifetime + data volume on `!IsAspireTesting()`); cleanup is `DisposeAsync` only - no `docker rm` sweep by image, name prefix, or the generic `com.microsoft.dotnet.aspire.container.name` label.
 - [ ] Running `Test.Aspire` boots the graph **once**; running `Test.Integration` boots **no** graph.
+- [ ] `EnableResourceLogging` defaults to **false**; the `{APP}_ASPIRE_RESOURCE_LOGGING=true` override re-enables it. Failure diagnostics read `ResourceNotifications` state; `DumpResourceLogsAsync` resolves `ResourceLoggerService` with `GetService` and no-ops (never throws) when logging is off.
 
 ---
 

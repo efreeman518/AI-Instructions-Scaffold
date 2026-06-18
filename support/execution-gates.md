@@ -158,7 +158,7 @@ Gate:
 - [ ] `dotnet run --project src/Host/Aspire/AppHost` starts resources
 - [ ] Dashboard reachable (URL from console output - do not reuse prior session URLs)
 - [ ] **All registered resources reach Running with no `Error`/`Critical` log entries from project-owned categories**
-- [ ] Health probes return 200: `/healthz` on every API/host project once that host declares itself ready (Aspire-registered UIs that don't expose health probes count as healthy when their root URL renders without exception)
+- [ ] Health probes return 200: `/healthz` (liveness - all checks) and `/readyz` (readiness - only checks tagged `ready`) on every API/host project once that host declares itself ready (Aspire-registered UIs that don't expose health probes count as healthy when their root URL renders without exception). Gate readiness on `/readyz` plus Aspire `WaitForResourceHealthyAsync`, not on a resource merely reaching `Running` - `Running` precedes the host accepting requests.
 - [ ] Data-plane spot check: at least one backing store (SQL tables exist, Redis reachable, seed rows present) verified directly - not just via dashboard liveness
 - [ ] **Stub-mode external dependencies (`emulator`, `lazy-optional`, `no-op stub`, `deployment-only`) respond without throwing** - live cloud credentials are not required for this gate
 

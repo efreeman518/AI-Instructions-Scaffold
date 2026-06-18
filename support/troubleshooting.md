@@ -226,6 +226,7 @@ For phase gates and validation commands, see [execution-gates.md](execution-gate
 | `CS1929` ReturnsAsync type mismatch on search mock | Query repo interface returns `PagedResponse<EntityDto>` but test uses `PagedResponse<Entity>` | Change mock to use DTO type - repos project to DTOs via `QueryPageProjectionAsync` |
 | Manual Skip/Take/Count in query repo | Not using `QueryPageProjectionAsync` from RepositoryBase | Replace with `QueryPageProjectionAsync` + mapper projector + `BuildFilter`/`BuildOrderBy` methods |
 | Schema changes not reflected in TestContainer | Previous schema persists | `EnsureDeletedAsync()` before `EnsureCreatedAsync()` |
+| Aspire mesh failure buried in unreadable TRX | Resource logging floods test output | It is off by default. Read state from `ResourceNotifications` (`DumpResourceState`); re-enable raw logs only for this run with the diagnostic override `{APP}_ASPIRE_RESOURCE_LOGGING=true`. See [test-templates-aspire.md](../templates/test-templates-aspire.md) -> *Resource logging off by default*. |
 | ProblemDetails stack traces leak in CI | Debug diagnostics enabled in all builds | Wrap diagnostic customization in `#if DEBUG` |
 | StructureValidator not found | Missing static validator namespace import | Add `using {Namespace}.Application.Services.Validation;` |
 | WASM build `DirectoryNotFoundException` (`unoresizetizer`) | Resizetizer manifest-path issue | See fix snippet in `skills/ui-uno-platforms.md` -> *UnoSplashScreen WASM Build Failure* |
