@@ -172,7 +172,8 @@ if (-not $SkipMobile) {
 
         Step 'Ensuring Appium server (127.0.0.1:4723)'
         try { $null = Invoke-WebRequest 'http://127.0.0.1:4723/status' -TimeoutSec 3 }
-        catch { Start-Process pwsh -ArgumentList '-NoProfile','-Command','appium --address 127.0.0.1 --port 4723' | Out-Null }
+        # Appium 3: --relaxed-security is gone; scope the adb_shell feature uiautomator2 needs.
+        catch { Start-Process pwsh -ArgumentList '-NoProfile','-Command','appium --address 127.0.0.1 --port 4723 --allow-insecure=uiautomator2:adb_shell' | Out-Null }
 
         Step 'Ensuring an online emulator'
         if (-not ((adb devices) -match 'device$')) {

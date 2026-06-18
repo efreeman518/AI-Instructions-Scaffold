@@ -204,10 +204,35 @@ dotnet build src/UI/{Project}.Uno/{Project}.Uno.csproj -p:TargetFrameworkOverrid
 npm install -g appium
 appium driver install uiautomator2
 appium driver doctor uiautomator2
-appium
+
+# Appium 3: --relaxed-security is replaced by a scoped --allow-insecure list.
+# This harness needs the uiautomator2 adb_shell feature for `mobile: shell` fallbacks
+# (input text, statusbar collapse). Use the exact form:
+appium --address 127.0.0.1 --port 4723 --allow-insecure=uiautomator2:adb_shell
 ```
 
-`Test.Mobile` exists only when `includeUnoUI` was selected in Phase 2 (see [Capability-Gated Test Tiers](testing.md#capability-gated-test-tiers-the-early-decision-drives-the-rest)). The mobile tier is **opt-in** - an emulator/device, a running Appium server, and a separately built APK are heavy preconditions, so it must NOT run in the canonical `dotnet test` lane. Gate it on `{APP}_MOBILE_TESTS_ENABLED`: default (unset/false) makes each test a no-op skip; only `=true` activates the tier. When the flag IS set but no emulator/device is online or Appium is not listening, self-mark `Assert.Inconclusive` - never red - with a message that names the missing prerequisite and the fix (run `eng/test/start-local-test-stack.ps1`). Keep `[TestCategory("MobileUI")]` on every test so the run lane can also exclude the tier by filter (`--filter TestCategory!=MobileUI`).
+**Visible vs headless emulator.** An agent often boots the emulator with `-no-window` (headless) to save resources; a human watching expects a visible window. State which you are launching, because they fail differently: headless still drives via Appium but produces no on-screen view, and some software-GPU crashes only reproduce in one mode. For an interactive/human run launch a visible emulator (no `-no-window`); for unattended/agent runs `-no-window` is fine - just record it in the run notes so a blank screen is not mistaken for a hung app.
+
+**Readiness checks before running any test - all three must pass.** The harness connects to an already-running device/server (it does not start the AVD or Appium for you), so gate on these and degrade to `Assert.Inconclusive` if any fails:
+
+```powershell
+adb devices -l                                              # device present and not "offline"
+adb -s emulator-5554 shell getprop sys.boot_completed       # must print 1
+curl http://127.0.0.1:4723/status                           # Appium server reachable
+```
+
+`Test.Mobile` exists only when `includeUnoUI` was selected in Phase 2 (see [Capability-Gated Test Tiers](testing.md#capability-gated-test-tiers-the-early-decision-drives-the-rest)). The mobile tier is **opt-in** - an emulator/device, a running Appium server, and a separately built APK are heavy preconditions, so it must NOT run in the canonical `dotnet test` lane. Gate it on `{APP}_MOBILE_TESTS_ENABLED`: default (unset/false) makes each test self-mark `Assert.Inconclusive` (the tier is opt-in) - **never a silent pass**; only `=true` activates the tier. When the flag IS set but no emulator/device is online or Appium is not listening, also self-mark `Assert.Inconclusive` - never red - with a message that names the missing prerequisite and the fix (run `eng/test/start-local-test-stack.ps1`). MSTest writes `Inconclusive` to TRX as `outcome="NotExecuted"`, so the healthy default-off run is **0 passed with an Inconclusive message per test** - expected, not a failure. Keep `[TestCategory("MobileUI")]` on every test so the run lane can also exclude the tier by filter (`--filter TestCategory!=MobileUI`).
+
+Run the tier in **two lanes**, generated and documented separately:
+
+- **Launch smoke** - launch, shell render, first navigation, one create/edit via UI (mocked backend, `-p:UseMocks=true`). This is the lane that can be expected to pass on a constrained or cloud machine. Make it the default mobile lane.
+- **Full CRUD / UI flows** - multi-step lifecycle, scroll-dependent sections, dropdowns. Skia-on-Android through UiAutomator2 is slow and flaky enough that this lane is **not reliable for normal CI / cloud-PC gating**; treat it as a manual or stronger-hardware lane and do not block PRs on it. Its flows pass on healthy hardware and legitimately come back Inconclusive elsewhere (per the selector rules below).
+
+**Make env paths robust - the test process working directory is not the repo root.** Resolve `{APP}_ANDROID_APP_PATH` and any path env var by accepting both an absolute path and a repo-root-relative path like `src/UI/{Project}.Uno/...`: probe the path as-given, then re-probe against the resolved repo root (walk up for the `.slnx`/`.git` marker). Do not assume `Directory.GetCurrentDirectory()` is the repo root.
+
+**On a constrained machine, run mobile tests one at a time first** (`--filter "FullyQualifiedName~<OneTest>"`) before running the whole `MobileUI` category. A single category-wide timeout cannot distinguish failed vs Inconclusive vs stuck; per-test runs make the failure mode legible.
+
+**Preserve diagnostics by default, not only on a debug switch.** On every mobile run write the screenshot, Appium `PageSource`, and the Appium server log to a test-output artifacts folder. These artifacts are what separates "this Cloud PC cannot handle it" from "selector/scroll/Appium-config problem" - without them the two are indistinguishable.
 
 ```powershell
 $env:{APP}_MOBILE_TESTS_ENABLED = "true"    # opt IN; default (unset) skips the tier

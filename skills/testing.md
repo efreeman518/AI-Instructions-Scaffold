@@ -4,6 +4,16 @@ Default test scaffolding skill for Phase 5a, 5b, and integration hosts. For Phas
 
 Reference patterns: [../patterns/expected-output-index.md](../patterns/expected-output-index.md) (Testing).
 
+## Never Silently Pass (applies to every tier)
+
+A test that did not actually exercise its target must **never report green.** Whenever a test cannot run for any reason - a missing dependency (Docker, emulator, Appium, browser, a CLI not installed), an unset opt-in flag, an unresolved base URL, an environment the host cannot support, or a fixture/infra startup that failed - it must self-mark `Assert.Inconclusive` with a message naming the missing prerequisite and the fix. Never:
+
+- return early and let the test pass without an assertion,
+- `[Ignore]` or no-op it so it counts as passed,
+- swallow a startup exception and continue green.
+
+`Inconclusive` is the only correct outcome for "could not run"; a genuine `Assert.*` failure stays red. MSTest serializes `Inconclusive` to TRX as `outcome="NotExecuted"`, so a healthy "couldn't run here" result is **0 passed / N not-executed, each carrying a message** - that is expected, not a failure to chase. Record any standing deferral in `HANDOFF.md` (section Deferred External Dependencies) so a not-executed count never hides invisible debt.
+
 ## TDD Protocol
 
 Phases 5a and 5b use test-first TDD: red -> green -> refactor. See [../ai/tdd-protocol.md](../ai/tdd-protocol.md).
@@ -68,8 +78,8 @@ This table is the single source of truth. Phase 2 records the selected tiers (Qu
 **For a tier the early decision generated:**
 
 - **Runs by default (Aspire + WasmUI).** Each is discoverable in Test Explorer and runs under `--filter "TestCategory!=Load"`. Its `{APP}_*_TESTS` var is a **local convenience** to silence it (treat any value other than a case-insensitive `false` as "run") - not an enable flag the developer must know to turn the tier on.
-- **Exception - `Test.Mobile` is opt-IN, default off.** Mobile needs an emulator/device, a running Appium server, and a separately built platform APK - too heavy to run in the canonical lane. Treat `{APP}_MOBILE_TESTS_ENABLED` as an **enable** flag: only a case-insensitive `true` (or `1`/`yes`) activates the tier; unset/false makes each test a no-op skip. Keep `[TestCategory("MobileUI")]` on every test so a lane can also exclude it by filter. This is the one tier that defaults off; Aspire and WasmUI stay default-on per the bullet above.
-- **Self-skips, never red.** Degrade to `Assert.Inconclusive` when the external prerequisite is missing (Docker/AppHost, WASM host/browser, emulator/Appium). The message names the missing prerequisite and the fix (start Docker, run `eng/test/start-local-test-stack.ps1`, or set the opt-out). No vague "skipped".
+- **Exception - `Test.Mobile` is opt-IN, default off.** Mobile needs an emulator/device, a running Appium server, and a separately built platform APK - too heavy to run in the canonical lane. Treat `{APP}_MOBILE_TESTS_ENABLED` as an **enable** flag: only a case-insensitive `true` (or `1`/`yes`) activates the tier; unset/false makes each test self-mark `Assert.Inconclusive` with a message saying the tier is opt-in and how to enable it - **never a silent pass.** A skipped-as-passed mobile test reads as green coverage that never ran. MSTest serializes `Inconclusive` to TRX as `outcome="NotExecuted"`, so the expected healthy default-off result is **0 passed / N not-executed, each carrying an Inconclusive message** - that is success, not a failure to investigate. Keep `[TestCategory("MobileUI")]` on every test so a lane can also exclude it by filter. This is the one tier that defaults off; Aspire and WasmUI stay default-on per the bullet above.
+- **Self-skips, never red - and never silently green** (see [Never Silently Pass](#never-silently-pass-applies-to-every-tier)). Degrade to `Assert.Inconclusive` for any reason the test cannot run - external prerequisite missing (Docker/AppHost, WASM host/browser, emulator/Appium), opt-in flag unset, base URL unresolved, or fixture startup failed. The message names the cause and the fix (start Docker, run `eng/test/start-local-test-stack.ps1`, or set the opt-out). No vague "skipped", and never an assertion-free early return that passes.
 - **CI lanes set the opt-out.** Fast lanes that must not pay Docker/emulator cost set `{APP}_RUN_ASPIRE_TESTS=false` (etc.). `--filter "TestCategory!=Load"` stays safe everywhere because absent-infra tiers self-skip.
 - The mesh preflight helper shape is in [../templates/test-templates-aspire.md](../templates/test-templates-aspire.md) (Opt-out + preflight). Mirror it for `WasmUI` and `Test.Mobile`.
 - **AppHost-backed WasmUI is real mesh UI.** If the Uno WASM app depends on API, Gateway, SQL, Redis, storage, or auth, the `WasmUI` fixture starts the Aspire AppHost in testing mode, keeps required resources live, disables only optional hosts, and resolves Gateway/UI URLs from named endpoints. Do not generate standalone browser tests against guessed local ports for that case.
@@ -439,7 +449,7 @@ The build/start/health-gate/connection-string mechanics live in [../templates/te
 - [ ] `Test.Integration` (component) references no `AppHost`/`Aspire.Hosting.Testing`; tests instantiate one class vs one standalone Testcontainer and guard on `StartupError` (Inconclusive on failure).
 - [ ] `Test.Aspire` (mesh) starts the graph lazily via `EnsureStartedAsync` (`[ClassInitialize]`); `AspireMeshLifecycle.[AssemblyCleanup]` stops it once, bounded by `.WaitAsync(CleanupTimeout)`.
 - [ ] Mesh tests carry `[TestCategory("Aspire")]` (not `Integration`); startup deadline reads `{APP}_ASPIRE_STARTUP_TIMEOUT_SECONDS`.
-- [ ] Aspire/WasmUI tiers are default-on with false-only opt-out; `Test.Mobile` is opt-IN (`{APP}_MOBILE_TESTS_ENABLED=true` activates; default off = no-op skip). All active tiers self-mark `Inconclusive` (precise message) when prerequisites are missing.
+- [ ] Aspire/WasmUI tiers are default-on with false-only opt-out; `Test.Mobile` is opt-IN (`{APP}_MOBILE_TESTS_ENABLED=true` activates; default off self-marks `Inconclusive` per test, never a silent pass; TRX shows 0 passed / N not-executed). All active tiers self-mark `Inconclusive` (precise message) when prerequisites are missing.
 - [ ] `dotnet test --filter "TestCategory!=Load"` is documented as the canonical local "all normal tests" run.
 - [ ] Mesh tests are `[DoNotParallelize]`; no endpoint-contract tests in either integration project.
 - [ ] Every test class has a class-level `<summary>` (scope / tier + why / quirks).
