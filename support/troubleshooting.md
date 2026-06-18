@@ -132,7 +132,7 @@ When a third-party library (scheduler, queue, dashboard, job runner) uses EF-bac
 2. Rebuild: `dotnet build`
 3. If the deleted folder was test output or tooling artifacts, add it to `.gitignore` to prevent recurrence.
 
-**Prevention:** Never create transient output directories (test results, screenshots, build artifacts) inside the Uno app project. Configure tools to write outputs into their own project directories (e.g., Playwright `outputDir` pointing to `Test/Test.PlaywrightUI/test-results`).
+**Prevention:** Never create transient output directories (test results, screenshots, build artifacts) inside the Uno app project. Configure tools to write outputs into their own project directories (e.g., Playwright `outputDir` pointing to `src/Test/Test.PlaywrightUI/test-results`). Use an absolute, CWD-independent path so the location is deterministic regardless of where the tool is invoked: `$(MSBuildThisFileDirectory)` for MSBuild-driven output, or walk up to the `*.slnx`/`*.sln` marker for standalone runners. When building a path from a discovered source root, include the correct tree segment (`src/Test/...`) so artifacts land under the test tree, not a sibling folder at the repo root. Keep any environment-variable override as the first choice; only fix the fallback path.
 
 ## WASM Runtime/Class Library Mismatch
 

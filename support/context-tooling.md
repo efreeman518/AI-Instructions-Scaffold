@@ -211,6 +211,7 @@ at the root.
   graphify-out/wiki/
   graphify-out/obsidian/
   graphify-out/.graphify_*
+  /.graphify_detect.json
 
   The wiki is gitignored BY DEFAULT - it is regenerable from `graph.json` via
   `graphify export wiki` (no model cost), so it does not need to live in git. Commit
@@ -219,7 +220,10 @@ at the root.
 
   `manifest.json` / `cost.json` are mtime-based and break on clone; `.graphify_*` is local
   scratch/scan-root state (the `.graphify_semantic_marker` / `.graphify_analysis.json`
-  markers are covered by the glob).
+  markers are covered by the glob). `/.graphify_detect.json` is a separate transient
+  detection cache that graphify can write at the **repo root** (the `graphify-out/.graphify_*`
+  glob above is scoped to the output folder and does not cover it). If it was committed,
+  untrack it with `git rm --cached .graphify_detect.json` (keeps the file on disk).
 
 ## Keeping the graph fresh (auto-update on commit)
 
