@@ -97,6 +97,7 @@ Use `curl`, HTTPie, REST Client, or Scalar. Record status codes and endpoint dis
   - **Ignore files:** `.gitignore`, `.dockerignore`, `.editorconfig`, `.gitattributes`
   - **Dirs:** `src/`, `infra/` (when IaC enabled), `docs/` (optional - when `docs/tech-design.md` is generated, diagrams follow [tech-design-diagrams.md](tech-design-diagrams.md)), `.azure/` (optional), `.github/`, `.instructions/`, `.scaffold/`, `.vscode/` (optional), `.claude/` (optional)
   - All Phase 1/2/3 generated artifacts (`domain-specification.yaml`, `resource-implementation.yaml`, `UBIQUITOUS-LANGUAGE.md`, `DESIGN-DECISIONS.md`, `implementation-plan.md`, `INSTRUCTION-GAPS.md`) live under `.scaffold/`, not at root.
+  - No tool output folders left at the repo root: `TestResults/` (after `dotnet test`), and - when the profile includes them - `BenchmarkDotNet.Artifacts/` (comprehensive only) and `.graphify_detect.json` (only if graphify was initialized). Each must land under its owning project, not root. If one appears at root, the output path is not pinned - see [../skills/testing-quality.md](../skills/testing-quality.md) section Deterministic Test Output Location. Pinning the location is optional hardening; `.gitignore` already prevents committing these regardless.
   - Anything else at root (`FOLLOWUP-PLAN.md`, `*.log`, `*.tmp`, ad-hoc notes) is leakage - investigate before declaring the scaffold complete. `FOLLOWUP-PLAN.md` is not a recognized scaffold artifact; if present, ask the developer where it came from.
 
 ---

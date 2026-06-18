@@ -29,6 +29,7 @@ Assert:
 - Use realistic setup and representative datasets.
 - Benchmark hot paths only.
 - Compare trends over time; do not use one-off numbers as hard pass/fail without baseline.
+- Pin BenchmarkDotNet artifacts under the benchmark project, not the caller's CWD. BenchmarkDotNet defaults `ArtifactsPath` to the current directory, so running from the repo root drops a `BenchmarkDotNet.Artifacts/` folder there. Pass an explicit config: `DefaultConfig.Instance.WithArtifactsPath(...)` anchored to the solution root by walking up from `AppContext.BaseDirectory` to the `*.slnx`/`*.sln` marker, then into `src/Test/Test.Benchmarks/BenchmarkDotNet.Artifacts`.
 
 ## Mutation Testing Rules
 
@@ -38,6 +39,13 @@ Assert:
 - Configure `stryker-config.json` with `test-case-filter: TestCategory=Mutation` and a narrow `mutate` list. Do not point Stryker at the whole solution by default.
 - Target boundaries, comparisons, boolean branches, collection behavior, state transitions, and exact failure messages. Weak assertions let equivalent, conditional, string, and collection mutants survive.
 - Keep `StrykerOutput/` under the mutation test project and add `**/StrykerOutput/` to `.gitignore`.
+
+## Deterministic Test Output Location
+
+- Optional hardening - `.gitignore` already keeps `TestResults/` out of commits; this only buys a deterministic location (useful for CI artifact collection or when `dotnet test` runs from varying directories). Skip it if a single test props/targets file does not already exist.
+- To pin test results, in the test-scoped `Directory.Build.props`/`.targets` under `src/Test/` (when one is present), inside the `IsTestProject` PropertyGroup set `<VSTestResultsDirectory>$(MSBuildThisFileDirectory)TestResults</VSTestResultsDirectory>`.
+- `$(MSBuildThisFileDirectory)` resolves to the targets file's own absolute directory, so every test project writes to the same `src/Test/TestResults` regardless of the directory `dotnet test` runs from. `VSTestResultsDirectory` is the property the VSTest MSBuild task maps to `--results-directory`.
+- Caveat: a raw `dotnet vstest <dll>` call bypasses MSBuild and honors only its own `--ResultsDirectory` flag.
 
 ## Optional Extras
 
