@@ -12,6 +12,8 @@ Clone this repo then run the install script to copy the instruction files into a
 
 Each harness has a project-memory file (auto-loaded on session start) and, where supported, a scoped command/agent picker. The three project-memory files (`AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`) play the same role for their respective tools - the installer writes all three so any agent that opens the repo finds its native entrypoint.
 
+These files are two-region by design. The **installer-managed block** (inside `<!-- ai-scaffold: start --> ... <!-- ai-scaffold: end -->` markers) stays minimal and durable: a vertical-slice pointer, a single demoted full-scaffold/adopt pointer, and a conditional graphify block that activates only when `graphify-out/graph.json` exists. **App-specific guidance** (app purpose, layering, build/test/run, pointers to `.scaffold/` docs) is authored *outside* the markers at scaffold completion - see [support/final-scaffold-checklist.md](support/final-scaffold-checklist.md) section Finalize Harness Entrypoints - and is preserved across re-installs. Scaffold/adopt are one-time bootstrap events, so they are demoted out of the always-loaded surface rather than kept prominent; the `.instructions/` payload and scoped commands/agents still ship for when they are needed.
+
 | Harness | Project-memory file | Scoped command/agent picker | Full scaffold | Vertical slice | Brownfield adoption |
 |---|---|---|---|---|---|
 | Codex CLI (and other CLI agents that read `AGENTS.md`) | `AGENTS.md` | - (no stable convention yet) | Prompt: `Load .instructions/START-AI.md and run the scaffold router` | Prompt: `Load .instructions/support/vertical-slice-checklist.md` | Prompt: `Load .instructions/ai/adopt-codebase.md and run the adoption flow` |
@@ -61,7 +63,7 @@ What it places:
 | `.claude/commands/` | `<app>/.claude/commands/` (Claude slash commands) | dir |
 | `.github/agents/` | `<app>/.github/agents/` (Copilot scoped agents) | dir |
 
-**Merge mode** writes the scaffold block inside `<!-- ai-scaffold: start --> ... <!-- ai-scaffold: end -->` markers. Existing user content outside the markers is preserved, and an older unmarked scaffold-only copy is converted into a single marked block.
+**Merge mode** writes the durable harness block inside `<!-- ai-scaffold: start --> ... <!-- ai-scaffold: end -->` markers. Existing user content outside the markers is preserved (including the app-specific summary authored at scaffold completion), and an older unmarked scaffold-only copy is converted into a single marked block.
 
 Flags:
 

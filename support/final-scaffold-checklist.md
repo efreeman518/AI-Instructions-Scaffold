@@ -90,6 +90,7 @@ Use `curl`, HTTPie, REST Client, or Scalar. Record status codes and endpoint dis
 - [ ] No `<packagePrefix>.*` shared base type is reimplemented in application/domain/host layers - they live in feed packages or `src/Packages/<packagePrefix>.*` projects only, per `packageStrategy`.
 - [ ] **One public type per file** across all generated `.cs` files in `src/` (including `src/Packages/<Prefix>.*`). File name matches the type. Lumped files (multiple top-level public/internal types) are a failure unless they fall under the exception list in [../skills/solution-structure.md](../skills/solution-structure.md) section Non-Negotiables.
 - [ ] Deployment-only dependencies are recorded as non-blocking residuals.
+- [ ] **Harness entrypoints are finalized for steady state** (see section Finalize Harness Entrypoints below). Each of `CLAUDE.md`, `AGENTS.md`, `.github/copilot-instructions.md` carries an app-specific summary **outside** the `<!-- ai-scaffold: start --> ... <!-- ai-scaffold: end -->` markers; the marked block keeps only the durable vertical-slice + demoted scaffold/adopt pointers and the conditional graphify block.
 - [ ] **Project root is clean.** Only the following files/dirs are expected at the project root after scaffold completion:
   - **Markdown:** `README.md`, `AGENTS.md`, `CLAUDE.md`, `HANDOFF.md`
   - **.NET config:** `global.json`, `nuget.config`, `dotnet-tools.json`, `Directory.Packages.props`, `Directory.Build.props`, `*.slnx`
@@ -97,6 +98,33 @@ Use `curl`, HTTPie, REST Client, or Scalar. Record status codes and endpoint dis
   - **Dirs:** `src/`, `infra/` (when IaC enabled), `docs/` (optional - when `docs/tech-design.md` is generated, diagrams follow [tech-design-diagrams.md](tech-design-diagrams.md)), `.azure/` (optional), `.github/`, `.instructions/`, `.scaffold/`, `.vscode/` (optional), `.claude/` (optional)
   - All Phase 1/2/3 generated artifacts (`domain-specification.yaml`, `resource-implementation.yaml`, `UBIQUITOUS-LANGUAGE.md`, `DESIGN-DECISIONS.md`, `implementation-plan.md`, `INSTRUCTION-GAPS.md`) live under `.scaffold/`, not at root.
   - Anything else at root (`FOLLOWUP-PLAN.md`, `*.log`, `*.tmp`, ad-hoc notes) is leakage - investigate before declaring the scaffold complete. `FOLLOWUP-PLAN.md` is not a recognized scaffold artifact; if present, ask the developer where it came from.
+
+---
+
+## Finalize Harness Entrypoints
+
+The installer writes a scaffold-routing block into `CLAUDE.md`, `AGENTS.md`, and
+`.github/copilot-instructions.md` inside `<!-- ai-scaffold: start --> ... <!-- ai-scaffold: end -->`
+markers. At the final enabled Phase 5 sub-phase, give those always-loaded files a
+steady-state shape so ordinary post-scaffold sessions are not taxed with one-time
+bootstrap routing.
+
+For each of the three harness files, author a short **app-specific** section
+**outside** the `ai-scaffold` markers (above the marked block). Keep it short - the
+`.scaffold/` docs remain the source of truth; this section is an orientation pointer,
+not a copy:
+
+- App name + one-line purpose.
+- Architecture/layering in 1-3 lines, or a pointer to the generated solution shape (see [../skills/solution-structure.md](../skills/solution-structure.md)).
+- Build / test / run commands for this app (e.g. `dotnet build`, `dotnet test`, `dotnet run --project src/Host/Aspire/AppHost`).
+- Pointers to `.scaffold/UBIQUITOUS-LANGUAGE.md`, `.scaffold/DESIGN-DECISIONS.md`, and `README.md`.
+
+Do not edit inside the markers - that block is installer-managed and is overwritten
+on re-install. It already carries the durable vertical-slice pointer, the single
+demoted full-scaffold/adopt pointer (`load .instructions/START-AI.md`), and a
+conditional graphify block that activates only when `graphify-out/graph.json` exists.
+Content outside the markers is preserved across re-installs, so the app summary is
+safe there.
 
 ---
 

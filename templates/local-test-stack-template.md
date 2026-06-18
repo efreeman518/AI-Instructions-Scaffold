@@ -90,7 +90,7 @@ function Remove-Under([string]$Target, [string]$AllowedRoot) {
     $resolvedRoot = [IO.Path]::GetFullPath($AllowedRoot)
     $prefix = if ($resolvedRoot.EndsWith([IO.Path]::DirectorySeparatorChar)) { $resolvedRoot } else { $resolvedRoot + [IO.Path]::DirectorySeparatorChar }
     if (-not $resolvedTarget.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
-        throw "Refusing to remove outside $resolvedRoot: $resolvedTarget"
+        throw "Refusing to remove outside ${resolvedRoot}: $resolvedTarget"
     }
     if (Test-Path $resolvedTarget) { Remove-Item -LiteralPath $resolvedTarget -Recurse -Force }
 }

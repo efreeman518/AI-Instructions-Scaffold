@@ -1,34 +1,28 @@
-# AI Scaffold Entry
+# AI Harness Entry (CLI agents)
 
-This is a harness-neutral entrypoint for CLI agents that read root `AGENTS.md`
-files (Codex CLI, GitHub Copilot CLI, and other CLI agents using the same
-discovery convention).
+Harness-neutral entrypoint for CLI agents that read root `AGENTS.md` files
+(Codex CLI, GitHub Copilot CLI, and other CLI agents using the same discovery
+convention). GitHub Copilot in VS Code uses `.github/copilot-instructions.md`
+and the scoped agents in `.github/agents/` instead - see [README.md](README.md)
+for the harness routing table.
 
-GitHub Copilot in VS Code uses `.github/copilot-instructions.md` and the
-scoped agents in `.github/agents/` instead - see [README.md](README.md) for
-the harness routing table.
+Do not auto-activate the scaffold workflow for ordinary repository work. For
+normal coding, review, docs, or maintenance, ignore scaffold phase rules and use
+regular project context only.
 
-Do not activate the scaffold workflow automatically for ordinary repository
-work.
+## Scaffold workflows
 
-## Scaffold Trigger
+- Add an entity/feature slice to an existing scaffolded app: load `.instructions/support/vertical-slice-checklist.md`.
+- Full scaffold, brownfield adopt, or resuming an in-progress scaffold phase: load `.instructions/START-AI.md`, follow the phase router and one-phase-per-session rule. (Brownfield adoption loads `.instructions/ai/adopt-codebase.md` in place of Phase 1.)
+- Treat installed `.instructions/` files as read-only during scaffold work. Record gaps in `.scaffold/INSTRUCTION-GAPS.md` (create `.scaffold/` at project root if absent).
+- Working in the instruction repository itself: load `START-AI.md`; see [README.md](README.md) for maintenance context.
 
-Run scaffold instructions only when the user explicitly asks to:
+## Context graph (graphify)
 
-- scaffold a new .NET app or service;
-- continue an existing scaffold phase;
-- add a scaffolded vertical slice/entity;
-- adopt the scaffold onto an existing C#/.NET solution (load `.instructions/ai/adopt-codebase.md` instead of running Phase 1).
+These rules are conditional - they activate only when `graphify-out/graph.json`
+exists in the repo, and are inert otherwise.
 
-Phase 1 is the universal core (stack-agnostic). Phases 2-5 run under the C#/.NET/Azure profile - see `profiles/csharp-dotnet-azure.md` (this repo) or `.instructions/profiles/csharp-dotnet-azure.md` (installed apps). Vertical-slice and brownfield-adoption flows are profile-bound.
-
-## Scaffold Boot
-
-1. If this file is installed in a target app repository, load `.instructions/START-AI.md`.
-2. If working in the instruction repository itself, load `START-AI.md`.
-3. Follow the phase router and one-phase-per-session rule.
-4. Treat installed `.instructions/` files in code repositories as read-only. Do not modify them during scaffold work.
-5. Record scaffold gaps in `.scaffold/INSTRUCTION-GAPS.md` (create the `.scaffold/` directory at project root if absent).
-
-For normal coding, review, docs, or maintenance tasks, ignore scaffold phase
-rules and use regular project context only.
+- For codebase questions (architecture, structure, where/what/how things relate), run `graphify query "<question>"` before grepping or reading raw files. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for a focused concept.
+- If `graphify-out/wiki/index.md` exists, use it for broad navigation instead of browsing source.
+- After modifying code, run `graphify update .` to keep the graph current.
+- No API key needed inside a coding-agent session - the harness model performs graphify's extraction.

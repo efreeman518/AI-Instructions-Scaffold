@@ -388,6 +388,7 @@ Wrapper rules:
 
 - The wrapper `.csproj` invokes the Uno build with `dotnet build "$(UnoWasmProject)" -p:TargetFrameworkOverride=$(UnoWasmTargetFramework) -p:Configuration=$(Configuration) -m:1`.
 - Skip the wrapper build target during solution builds unless explicitly requested; otherwise full-solution builds can recursively rebuild the UI at surprising times.
+- Guard the `BuildUnoWasm` target with **both** `'$(SkipUnoWasmBuild)' != 'true'` **and** `'$(BuildingInsideVisualStudio)' != 'true'`. In Visual Studio the Uno SDK project and the wrapper are both solution projects, so VS already builds `{Project}.Uno` (browserwasm) while the wrapper's `BeforeBuild` target rebuilds the same project -> CS2012 file-lock on the output assembly. `SkipUnoWasmBuild` does not cover this case because it is not set on a plain VS build; the `BuildingInsideVisualStudio` guard is required alongside it.
 - `Program.cs` loads the Uno static-web-assets manifest with `StaticWebAssetsLoader.UseStaticWebAssets`.
 - Map `.dat`, `.dll`, `.wasm`, and `.pdb` as binary/static files and verify `/_framework` plus `/_content` return 200 with non-empty bodies.
 - In Aspire, register the wrapper, not the Uno SDK project:

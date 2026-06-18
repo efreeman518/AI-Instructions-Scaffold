@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Generates** | `src/UI/{Project}.Uno/Testing/{Project}TestBridge.wasm.cs`, `Test/Test.PlaywrightUI/Uno/WasmAppHost.cs`, `WasmTestHarness.cs`, `WasmTestSettings.cs`, `AssemblyInfo.cs`, `Test/Test.PlaywrightUI/Uno/{Entity}CanvasTests.cs` (or `.ts` for Node Playwright) |
+| **Generates** | `src/UI/{Project}.Uno/Testing/{Project}TestBridge.cs`, `Test/Test.PlaywrightUI/Uno/WasmAppHost.cs`, `WasmTestHarness.cs`, `WasmTestSettings.cs`, `AssemblyInfo.cs`, `Test/Test.PlaywrightUI/Uno/{Entity}CanvasTests.cs` (or `.ts` for Node Playwright) |
 | **Requires** | An Uno WASM target that renders through the **Skia canvas** renderer (single `<canvas>`, no per-control DOM), a Gateway for real local auth, an Aspire AppHost when the app needs API/resources, [testing-quality.md](../skills/testing-quality.md) (Hosted Browser UI) |
 | **Phase** | Bridge added with the Uno host (5c); canvas tests authored in 5d |
 | **Protocol** | Tests-after. The bridge is a browser-only diagnostic surface, never a production code path. |
@@ -57,7 +57,9 @@ Rules:
 
 ## Bridge (representative shape)
 
-### File: `src/UI/{Project}.Uno/Testing/{Project}TestBridge.wasm.cs`
+### File: `src/UI/{Project}.Uno/Testing/{Project}TestBridge.cs`
+
+> **Single-project caveat.** Do not use a `.wasm.cs` suffix for this file. Under `UnoSingleProject=true` the `.wasm.cs` platform-suffix convention is **not** auto-included in compilation, so the bridge type silently goes missing from the WASM build. Use a plain `{Project}TestBridge.cs` and gate the contents with `#if __WASM__` (as below) - the guard, not the filename, is what keeps the bridge out of Android/iOS/desktop builds.
 
 ```csharp
 #if __WASM__
