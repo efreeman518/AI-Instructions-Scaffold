@@ -449,7 +449,7 @@
         "appHostApi": { "type": "string" },
         "localMode": {
           "type": "string",
-          "enum": ["RunAsEmulator", "RunAsContainer", "RunAsFoundryLocal", "RunAsExisting", "AsExisting", "local-container", "local-project", "none", "deployment-only", "lazy-optional", "no-op stub"]
+          "enum": ["RunAsEmulator", "RunAsContainer", "RunAsFoundryLocal", "sdk-direct-api-host", "RunAsExisting", "AsExisting", "local-container", "local-project", "none", "deployment-only", "lazy-optional", "no-op stub"]
         },
         "publishMode": {
           "type": "string",
@@ -471,6 +471,12 @@
           "properties": {
             "projectName": { "type": "string" },
             "lifecycle": { "type": "string", "enum": ["local-or-provision", "existing"] },
+            "localRuntimeMode": {
+              "type": "string",
+              "enum": ["RunAsFoundryLocal", "sdk-direct-api-host"],
+              "default": "sdk-direct-api-host",
+              "description": "Local Foundry runtime path. 'RunAsFoundryLocal' = preferred/target Aspire path, usable once Aspire.Hosting.Foundry bundles Foundry Local SDK >= 1.x. 'sdk-direct-api-host' = temporary workaround in effect now: the AppHost wires NO foundry/chat resource (no ConnectionStrings:chat) and only forwards the opt-in env var to the API host, which drives Microsoft.AI.Foundry.Local directly. Has no effect on the Azure path."
+            },
             "resourceName": { "type": "string" },
             "resourceGroup": { "type": "string" },
             "connectionName": { "type": "string" },

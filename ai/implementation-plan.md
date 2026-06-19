@@ -109,7 +109,7 @@ Run this check before writing Phase 4 tasks. Fix source artifacts first, not gen
 - [ ] Agent function tools wrapping existing `I{Entity}Service` domain operations
 - [ ] Agent middleware (logging, auth context propagation, content safety)
 - [ ] Multi-agent workflow with executors + edges (if `workflow.enabled: true`)
-- [ ] Aspire resource wiring from `aspireResources` and [skills/aspire.md](../skills/aspire.md): `AddFoundry()` with the lifecycle mode (`RunAsFoundryLocal()` / provision / `RunAsExisting()`) for chat, plus `AddProject()`/`AddPromptAgent()` only if `agentHosting` is server-hosted; `AddAzureSearch()` for Azure AI Search
+- [ ] Aspire resource wiring from `aspireResources` and [skills/aspire.md](../skills/aspire.md): `AddFoundry()` with the lifecycle mode (local / provision / `RunAsExisting()`) for chat - per `foundry.localRuntimeMode`, the local path currently uses the SDK-direct API-host workaround, not `RunAsFoundryLocal()` (broken, dotnet/aspire#12750); plus `AddProject()`/`AddPromptAgent()` only if `agentHosting` is server-hosted; `AddAzureSearch()` for Azure AI Search
 - [ ] Bootstrapper DI registration for AI services
 - [ ] API endpoints for search + agent interactions
 - [ ] Configuration: Foundry endpoint (+ existing-resource name/RG and project endpoint when used), model deployment names, search index names in appsettings

@@ -166,7 +166,7 @@ builder.Build().Run();
 
 Wire the model with `Aspire.Hosting.Foundry` so it provisions Azure on publish. The deployment resource name is the connection name consumers bind to. This snippet covers the default **inference** surface; for the **existing-account** and **project + server-hosted agent** surfaces see [../skills/ai-integration.md](../skills/ai-integration.md) -> *Foundry Projects and Server-Hosted Agents*.
 
-> **Known issue - the `RunAsFoundryLocal()` branch below is broken against GA Foundry Local (as of 2026-06).** Aspire's bundled `Microsoft.AI.Foundry.Local` 0.3.0 cannot discover the GA `1.x` runtime, so it injects an empty endpoint and the host throws `Azure AI Inference chat client endpoint is invalid` (dotnet/aspire#12750). Keep the branch for when Aspire ships against a current SDK, but for the **working local path use the SDK-direct host bootstrap** in [../skills/ai-integration.md](../skills/ai-integration.md) -> *Foundry Local local path: SDK-direct host bootstrap*. The Azure provision/existing path is unaffected.
+> **Known issue - the preferred local path (`RunAsFoundryLocal()`) is temporarily broken (as of 2026-06).** `RunAsFoundryLocal()` is the target local path; restore it once `Aspire.Hosting.Foundry` bundles Foundry Local SDK >= 1.x. It does not work today - Aspire's bundled `Microsoft.AI.Foundry.Local` 0.3.0 cannot discover the GA `1.x` runtime, so it injects an empty endpoint and the host throws `Azure AI Inference chat client endpoint is invalid` (dotnet/aspire#12750). The snippet below therefore omits it; the **current local path is the SDK-direct API-host workaround** (AppHost forwards the opt-in var, wires no `chat` resource, no `ConnectionStrings:chat`). The broken branch is kept only under *Future restored path* below. See [../skills/ai-integration.md](../skills/ai-integration.md) -> *SDK-direct API-host bootstrap (temporary workaround)* and *Migration: restoring `RunAsFoundryLocal()`*. The Azure provision/existing path is unaffected.
 
 ```csharp
 IResourceBuilder<FoundryDeploymentResource>? chat = null;
@@ -178,18 +178,17 @@ var foundryLocalEnabled =
 
 if (azureConfigured)
 {
+    // Azure path stays on Aspire: provisions (or connects to) a Foundry account + "chat" deployment.
     chat = builder.AddFoundry("foundry").AddDeployment("chat", FoundryModel.OpenAI.Gpt4oMini);
 }
-else if (foundryLocalEnabled)
-{
-    // BROKEN against GA Foundry Local (dotnet/aspire#12750) - see Known issue above.
-    // For local dev, bootstrap the Microsoft.AI.Foundry.Local SDK directly in the API host instead;
-    // see ../skills/ai-integration.md -> "Foundry Local local path: SDK-direct host bootstrap".
-    chat = builder.AddFoundry("foundry").RunAsFoundryLocal()
-        .AddDeployment("chat", FoundryModel.Local.Qwen2505b);
-}
 
-if (chat is not null) {app}Api = {app}Api.WithReference(chat); // injects ConnectionStrings:chat and CHAT_* env values
+// Azure: wire the deployment (injects ConnectionStrings:chat + CHAT_* env).
+// Local workaround: NO chat resource - just forward the opt-in var so the API host can bootstrap
+// Microsoft.AI.Foundry.Local directly (RunAsFoundryLocal() is broken today; see Future restored path).
+if (chat is not null)
+    {app}Api = {app}Api.WithReference(chat);
+else if (foundryLocalEnabled)
+    {app}Api = {app}Api.WithEnvironment("MYAPP_ENABLE_FOUNDRY_LOCAL", "true");
 ```
 
 To consume an **existing** Foundry account instead of provisioning a new one (the `chat` deployment must already exist), replace the `azureConfigured` branch with `RunAsExisting`:
@@ -200,6 +199,19 @@ var rg = builder.AddParameter("foundry-rg");
 chat = builder.AddFoundry("foundry").RunAsExisting(name, rg)
     .AddDeployment("chat", FoundryModel.OpenAI.Gpt4oMini);
 ```
+
+**Future restored path (after Aspire fix): `RunAsFoundryLocal()`.** This is the preferred/target local path. Do **not** put it in a live AppHost until `Aspire.Hosting.Foundry` bundles Foundry Local SDK >= 1.x - it is broken against GA Foundry Local today (see *Known issue*). When restored, replace the local var-forward branch above with:
+
+```csharp
+// PREFERRED local path - usable only AFTER the Aspire fix. Broken today (dotnet/aspire#12750).
+else if (foundryLocalEnabled)
+{
+    chat = builder.AddFoundry("foundry").RunAsFoundryLocal()
+        .AddDeployment("chat", FoundryModel.Local.Qwen2505b); // re-injects ConnectionStrings:chat
+}
+```
+
+On migration, also remove the API-host workaround package refs (`Microsoft.AI.Foundry.Local`, `OpenAI`, `Microsoft.Extensions.AI.OpenAI`) and the SDK bootstrap block, returning the API host to `AddAzureChatCompletionsClient("chat").AddChatClient()`. Full checklist: [../skills/ai-integration.md](../skills/ai-integration.md) -> *Migration: restoring `RunAsFoundryLocal()`*.
 
 **Registration boundary:** the model client is registered at the **host** (`IHostApplicationBuilder.AddAzureChatCompletionsClient("chat").AddChatClient()` from `Aspire.Azure.AI.Inference`), NOT in the `IServiceCollection` AI-registration extension. The connection name passed to `AddAzureChatCompletionsClient` must equal the deployment resource name. The `IServiceCollection` extension then gates live agents on `IChatClient` presence and registers a no-op `IChatClient` when none was wired. See [../skills/ai-integration.md](../skills/ai-integration.md).
 ```

@@ -345,10 +345,18 @@ aiServices:
   foundry:
     projectName: ""                    # Microsoft Foundry project name (only when using a project + agents)
     lifecycle: local-or-provision      # local-or-provision | existing
-                                       #   local-or-provision: AppHost uses RunAsFoundryLocal() in run mode
-                                       #     (on-device, no Azure) and provisions a new Azure account on publish.
+                                       #   local-or-provision: runs a model on-device in run mode (no Azure) via
+                                       #     the localRuntimeMode below, and provisions a new Azure account on publish.
                                        #   existing: RunAsExisting/PublishAsExisting/AsExisting against an
                                        #     already-provisioned account; deployment names must already exist there.
+    localRuntimeMode: sdk-direct-api-host  # RunAsFoundryLocal | sdk-direct-api-host
+                                       #   RunAsFoundryLocal: PREFERRED/target Aspire path - use once
+                                       #     Aspire.Hosting.Foundry bundles Foundry Local SDK >= 1.x. Currently broken
+                                       #     against GA Foundry Local (dotnet/aspire#12750).
+                                       #   sdk-direct-api-host: TEMPORARY WORKAROUND in effect now - AppHost wires NO
+                                       #     foundry/chat resource (no ConnectionStrings:chat); it only forwards the
+                                       #     opt-in env var to the API host, which drives Microsoft.AI.Foundry.Local
+                                       #     directly. No effect on the Azure/publish path.
     resourceName: ""                   # existing only: Azure Foundry account name (RunAsExisting/AsExisting param)
     resourceGroup: ""                  # existing only: resource group of the existing account
     connectionName: chat               # Aspire deployment resource name; clients bind AddAzureChatCompletionsClient(<connectionName>)
