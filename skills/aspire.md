@@ -237,7 +237,7 @@ The fixed local SQL port and the `sql-password` parameter live INSIDE the `RunAs
 
 Use `Aspire.Hosting.Foundry` to model a chat model that provisions Azure on publish. The package is preview-only - pin it with an inline reason in `Directory.Packages.props`. The deployment resource name is the connection name consumers bind to.
 
-> **Known issue - the preferred local path (`RunAsFoundryLocal()`) is temporarily broken (as of 2026-06)** against GA Foundry Local: Aspire's bundled `Microsoft.AI.Foundry.Local` 0.3.0 cannot discover the GA `1.x` runtime, so it injects an empty endpoint and the host throws `Azure AI Inference chat client endpoint is invalid` (dotnet/aspire#12750). `RunAsFoundryLocal()` is the target path - restore it once `Aspire.Hosting.Foundry` bundles Foundry Local SDK >= 1.x. Until then the local (run-mode) path is the **SDK-direct API-host workaround**: the AppHost wires no `chat` resource (no `ConnectionStrings:chat`) and only forwards the opt-in var to the API host. Full pattern + migration: [ai-integration.md](ai-integration.md) -> *SDK-direct API-host bootstrap (temporary workaround)*.
+> **Local path note (canonical owner: [ai-integration.md](ai-integration.md), "SDK-direct API-host bootstrap").** `RunAsFoundryLocal()` is broken against GA Foundry Local (dotnet/aspire#12750); the current local path is the SDK-direct API-host workaround - no `chat` resource, the AppHost forwards the opt-in var, the API host drives `Microsoft.AI.Foundry.Local` directly. Diagnosis, API-host bootstrap, future-restored branch, and migration live there.
 
 Two independent axes - **lifecycle** (where the resource comes from) x **consumption** (raw inference vs. project + server-hosted agents). The lifecycle modes (`FoundryResource : AzureProvisioningResource`, so the general existing-resource APIs apply):
 
@@ -248,36 +248,12 @@ Two independent axes - **lifecycle** (where the resource comes from) x **consump
 | Connect to existing | as above, plus `FoundryResourceName`/`FoundryResourceGroup` set | `RunAsExisting(nameParam, rgParam)` / `PublishAsExisting(...)` / `AsExisting(...)` point at an already-provisioned account; the deployment name must match a model already there. |
 | Disabled | neither local nor Azure mode selected | No `chat` resource is wired; app registers no-op AI services. |
 
-```csharp
-// Publish (or configured real endpoint/override) -> Azure deployment;
-// otherwise local Foundry via the SDK-direct API-host workaround; otherwise no model.
-IResourceBuilder<FoundryDeploymentResource>? chat = null;
-var azureConfigured = builder.ExecutionContext.IsPublishMode
-    || !string.IsNullOrWhiteSpace(builder.Configuration["AiServices:FoundryEndpoint"])
-    || Environment.GetEnvironmentVariable("MYAPP_USE_AZURE_FOUNDRY") == "true";
-var foundryLocalEnabled =
-    Environment.GetEnvironmentVariable("MYAPP_ENABLE_FOUNDRY_LOCAL") == "true";
+The AppHost wiring snippet (Azure branch + local var-forward + existing-account) is owned by [../patterns/infrastructure-wiring.md](../patterns/infrastructure-wiring.md) (its Azure AI Foundry wiring), loaded in the same Phase 5b session - do not restate it here.
 
-if (azureConfigured)
-    chat = builder.AddFoundry("foundry").AddDeployment("chat", FoundryModel.OpenAI.Gpt4oMini);
-
-// Azure: wire the deployment (ConnectionStrings:chat + CHAT_* env). Local workaround: NO chat resource -
-// forward the opt-in var so the API host bootstraps Microsoft.AI.Foundry.Local directly. RunAsFoundryLocal()
-// is broken today (dotnet/aspire#12750); it returns as the local branch after the Aspire fix (see below).
-if (chat is not null)
-    api = api.WithReference(chat);
-else if (foundryLocalEnabled)
-    api = api.WithEnvironment("MYAPP_ENABLE_FOUNDRY_LOCAL", "true");
-```
-
-- **Local model path (current):** the SDK-direct API-host workaround runs the model on-device with no Azure subscription. The preferred `RunAsFoundryLocal()` is broken against GA Foundry Local (dotnet/aspire#12750) and is the **future restored path** - after the Aspire fix, replace the local var-forward branch with `else if (foundryLocalEnabled) chat = builder.AddFoundry("foundry").RunAsFoundryLocal().AddDeployment("chat", FoundryModel.Local.Qwen2505b);`. Neither local path supports Foundry Projects or Foundry-hosted agents. See [ai-integration.md](ai-integration.md) -> *SDK-direct API-host bootstrap (temporary workaround)* and *Migration: restoring `RunAsFoundryLocal()`*.
-- Existing account: `AddFoundry("foundry").RunAsExisting(nameParam, rgParam)` (or `PublishAsExisting`/`AsExisting`) provisions nothing; still call `.AddDeployment("chat", ...)` with a name that already exists in that account.
-- Projects + server-hosted agents are an Axis-2 escalation: `foundry.AddProject("proj")` then `project.AddPromptAgent(model, "name", instructions).WithTool(...)`, or consume a pre-existing portal/IaC agent via the client SDK (`AIProjectClient.AsAIAgent(...)`). Prompt agents always deploy to Azure even under `aspire run` (no offline path), so keep them opt-in. Full patterns in [ai-integration.md](ai-integration.md) -> *Foundry Projects and Server-Hosted Agents*.
+- If code-hosted agents or workflow agent nodes call tools, select a local model whose Foundry Local task list includes `tools`. `qwen2.5-0.5b` is a small pragmatic default; `phi-4` is chat-only.
 - Gate Foundry Local behind an opt-in env var so a default `aspire run` boots without it (the host then registers a no-op `IChatClient`).
-- If code-hosted agents or workflow agent nodes call tools, select a local model whose Foundry Local task list includes `tools`. `qwen2.5-0.5b` is a small pragmatic default; `phi-4` is chat-only in Foundry Local `0.8.119`.
-- The consuming project registers the client at the host: `builder.AddAzureChatCompletionsClient("chat").AddChatClient()` (from `Aspire.Azure.AI.Inference`), where the connection name equals the deployment resource name. See [ai-integration.md](ai-integration.md).
-- Fully local run: set `$env:MYAPP_ENABLE_FOUNDRY_LOCAL = "true"` and run `dotnet run --project src/Host/Aspire/AppHost`.
-- Real Azure local run: set `AiServices:FoundryEndpoint` in AppHost user secrets/config or set `$env:MYAPP_USE_AZURE_FOUNDRY = "true"`. `aspire publish` always takes the real Azure path.
+- Fully local run: set `$env:MYAPP_ENABLE_FOUNDRY_LOCAL = "true"` and run `dotnet run --project src/Host/Aspire/AppHost`. Real Azure local run: set `AiServices:FoundryEndpoint` (or `$env:MYAPP_USE_AZURE_FOUNDRY = "true"`); `aspire publish` always takes the real Azure path.
+- Projects + server-hosted agents are an Axis-2 escalation (Azure-only): see [ai-integration.md](ai-integration.md) (Foundry Projects and Server-Hosted Agents).
 
 ---
 
@@ -691,7 +667,7 @@ Before running `dotnet run --project src/Host/Aspire/AppHost`, confirm the subst
    Without this, the SQL container starts but cannot authenticate.
 5. **Ports available:** No stale containers holding SQL/Redis ports. Run `docker ps` / `podman ps` to check.
 6. **NuGet restore clean:** `dotnet restore` on the AppHost project succeeds (catches `packageSourceMapping` issues before launch).
-7. **Foundry Local (only if running AI demos on-device):** the local model path (currently the SDK-direct API-host workaround; preferred `RunAsFoundryLocal()` is temporarily broken, see *Azure AI Foundry*) needs the Foundry Local runtime installed and on `PATH`.
+7. **Foundry Local (only if running AI demos on-device):** the current SDK-direct API-host workaround needs **no** Foundry CLI/runtime on `PATH` - `Microsoft.AI.Foundry.Local` is self-contained and downloads its providers + model on first run. The `winget`/`foundry` install below applies only to the **future** `RunAsFoundryLocal()` path (after the Aspire fix, see *Azure AI Foundry*):
    ```powershell
    winget install Microsoft.FoundryLocal
    foundry --version

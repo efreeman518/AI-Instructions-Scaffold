@@ -349,14 +349,9 @@ aiServices:
                                        #     the localRuntimeMode below, and provisions a new Azure account on publish.
                                        #   existing: RunAsExisting/PublishAsExisting/AsExisting against an
                                        #     already-provisioned account; deployment names must already exist there.
-    localRuntimeMode: sdk-direct-api-host  # RunAsFoundryLocal | sdk-direct-api-host
-                                       #   RunAsFoundryLocal: PREFERRED/target Aspire path - use once
-                                       #     Aspire.Hosting.Foundry bundles Foundry Local SDK >= 1.x. Currently broken
-                                       #     against GA Foundry Local (dotnet/aspire#12750).
-                                       #   sdk-direct-api-host: TEMPORARY WORKAROUND in effect now - AppHost wires NO
-                                       #     foundry/chat resource (no ConnectionStrings:chat); it only forwards the
-                                       #     opt-in env var to the API host, which drives Microsoft.AI.Foundry.Local
-                                       #     directly. No effect on the Azure/publish path.
+    localRuntimeMode: sdk-direct-api-host  # RunAsFoundryLocal (preferred, after Aspire fix) | sdk-direct-api-host (current).
+                                       #   Why + wiring + migration: skills/ai-integration.md (canonical owner). sdk-direct-api-host
+                                       #   wires no chat resource (no ConnectionStrings:chat); no effect on the Azure/publish path.
     resourceName: ""                   # existing only: Azure Foundry account name (RunAsExisting/AsExisting param)
     resourceGroup: ""                  # existing only: resource group of the existing account
     connectionName: chat               # Aspire deployment resource name; clients bind AddAzureChatCompletionsClient(<connectionName>)
@@ -364,7 +359,8 @@ aiServices:
       - name: gpt-4o
         purpose: agent-reasoning       # agent-reasoning | embedding | completion
         deploymentName: gpt-4o-deploy
-        localModel: Qwen2505b          # FoundryModel.Local.* used when running on Foundry Local
+        localModel: qwen2.5-0.5b       # sdk-direct (current): Foundry Local catalog alias.
+                                       #   future RunAsFoundryLocal path uses the FoundryModel.Local.Qwen2505b constant.
       - name: text-embedding-3-small
         purpose: embedding
         deploymentName: embedding-deploy
