@@ -164,7 +164,9 @@ builder.Build().Run();
 
 ### Azure AI Foundry (when `includeAiServices: true`)
 
-Wire the model with `Aspire.Hosting.Foundry` so it runs on Foundry Local locally and provisions Azure on publish. The deployment resource name is the connection name consumers bind to. This snippet covers the default **inference** surface across all three lifecycle modes; for the **existing-account** and **project + server-hosted agent** surfaces see [../skills/ai-integration.md](../skills/ai-integration.md) -> *Foundry Projects and Server-Hosted Agents*.
+Wire the model with `Aspire.Hosting.Foundry` so it provisions Azure on publish. The deployment resource name is the connection name consumers bind to. This snippet covers the default **inference** surface; for the **existing-account** and **project + server-hosted agent** surfaces see [../skills/ai-integration.md](../skills/ai-integration.md) -> *Foundry Projects and Server-Hosted Agents*.
+
+> **Known issue - the `RunAsFoundryLocal()` branch below is broken against GA Foundry Local (as of 2026-06).** Aspire's bundled `Microsoft.AI.Foundry.Local` 0.3.0 cannot discover the GA `1.x` runtime, so it injects an empty endpoint and the host throws `Azure AI Inference chat client endpoint is invalid` (dotnet/aspire#12750). Keep the branch for when Aspire ships against a current SDK, but for the **working local path use the SDK-direct host bootstrap** in [../skills/ai-integration.md](../skills/ai-integration.md) -> *Foundry Local local path: SDK-direct host bootstrap*. The Azure provision/existing path is unaffected.
 
 ```csharp
 IResourceBuilder<FoundryDeploymentResource>? chat = null;
@@ -180,6 +182,9 @@ if (azureConfigured)
 }
 else if (foundryLocalEnabled)
 {
+    // BROKEN against GA Foundry Local (dotnet/aspire#12750) - see Known issue above.
+    // For local dev, bootstrap the Microsoft.AI.Foundry.Local SDK directly in the API host instead;
+    // see ../skills/ai-integration.md -> "Foundry Local local path: SDK-direct host bootstrap".
     chat = builder.AddFoundry("foundry").RunAsFoundryLocal()
         .AddDeployment("chat", FoundryModel.Local.Qwen2505b);
 }
