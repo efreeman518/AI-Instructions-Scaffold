@@ -80,6 +80,42 @@ If Step 1 fails, the problem is infrastructure - flag for the engineer per [exec
 
 ---
 
+## Docker / Container Runtime (Aspire + Testcontainers)
+
+The Aspire mesh tier (`Test.Aspire`) and the Testcontainers tiers (`Test.Integration`, `Test.E2E`) need a working container runtime. Diagnose it by **capability, not product**.
+
+**Detect by capability, not by Docker Desktop.** Any runtime exposing a working Docker CLI + socket is valid - Docker Desktop, WSL Docker Engine, Rancher Desktop, or a Podman-compatible Docker socket. Confirm capability, not which product is installed:
+
+```powershell
+docker version              # client and server both report
+docker info                 # daemon reachable
+docker run --rm hello-world # pull + run actually works
+```
+
+If those three succeed, the runtime is usable - do not special-case the product.
+
+**Resource pressure is the first suspect for flapping health.** Aspire mesh containers (SQL Server, Service Bus emulator, Azurite) are memory-hungry. Recommended floor: **4 CPU, 8 GB RAM, 4 GB swap**. When SQL or Service Bus health checks flap, time out, or pass only intermittently, suspect container resource pressure **before** changing test logic, timeouts, or assertions - an under-provisioned runtime looks exactly like a flaky test.
+
+**WSL-only Docker:** check `~/.wslconfig` and raise the floor:
+
+```ini
+[wsl2]
+memory=8GB
+processors=4
+swap=4GB
+```
+
+After editing `.wslconfig`, the change is not live until the WSL VM and the Docker engine restart:
+
+```powershell
+wsl --shutdown
+# then restart Docker Desktop / the Docker service / the daemon
+```
+
+**Order of remediation - never reboot or edit Docker Desktop settings first.** Confirm capability (`docker info`), then resources (`.wslconfig` / engine limits), then the WSL/engine restart above - in that order. Never edit Docker Desktop settings unless the user explicitly asks, and never require a machine reboot as the first fix.
+
+---
+
 ## Standalone Dev (Without Aspire / Docker)
 
 Aspire AppHost injects connection strings at runtime via environment variables. When running individual host projects directly (`dotnet run` or VS F5 without AppHost), those env vars are absent and the app fails with SQL connectivity errors.
@@ -257,6 +293,8 @@ For phase gates and validation commands, see [execution-gates.md](execution-gate
 | Cosmos Data Explorer at `http://localhost:1234` spins forever | Emulator itself not healthy - the Data Explorer is served from the Cosmos container | Inspect Cosmos resource health and container logs first; do not assume the explorer is broken until the gateway/emulator is healthy. See [../skills/aspire.md](../skills/aspire.md) -> *Cosmos Preview Emulator + Data Explorer* |
 | Storage Explorer / RedisInsight / SQL tool fails to connect after Aspire restart | Host ports not pinned - Aspire reassigned dynamic ports on the new run | Pin host ports in AppHost for non-test runs; gate explorer wiring on `if (!isTesting)`. See [../skills/aspire.md](../skills/aspire.md) -> *Local Explorer Tooling* |
 | Parallel test runs / CI fail with "port already in use" on SQL/Redis/Azurite | Explorer port pins leaked into test graph | Wrap pinned ports and explorer containers in `if (!isTesting)`. Tests must use Aspire-injected connection strings, not pinned ports |
+| SQL / Service Bus health checks flap or time out intermittently under Aspire | Container resource pressure (under-provisioned runtime), not test logic | Raise the runtime floor (4 CPU / 8 GB / 4 GB swap); for WSL set `~/.wslconfig` then `wsl --shutdown` + restart Docker. See *Docker / Container Runtime*. Do not loosen timeouts/assertions first |
+| Testcontainers / Aspire tests fail only on a non-Docker-Desktop runtime | Fixture or test probes for Docker Desktop specifically | Use a generic capability check (`docker info` / Testcontainers connect), not a product-specific probe. WSL Docker Engine, Rancher Desktop, Podman socket are all valid |
 
 ### Detailed Fix Patterns
 

@@ -3,7 +3,7 @@
 **Primary trigger: run this by hand after any significant instruction refactor** - any change that moved,
 merged, split, or reworded guidance across multiple files. Run it otherwise periodically too (before cutting a
 release, whenever a "broken until X" deviation is added, or just every so often). There is no schedule.
-Maintenance-only doc - lives at repo root, **not** copied by
+Maintenance-only doc - lives in `maintenance/`, **not** copied by
 `scripts/install-to-project.py`, so it never ships into scaffolded apps. (Same reason it is not linked from
 `README.md`/`CLAUDE.md`: those are installed, and a link to this file would dangle in every target app.)
 
@@ -16,7 +16,7 @@ them and each round missed spots. Two aggravators: volatile and stable content i
 un-compiled copyable code that drifts from reality. This audit keeps the set single-source-of-truth (SSOT) so
 the next change touches one owner, not seven.
 
-The Foundry topic has already been consolidated (owner: [skills/ai-integration.md](skills/ai-integration.md))
+The Foundry topic has already been consolidated (owner: [skills/ai-integration.md](../skills/ai-integration.md))
 and is the worked example for the procedure below.
 
 ## The manual procedure
@@ -81,7 +81,7 @@ a pointer)? Use the backlog below as the standing work queue.
    else carries a one-line pointer, never a restatement.
 3. **Phase-scoped files keep only their phase's minimum** inline; depth lives in the owner.
 4. **Reference app is the canonical code.** Prefer pointing to compiled `TaskFlow` paths
-   ([support/reference-app.md](support/reference-app.md)) over embedding large copyable snippets that cannot be
+   ([support/reference-app.md](../support/reference-app.md)) over embedding large copyable snippets that cannot be
    compile-checked.
 5. **Data/schema docs: values + pointer**, not a re-explanation of the narrative.
 
@@ -118,25 +118,25 @@ are pointers.
 Done: **Foundry** (owner `skills/ai-integration.md`).
 
 1. **Aspire AppHost resource wiring** (HIGH) - SQL/Redis/project refs duplicated across
-   [patterns/infrastructure-wiring.md](patterns/infrastructure-wiring.md) and [skills/aspire.md](skills/aspire.md)
+   [patterns/infrastructure-wiring.md](../patterns/infrastructure-wiring.md) and [skills/aspire.md](../skills/aspire.md)
    (also `support/quick-reference.md`, `support/troubleshooting.md`). Proposed owner:
    `patterns/infrastructure-wiring.md`; `aspire.md` keeps its mode/decision tables and points (same 5b).
 2. **AddServiceDefaults / OpenTelemetry / health checks** (HIGH freq) - `infrastructure-wiring.md`,
-   [patterns/api-host-wiring.md](patterns/api-host-wiring.md), `skills/api.md`, `skills/background-services.md`.
+   [patterns/api-host-wiring.md](../patterns/api-host-wiring.md), `skills/api.md`, `skills/background-services.md`.
    Owner: `patterns/infrastructure-wiring.md`.
 3. **FusionCache multi-cache config loop** (~60 lines) - `infrastructure-wiring.md` and
-   [skills/caching.md](skills/caching.md). Owner: decide concept (`caching.md`) vs wiring
+   [skills/caching.md](../skills/caching.md). Owner: decide concept (`caching.md`) vs wiring
    (`infrastructure-wiring.md`) - see Open decisions.
-4. **No-op stub / conditional-DI rule** (15+ files) - owner [templates/no-op-stub-template.md](templates/no-op-stub-template.md);
+4. **No-op stub / conditional-DI rule** (15+ files) - owner [templates/no-op-stub-template.md](../templates/no-op-stub-template.md);
    replace restatements with a `GR`-style one-liner + pointer.
 5. **CQRS handler/validation/endpoint boilerplate** - owner: the `templates/cqrs-*-template.md` set; skills and
    `ai/contract-scaffolding.md` point.
-6. **Identity auth toggle (scaffold vs live)** - owner [skills/identity-management.md](skills/identity-management.md)
+6. **Identity auth toggle (scaffold vs live)** - owner [skills/identity-management.md](../skills/identity-management.md)
    (verify `skills/gateway.md`, `patterns/api-host-wiring.md` refs first).
 7. **DefaultAzureCredential / ManagedIdentityCredential** one-liner - owner `skills/identity-management.md`
    (verify first).
 8. **DTO-read / constructor-read non-negotiables** - promote to a `GR-NN` rule in
-   [GROUND-RULES.md](GROUND-RULES.md), cite by id elsewhere.
+   [GROUND-RULES.md](../GROUND-RULES.md), cite by id elsewhere.
 
 Work top-down, one per pass. Reassess after 1-3: if drift recurrences drop, the lighter items may not be worth
 the churn.

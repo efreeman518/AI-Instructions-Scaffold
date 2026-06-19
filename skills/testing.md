@@ -85,6 +85,17 @@ This table is the single source of truth. Phase 2 records the selected tiers (Qu
 - **AppHost-backed WasmUI is real mesh UI.** If the Uno WASM app depends on API, Gateway, SQL, Redis, storage, or auth, the `WasmUI` fixture starts the Aspire AppHost in testing mode, keeps required resources live, disables only optional hosts, and resolves Gateway/UI URLs from named endpoints. Do not generate standalone browser tests against guessed local ports for that case.
 - **Bound heavy startup.** `Aspire`, `WasmUI`, and `MobileUI` fixtures log every long startup step and apply explicit per-step timeouts. A single hanging restore, AppHost start, browser navigation, or bridge-state wait must fail that step with diagnostics, not hang Test Explorer.
 
+### Container Runtime (Docker) for Mesh / Component Tiers
+
+The container-backed tiers - `Test.Aspire` (mesh) and `Test.Integration` / `Test.E2E` (Testcontainers) - require a working container runtime; the fast tiers do not.
+
+- **Gate on a generic container-capability check, not a Docker-Desktop probe.** Treat the runtime as available when the Testcontainers/Docker client can connect (or `docker info` succeeds). Docker Desktop, WSL Docker Engine, Rancher Desktop, and a Podman-compatible Docker socket are all valid - never special-case a product or probe for Docker Desktop specifically in test code.
+- **No runtime -> `Assert.Inconclusive`** with a message naming the missing container runtime and the fix (see [Never Silently Pass](#never-silently-pass-applies-to-every-tier)). This is the `StartupError`-captured path in the standalone fixtures and the Aspire fixture preflight.
+- **Never silently downgrade a mesh or component test to an in-memory provider.** Swapping a Testcontainers SQL / Aspire mesh test to EF InMemory when Docker is absent makes it pass while exercising none of the real-infra failure modes it exists to catch - that hides infra failures behind green. Self-skip (`Inconclusive`); do not rewrite it to a lighter store.
+- **Unit, endpoint, and fake-`IChatClient` AI tests run with no Docker at all** - they must never take a container dependency.
+
+Suspect container resource pressure before editing test logic when health checks flap; the resource floor (4 CPU / 8 GB / 4 GB swap), WSL `.wslconfig`, and runtime-restart guidance live in [../support/troubleshooting.md](../support/troubleshooting.md) -> Docker / Container Runtime.
+
 ## Project Layout
 
 ```text
@@ -177,12 +188,13 @@ Prefer specific MSTest asserts over generic `Assert.IsTrue`.
 
 ## Categories and Command Split
 
-Use these categories: `Unit`, `Endpoint`, `Integration`, `Aspire`, `E2E`, `PlaywrightUI`, `WasmUI`, `MobileUI`, `Architecture`, `Load`, `Benchmark`, `Mutation`.
+Use these categories: `Unit`, `Endpoint`, `Integration`, `Aspire`, `E2E`, `PlaywrightUI`, `WasmUI`, `MobileUI`, `Architecture`, `Load`, `Benchmark`, `Mutation`. When AI is scaffolded, the live model smoke lane adds `LiveAI` (plus `FoundryLocal` / `AzureFoundry` to scope a smoke to a single provider).
 
 Category boundaries that matter:
 
 - **`Aspire`** is the mesh tier (`Test.Aspire`), distinct from **`Integration`** (component, `Test.Integration`). Never tag mesh tests `Integration` - that would boot the full graph on a `--filter TestCategory=Integration` run.
 - **`PlaywrightUI`** is DOM-based browser UI (MudBlazor/React/managed-DOM Uno). **`WasmUI`** is the Skia-canvas Uno bridge tier. **`MobileUI`** is Appium. None of these is `E2E` (`E2E` is WAF + Testcontainers SQL).
+- **`LiveAI`** is the model-backed AI smoke lane in `Test.Aspire` - one active-provider lane (Azure if configured, else Foundry Local if it bootstraps), `Inconclusive` (never green) when no real provider is active. Fast AI coverage (contract, parse guard, no-write, write, no-op fallback) uses a fake `IChatClient` in `Test.Unit` / `Test.Endpoints` and carries no AI category. `AzureFoundry` is for Azure-specific selection/provisioning only, not a second copy of a provider-neutral contract. Doctrine: [ai-integration.md](ai-integration.md) -> Provider Test Tiers.
 
 ```powershell
 # Canonical "all normal tests" - excludes Load (NBomber). Heavy tiers (Aspire/WasmUI/MobileUI)
@@ -197,6 +209,7 @@ dotnet test --filter "TestCategory=E2E"
 dotnet test --filter "TestCategory=PlaywrightUI"
 dotnet test --filter "TestCategory=WasmUI"
 dotnet test --filter "TestCategory=MobileUI"
+dotnet test --filter "TestCategory=LiveAI"        # active-provider AI smoke; Inconclusive when no real provider
 dotnet test src/Test/Test.Mutation/Test.Mutation.csproj --filter "TestCategory=Mutation"
 ```
 
@@ -451,6 +464,7 @@ The build/start/health-gate/connection-string mechanics live in [../templates/te
 - [ ] Mesh tests carry `[TestCategory("Aspire")]` (not `Integration`); startup deadline reads `{APP}_ASPIRE_STARTUP_TIMEOUT_SECONDS`.
 - [ ] Aspire/WasmUI tiers are default-on with false-only opt-out; `Test.Mobile` is opt-IN (`{APP}_MOBILE_TESTS_ENABLED=true` activates; default off self-marks `Inconclusive` per test, never a silent pass; TRX shows 0 passed / N not-executed). All active tiers self-mark `Inconclusive` (precise message) when prerequisites are missing.
 - [ ] `dotnet test --filter "TestCategory!=Load"` is documented as the canonical local "all normal tests" run.
+- [ ] (AI scaffolded) Fast AI coverage (contract, parse guard, no-write, write, no-op fallback) uses a fake `IChatClient` in `Test.Unit`/`Test.Endpoints`; live model tests are smoke-only in `Test.Aspire` as one active-provider lane (`LiveAI`), `Inconclusive` (never green) on no-op. The lane decides the provider via `GET /api/v1/ai/status`, not a `foundry` CLI probe or connection-string sniff. No per-provider copies of provider-neutral contracts. See [ai-integration.md](ai-integration.md) -> Provider Test Tiers.
 - [ ] Mesh tests are `[DoNotParallelize]`; no endpoint-contract tests in either integration project.
 - [ ] Every test class has a class-level `<summary>` (scope / tier + why / quirks).
 - [ ] Aspire host passes `Parameters:*` via `configureBuilder.hostSettings.Configuration`, not env vars.

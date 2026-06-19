@@ -628,6 +628,43 @@ Cover the smallest useful surface first:
 3. Prompt loading works from file-based system prompts.
 4. Disabled AI features do not register or resolve their services.
 
+### Provider Test Tiers (Azure / Local / no-op)
+
+Keep the tiers distinct - the model provider must not leak into the fast tiers.
+
+- **Application / service / endpoint tests use a fake `IChatClient`** (a small deterministic stand-in, or a Moq double) - never a real Azure or Foundry Local model. Cover with fakes: the response contract, the parse guard (model JSON wrapped in extra text, or non-parseable output), the no-write path (a triage/draft that must not persist), and the write behavior (a parseable response that does persist). These live in `Test.Unit` / `Test.Endpoints`.
+- **Cover the no-op fallback explicitly.** Assert that with no provider wired, `AddAiServices` registers the no-op `IChatClient` (and no-op search/agent), and that each AI endpoint returns its `isConfigured: false` contract without persisting. A no-op path that is never asserted is an untested fallback.
+- **Live model tests are smoke only** and belong in the mesh tier (`Test.Aspire`). They assert response contracts (status, `isConfigured: true`, non-empty/typed fields), not exact model text.
+- **One active-provider lane, not one lane per provider.** Smoke the active provider only - Azure Foundry when configured, else Foundry Local when it bootstraps. Do not copy every app contract once for Azure and again for Local. The active-provider smoke set is: chat, the tool-calling agent, one safe AI write-adjacent path (e.g. triage with `apply=false`, or a draft that may create), and one FlowEngine agent-workflow run. Reserve an `AzureFoundry` category for genuinely Azure-specific behavior (resource selection / provisioning), never for a second copy of a provider-neutral contract. Add a provider-specific copy only when the behavior actually differs by provider.
+- **Never silently pass a live AI test on no-op.** When no real provider is active, the live smoke is `Assert.Inconclusive` with a message naming the absent provider - never green. (See [testing.md](testing.md) -> Never Silently Pass.) The no-op contract tests above cover that state; the live smokes do not.
+
+Provider selection priority (the lane mirrors the app's own order):
+
+1. Azure Foundry configured -> use Azure.
+2. else Foundry Local requested / available -> use Local.
+3. else no-op AI.
+
+### Deciding the Live Lane Without Probing the CLI
+
+Do **not** shell the `foundry` CLI (`foundry service status`, `foundry model info ...`) to decide whether the Local smoke lane runs. The current local path is the self-contained SDK-direct bootstrap (no CLI on `PATH`), and `foundry` catalog/CLI behavior is brittle across versions - a CLI probe can wrongly disable a lane the SDK would have bootstrapped fine. Instead:
+
+1. When Azure is absent, **request Foundry Local by default** (set the local opt-in var for the test graph) and let the API host attempt the SDK bootstrap.
+2. **Inspect `GET /api/v1/ai/status`** to learn the active provider, and gate the lane on that result.
+
+Expose a minimal status endpoint for this (and for ops). It reports the provider resolved from the live object graph - `azure` / `local` / `none` - based on which bootstrap path wired `IChatClient`, recorded once at startup. It must not run a CLI probe or call the model. Do not infer the provider by sniffing a connection string: the SDK-direct local path wires no `chat` connection at all, so a connection-string heuristic reports `none` for a working local model.
+
+```csharp
+// At bootstrap, whichever path wires IChatClient also records the provider name
+// (no CLI, no model call): services.AddSingleton(new AiProviderInfo("azure" | "local" | "none"));
+
+// GET /api/v1/ai/status - honest, side-effect-free provider signal for tests and ops.
+group.MapGet("/status", (
+    [FromServices] IChatClient chatClient,
+    [FromServices] AiProviderInfo provider) =>
+    Results.Ok(new { provider = provider.Name, isConfigured = chatClient is not NoOpChatClient }))
+    .WithName("AiStatus");
+```
+
 ### Agent Tests
 
 ```csharp
