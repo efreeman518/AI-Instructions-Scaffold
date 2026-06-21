@@ -108,6 +108,7 @@ Out of scope for this session - do not attempt unless explicitly re-scoped:
 - Record instruction gaps in `.scaffold/INSTRUCTION-GAPS.md`, not inside `.instructions/`, during consumer app scaffolding.
 - Keep entries short so the next AI turn can resume without reloading unnecessary docs.
 - Verify HANDOFF.md is well-formed (correct sub-phase, gate result, next-load-set populated, blockers itemized) before ending a phase session.
+- **AI-client wiring currency.** When AI provider wiring changed this session, re-derive the AI-client lines in `Last Session Summary` and any `D-###` AI-client decision references from the **current** code - never carry a removed helper name forward (e.g. a deleted `AddEF...`-style chat-client registration). The AI-client (provider bootstrap, `IChatClient` registration, `AiProviderInfo`/status wiring) is a recurring drift point; cross-check against [skills/ai-integration.md](../skills/ai-integration.md) before closing.
 - **Ephemeral URLs:** Do not record Aspire dashboard URLs, proxy ports, or host endpoints. These are assigned at runtime and change between launches. Instead, record the discovery method (e.g., "read dashboard URL from `dotnet run` output, then check resource list for host URLs").
 
 ## Phase-1 Artifact Currency

@@ -44,6 +44,7 @@ CANARIES = {
     "13.4.5-preview": "skills/ai-integration.md",
     "StartWebServiceAsync": "skills/ai-integration.md",
     "Microsoft.Extensions.AI.OpenAI": "skills/ai-integration.md",
+    'AiProviderInfo("local")': "skills/ai-integration.md",  # availability-driven provider signal; pointers say "AiProviderInfo" only
 }
 roots = ["skills", "patterns", "ai", "support", "schemas", "profiles", "templates"]
 files = [p for r in roots for p in pathlib.Path(r).rglob("*.md")]
@@ -146,5 +147,4 @@ the churn.
 - **Wiring authority vs concept owner** for items 1-3: do `patterns/*` own shared wiring snippets, or do the
   concept `skills/*`? Pick one convention and apply consistently.
 - **How far to push reference-app-as-code:** thin embedded snippets to fragments + TaskFlow pointers, or keep
-  full snippets? Could pair with implementing the missing Foundry SDK-direct path in TaskFlow so docs and code
-  co-evolve.
+  full snippets?

@@ -36,6 +36,7 @@ Tests must verify behavior through public interfaces or endpoints. Avoid asserti
 6. **No simultaneous test + implementation files.** In a single file-generation pass, produce either test files OR implementation files - not both. The only exception is activating `{Entity}Builder.Build()` alongside entity implementation (Step 5 of Phase 5a).
 7. **Do not accept compile-fail as RED.** Fix compile issues first, then confirm assertion-fail RED.
 8. **No horizontal red/green.** Write and green one vertical tracer before expanding the same pattern to the next entity or layer.
+9. **Cover every terminal branch and in-handler transform.** A handler/service method with more than one terminal outcome leaves **one test per branch** - e.g. a completion handler whose pass path sets `Completed` and whose fail path sets `CompletedPartial` needs both tested, not just the passing path. Any in-handler clamp / normalize / transform leaves **one test for that transform** - e.g. a dimension-score clamp to `[0, max]`. A binary terminal branch or a clamp with only the happy path tested is incomplete behavior (rule 3 inverted: non-trivial logic leaves a runnable check).
 
 ### What RED Looks Like
 

@@ -134,6 +134,8 @@ When any of `Test.Aspire`, the `WasmUI` bridge tier, or `Test.Mobile` is in scop
 
 Rule: PlaywrightUI is a different harness. Never merge it with WAF tests.
 
+**AI live-local smoke is a separate RID-bound tier.** When `includeAiServices: true` and the Foundry Local provider is in scope, its live smoke runs in a dedicated RID-bound `Test.FoundryLocal` project - the RID-free mesh (`Test.Aspire`) and in-memory WAF base physically cannot load the native `Microsoft.AI.Foundry.Local` SDK. Every other API-booting tier forces no-op via `AiServices:DisableFoundryLocal` (set on both the WAF base and the AppHost testing branch). Owner: [ai-integration.md](ai-integration.md) section Deciding the Live Lane Without Probing the CLI.
+
 **Tier ladder - pick the cheapest tier that catches the failure mode you're testing.**
 
 ```
