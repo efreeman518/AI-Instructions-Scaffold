@@ -22,7 +22,7 @@ Use GitHub Actions for:
 2. Promotion path is explicit (`dev -> staging -> prod`) with environment protections.
 3. Deploy artifacts are immutable by commit SHA tag.
 4. Scheduler schema/dependency steps run before scheduler rollout.
-5. PR CI excludes heavy suites (E2E/load/benchmarks unless explicitly gated).
+5. PR CI runs only the fast tiers (`Unit`/`Endpoint`/`Architecture`, no Docker). Every heavy or special-runtime tier (`Integration`/`Aspire`/`E2E`/`PlaywrightUI`/`MobileUI`/Foundry Local/`Load`/`Benchmark`/`Mutation`) is a default-off `workflow_dispatch` toggle, never run automatically.
 6. **Private NuGet feed auth:** If the solution references packages from authenticated feeds (e.g., GitHub Packages), the workflow must authenticate before `dotnet restore`. Store a PAT as a repo secret (e.g., `NUGET_PAT`) and add an auth step. Without this, restore fails with `NU1301 / 401 Unauthorized`. See the NuGet auth step below.
 7. **ACA managed identity can pull ACR but NOT GHCR.** When images live in a **private** GHCR package, the ACA managed identity cannot authenticate to `ghcr.io`. Set an explicit registry credential on each app with a PAT that has `read:packages`: `az containerapp registry set --name <app> --server ghcr.io --username <gh-user> --password <PAT>`. `GITHUB_TOKEN` does NOT work as the ACA pull password - it is job-scoped and expires when the job ends. **Public** GHCR packages need no pull secret. State this tradeoff when offering GHCR as the registry.
 8. **Production DB migrations run as an explicit pipeline step, never on startup in Production.** Startup migration is gated `IsDevelopment()` and is a no-op in ACA. Apply schema with an EF migration bundle BEFORE the image swap so schema leads code (see the migration bundle step below).
@@ -67,6 +67,15 @@ Action majors drift. **Verify current majors at scaffold time** (check each acti
 
 ## `ci.yml` (PR Validation)
 
+**Trigger policy: fast tiers auto, everything heavy is a manual toggle.** The fast tiers
+(`Unit`, `Endpoint`, `Architecture`) take no Docker and run automatically on every PR. Every
+heavy or special-runtime tier - `Integration`, `Aspire`, `E2E` (Docker), `PlaywrightUI`
+(hosted stack), `MobileUI` (emulator + Appium), Foundry Local live AI (native runtime),
+`Load`, `Benchmark`, `Mutation` - is a default-off `workflow_dispatch` boolean a maintainer
+opts into. Declare a toggle (and emit its step/job) **only for tiers this scaffold actually
+generated** - the capability-gated table in [testing.md](testing.md) decides which projects
+exist; do not emit dead toggles for absent projects.
+
 Run on PRs to `main`/`develop`:
 
 - checkout
@@ -86,6 +95,7 @@ on:
     branches: [main, develop]
     paths-ignore: ['**.md', 'infra/**']
   workflow_dispatch:
+    # Declare a toggle ONLY for a tier this scaffold generated (see testing.md capability table).
     inputs:
       includeIntegration:
         type: boolean
@@ -95,6 +105,34 @@ on:
         type: boolean
         default: false
         description: "Run Test.Aspire distributed-app mesh tests (full AppHost graph; requires Docker)"
+      includeE2E:
+        type: boolean
+        default: false
+        description: "Run Test.E2E workflow tests (WebApplicationFactory + Testcontainers SQL; requires Docker)"
+      includePlaywright:
+        type: boolean
+        default: false
+        description: "Run Test.PlaywrightUI browser tests against a hosted stack (separate job; requires Docker + browser install)"
+      includeMobile:
+        type: boolean
+        default: false
+        description: "Run Test.Mobile (MobileUI) Appium tests (separate job; requires Android SDK + emulator + Appium)"
+      includeFoundryLocal:
+        type: boolean
+        default: false
+        description: "Run Test.FoundryLocal live AI smoke (separate job; RID-bound, requires the native Foundry Local runtime)"
+      includeLoad:
+        type: boolean
+        default: false
+        description: "Run Test.Load (NBomber) throughput/latency baselines"
+      includeBenchmarks:
+        type: boolean
+        default: false
+        description: "Run Test.Benchmarks (BenchmarkDotNet via dotnet run, not dotnet test)"
+      includeMutation:
+        type: boolean
+        default: false
+        description: "Run Test.Mutation (Stryker via dotnet stryker, not dotnet test)"
 
 jobs:
   build-and-test:
@@ -132,28 +170,43 @@ jobs:
 
       - run: dotnet build src/{SolutionName}.slnx --no-restore --configuration Release
 
+      # Fast tiers: always run, no Docker, no gate.
       # Target specific test projects to avoid "No test matches" noise from unrelated projects
       - run: dotnet test src/Test/Test.Unit/Test.Unit.csproj --no-build --configuration Release
       - run: dotnet test src/Test/Test.Endpoints/Test.Endpoints.csproj --no-build --configuration Release
       - run: dotnet test src/Test/Test.Architecture/Test.Architecture.csproj --no-build --configuration Release
+
+      # Docker-backed tiers: manual dispatch only.
       - if: ${{ github.event_name == 'workflow_dispatch' && inputs.includeIntegration == true }}
         run: dotnet test src/Test/Test.Integration/Test.Integration.csproj --no-build --configuration Release
       - if: ${{ github.event_name == 'workflow_dispatch' && inputs.includeAspireMesh == true }}
         run: dotnet test src/Test/Test.Aspire/Test.Aspire.csproj --no-build --configuration Release
       - if: ${{ github.event_name == 'workflow_dispatch' && inputs.includeE2E == true }}
         run: dotnet test src/Test/Test.E2E/Test.E2E.csproj --no-build --configuration Release
-      # Test.PlaywrightUI requires a hosted stack - see "Hosted-stack orchestration" section below.
+
+      # Perf / quality tiers: manual dispatch only. NOTE the runner per tier.
+      - if: ${{ github.event_name == 'workflow_dispatch' && inputs.includeLoad == true }}
+        run: dotnet test src/Test/Test.Load/Test.Load.csproj --no-build --configuration Release --filter "TestCategory=Load"
+      # Test.Benchmarks uses BenchmarkDotNet [Benchmark], not [TestMethod] - `dotnet test`
+      # discovers nothing (silent no-op). Run the console host instead.
+      - if: ${{ github.event_name == 'workflow_dispatch' && inputs.includeBenchmarks == true }}
+        run: dotnet run --project src/Test/Test.Benchmarks/Test.Benchmarks.csproj --configuration Release
+      # Test.Mutation runs via the Stryker local tool, not `dotnet test`.
+      - if: ${{ github.event_name == 'workflow_dispatch' && inputs.includeMutation == true }}
+        run: dotnet stryker --project src/Test/Test.Mutation/Test.Mutation.csproj
+      # Test.PlaywrightUI / Test.Mobile / Test.FoundryLocal each need runner setup the main
+      # job should not carry - see the separate jobs below.
 ```
 
 ### Runner Disk for Container-Backed Test Tiers
 
-The `Integration` and `Aspire` tiers pull the full emulator image set: SQL Server (**two** tags once the Service Bus emulator's bundled SQL sidecar is counted - see [aspire.md](aspire.md) -> *Emulator Image Pinning*), plus Azurite, the Service Bus emulator, and Redis. A GitHub-hosted `ubuntu-latest` runner has ~14 GB free and can overflow mid-pull. **The failure is misleading:** Docker reports `no space left on device` deep in the pull log, but the test surfaces it as an AppHost resource-wait `System.TimeoutException` (the SQL container never reaches healthy). Check the pull log for the disk error before chasing the timeout.
+The `Integration`, `Aspire`, and `E2E` tiers pull the emulator/container image set: SQL Server (**two** tags once the Service Bus emulator's bundled SQL sidecar is counted - see [aspire.md](aspire.md) -> *Emulator Image Pinning*; `Test.E2E` adds its own Testcontainers SQL), plus Azurite, the Service Bus emulator, and Redis. A GitHub-hosted `ubuntu-latest` runner has ~14 GB free and can overflow mid-pull. **The failure is misleading:** Docker reports `no space left on device` deep in the pull log, but the test surfaces it as an AppHost resource-wait `System.TimeoutException` (the SQL container never reaches healthy). Check the pull log for the disk error before chasing the timeout.
 
 Reclaim space before the container-backed steps, gated to the same dispatch inputs so normal PR runs (unit/endpoint/arch only) skip it:
 
 ```yaml
 - name: Free disk space
-  if: ${{ github.event_name == 'workflow_dispatch' && (inputs.includeIntegration || inputs.includeAspireMesh) }}
+  if: ${{ github.event_name == 'workflow_dispatch' && (inputs.includeIntegration || inputs.includeAspireMesh || inputs.includeE2E) }}
   uses: jlumbroso/free-disk-space@main
   with:
     tool-cache: false   # keep the hosted .NET; build depends on it
@@ -168,15 +221,24 @@ Aligning the Service Bus SQL sidecar tag with the `sql` resource (aspire.md, sam
 
 ### Test Category Policy
 
-    | Category | PR Default | Optional / Manual |
-    |---|---|---|
-    | `Unit` | required | - |
-    | `Endpoint` | required (WebApplicationFactory contract coverage) | - |
-    | `Architecture` | required | - |
-    | `Integration` | - | service-level vs real external services (workflow dispatch; Testcontainers required) |
-    | `E2E` | - | multi-endpoint workflow chains (workflow dispatch) |
-    | `PlaywrightUI` | - | browser UI; requires hosted stack (release/nightly) |
-    | `Load`, `Benchmark`, `Mutation` | - | release/on-demand only |
+Fast tiers run automatically on PRs; everything else is a default-off `workflow_dispatch`
+toggle (only emitted for tiers this scaffold generated). The trigger column maps each
+category to its `inputs.*` switch.
+
+| Category | Trigger | Prerequisite / notes |
+|---|---|---|
+| `Unit` | Auto (PR) | none |
+| `Endpoint` | Auto (PR) | none (WebApplicationFactory contract coverage) |
+| `Architecture` | Auto (PR) | none |
+| `Integration` | Manual (`includeIntegration`) | Docker (component vs one standalone Testcontainer) |
+| `Aspire` | Manual (`includeAspireMesh`) | Docker (full AppHost mesh; disk reclaim) |
+| `E2E` | Manual (`includeE2E`) | Docker (multi-endpoint chains, Testcontainers SQL) |
+| `PlaywrightUI` | Manual (`includePlaywright`) | hosted stack + browser install (own job) |
+| `MobileUI` | Manual (`includeMobile`) | Android SDK + emulator + Appium; `{APP}_MOBILE_TESTS_ENABLED=true` (own job) |
+| Foundry Local (`LiveAI`) | Manual (`includeFoundryLocal`) | native Foundry Local runtime, RID-bound (own job) |
+| `Load` | Manual (`includeLoad`) | heavy; NBomber via `dotnet test --filter TestCategory=Load` |
+| `Benchmark` | Manual (`includeBenchmarks`) | heavy; BenchmarkDotNet via `dotnet run` (NOT `dotnet test`) |
+| `Mutation` | Manual (`includeMutation`) | heavy; Stryker via `dotnet stryker` (NOT `dotnet test`) |
 
 ### Hosted-Stack Orchestration (`Test.PlaywrightUI`)
 
@@ -216,6 +278,58 @@ playwright:
 For PR-time runs, gate `Test.PlaywrightUI` to nightly to keep PR loops fast.
 
 If `Test.PlaywrightUI` is a Node Playwright suite for React/Vite, replace the browser install/run steps with `npm ci`, `npx playwright install --with-deps`, and `node node_modules/@playwright/test/cli.js test --project react`, while keeping the same hosted-stack startup/teardown contract.
+
+### Special-Runtime Jobs (`Test.Mobile`, `Test.FoundryLocal`)
+
+These two tiers need a runtime the main job must not carry, so each is its own
+`workflow_dispatch`-gated job, emitted only when the tier was generated.
+
+**`Test.Mobile` (`MobileUI`, Appium).** Needs an Android SDK + a running emulator + an Appium
+server. `MobileUI` is opt-IN: set the enable flag (`{APP}_MOBILE_TESTS_ENABLED=true`), or the
+tests self-mark `Inconclusive` (testing.md -> *Capability-Gated Test Tiers*). Use the
+`reactivecircus/android-emulator-runner` action to provide the emulator rather than hand-rolling it.
+
+```yaml
+mobile:
+  runs-on: ubuntu-latest        # the emulator action provides KVM acceleration
+  if: github.event_name == 'workflow_dispatch' && inputs.includeMobile == true
+  steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-dotnet@v4
+      with: { global-json-file: src/global.json }
+    - run: dotnet build src/Test/Test.Mobile/Test.Mobile.csproj --configuration Release
+    - run: npm install -g appium && appium &
+    - name: Run Mobile UI tests on emulator
+      uses: reactivecircus/android-emulator-runner@v2
+      env:
+        '{APP}_MOBILE_TESTS_ENABLED': 'true'   # opt-IN enable flag; else tests are Inconclusive
+      with:
+        api-level: 34
+        script: dotnet test src/Test/Test.Mobile/Test.Mobile.csproj --no-build --configuration Release --filter "TestCategory=MobileUI"
+```
+
+**`Test.FoundryLocal` (live AI smoke).** RID-bound native tier - the runner must install and
+bootstrap the Foundry Local runtime before the test loads the native
+`Microsoft.AI.Foundry.Local` SDK. The live lane is `Inconclusive` (never green) when no real
+provider is active; the lane decides the provider via `GET /api/v1/ai/status`, not a CLI probe.
+Owner doctrine: [ai-integration.md](ai-integration.md) -> *Provider Test Tiers* / *Deciding the
+Live Lane Without Probing the CLI*. Do not restate it here.
+
+```yaml
+foundry-local:
+  runs-on: ubuntu-latest
+  if: github.event_name == 'workflow_dispatch' && inputs.includeFoundryLocal == true
+  steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-dotnet@v4
+      with: { global-json-file: src/global.json }
+    - name: Install + bootstrap Foundry Local runtime
+      run: |
+        # Install the Foundry Local runtime per its docs, then warm the model.
+        # foundry model run <model>   # bootstrap before the RID-bound test loads the native SDK
+    - name: Run live AI smoke (RID-bound)
+      run: dotnet test src/Test/Test.FoundryLocal/Test.FoundryLocal.csproj --configuration Release --filter "TestCategory=LiveAI"
+```
 
 ---
 
@@ -478,14 +592,16 @@ For `scaffoldMode: lite`:
 4. Schema prerequisites (such as scheduler tables) are applied before rolling dependent services.
 5. Keep environment promotions explicit and approval-gated.
 6. Validate Bicep before deploy.
-7. Never run E2E/load/benchmark in default PR path.
+7. Default PR path runs fast tiers only; all heavy/special tiers are `workflow_dispatch` toggles, default off.
 8. Keep token placeholders aligned with [placeholder-tokens.md](../ai/placeholder-tokens.md).
 
 ---
 
 ## Verification
 
-- [ ] `ci.yml` runs restore/build and required PR test categories
+- [ ] `ci.yml` runs the fast tiers (`Unit`/`Endpoint`/`Architecture`) on PR with no Docker and no `if:` gate
+- [ ] `ci.yml` declares a `workflow_dispatch` boolean (default false) for every manual tier it references, and emits one only for tiers this scaffold generated; every `inputs.*` referenced in an `if:` is declared
+- [ ] heavy tiers carry the `workflow_dispatch && inputs.<x>` gate; Benchmarks use `dotnet run` and Mutation uses `dotnet stryker` (never `dotnet test`); disk reclaim covers Integration/Aspire/E2E
 - [ ] `cd.yml` defaults to `workflow_dispatch` only (push-to-main is opt-in, added after infra exists)
 - [ ] `cd.yml` logs in with OIDC and pushes SHA-tagged images (ACR or GHCR per scaffold choice)
 - [ ] GHCR path: private package has `az containerapp registry set` pull cred per app

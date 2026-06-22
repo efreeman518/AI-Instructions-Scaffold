@@ -269,7 +269,8 @@ AI services use conditional registration - absent config -> no-op stubs register
 ```csharp
 public static class AiServiceCollectionExtensions
 {
-    public static IServiceCollection AddAiServices(this IServiceCollection services, IConfiguration config)
+    // environment gates the opt-in dev-stub tier (Development only); callers pass builder.Environment.
+    public static IServiceCollection AddAiServices(this IServiceCollection services, IConfiguration config, IHostEnvironment environment)
     {
         var aiSection = config.GetSection(AiSettings.ConfigSectionName);
         services.AddOptions<AiSettings>()
@@ -299,20 +300,31 @@ public static class AiServiceCollectionExtensions
             services.AddScoped<IProjectSearchService, NoOpSearchService>();
         }
 
-        // Agent services - once the agent feature exists, live behavior follows IChatClient presence.
-        // Without a model, keep the no-op stub so local scaffold runs still boot.
-        if (hasChatClient)
+        // Opt-in dev-stub: a deterministic IChatClient for manual local runs/demos, so the agent and
+        // AI surfaces render populated content with no model. Development-only, off by default, and only
+        // when no live provider was wired. Never a deployed environment (see Configuration -> DevStubContent).
+        var devStub = !hasChatClient && settings.DevStubContent && environment.IsDevelopment();
+        var usableChatClient = hasChatClient || devStub;
+
+        // Agent services - once the agent feature exists, live behavior follows a usable IChatClient.
+        // Without a model (and no dev-stub), keep the no-op stub so local scaffold runs still boot.
+        if (usableChatClient)
             services.AddScoped<ISupportTriageAgent, SupportTriageAgentService>();
         else
             services.AddScoped<ISupportTriageAgent, NoOpSupportTriageAgent>();
 
         // IChatClient fallback so AI endpoints/consumers resolve and the app boots offline.
-        if (!hasChatClient)
+        if (devStub)
+            services.AddSingleton<IChatClient, StubContentChatClient>(); // deterministic dev/demo content
+        else if (!hasChatClient)
             services.AddSingleton<IChatClient, NoOpChatClient>();
 
         // Provider signal for GET /ai/status. Each IChatClient bootstrap branch (Azure host path,
-        // SDK-direct local path) already registered AiProviderInfo("azure"|"local"); TryAddSingleton
-        // keeps that and falls back to "none" when no provider was wired (the no-op case above).
+        // SDK-direct local path) already registered AiProviderInfo("azure"|"local"); the dev-stub path
+        // records "stub". TryAddSingleton keeps whichever was set and falls back to "none" when no
+        // provider was wired (the no-op case above).
+        if (devStub)
+            services.TryAddSingleton(new AiProviderInfo("stub"));
         services.TryAddSingleton(new AiProviderInfo("none")); // Microsoft.Extensions.DependencyInjection.Extensions
 
         return services;
@@ -321,6 +333,8 @@ public static class AiServiceCollectionExtensions
 ```
 
 No-op stubs return empty results or a `Result.Failure("AI service not configured")` and log a warning; they do not throw on DI resolution. Scaffold `AiProviderInfo` and the `GET /ai/status` endpoint **by default** whenever `includeAiServices: true` - it is the live-lane gate (see *Testing*) and an ops signal, and is easy to skip because the agents work without it.
+
+**Runtime synthesized content is deliberately not a default.** The honest default with no provider wired is the no-op contract - empty results, `AiProviderInfo("none")`, `isConfigured: false` - so an offline boot never fabricates content that looks like model output. Fast test tiers do not need this default to be populated: they inject a deterministic fake `IChatClient` (see *Testing* -> *Provider Test Tiers*), so they already assert full response contracts with no model. The one gap that justifies more is the **manual** local run / demo (a real `dotnet run` / Aspire boot, where no fake is injected): with no provider it shows empty AI surfaces. The opt-in `AiServices:DevStubContent` flag (above) closes only that gap - Development-only, off by default, registering a small deterministic `StubContentChatClient` (the same deterministic-stand-in shape the test tiers use, promoted to an opt-in app registration, not a second generator). It surfaces as a distinct provider `stub` via `GET /ai/status`, so a UI can banner it as synthesized and it is never mistaken for a model, and the live smoke treats `stub` like `none` (Inconclusive, never green - see *Testing*). Leave it off unless a populated local/demo experience is actually wanted.
 
 **Multi-host wiring.** When more than one host consumes AI (e.g. API and Functions), factor the provider selection into one shared path both hosts call - do not duplicate the Azure/local/no-op branch in each `Program.cs`. Register the AI consumer services (`AddAiServices` - agents, demos, the `AiProviderInfo` fallback) through the shared Bootstrapper as a feature-scoped `Register{Ai}Services` extension with per-host opt-in, per [bootstrapper.md](bootstrapper.md) (Conditional Per-Host Dependency Pattern); keep the host-builder client bootstrap (the Azure `AddAzureChatCompletionsClient`, or the async SDK-direct local bootstrap, both of which are host/RID-bound) in one shared routine the opting-in hosts share. The inline `Program.cs` examples above are the single-host shorthand.
 
@@ -335,6 +349,7 @@ No-op stubs return empty results or a `Result.Failure("AI service not configured
     "UseAgents": false,
     "UseVectorSearch": false,
     "DisableFoundryLocal": false,
+    "DevStubContent": false,
     "FoundryEndpoint": "https://ai-foundry-{resource}.services.ai.azure.com/",
     "AgentModelDeployment": "gpt-4o-deploy",
     "EmbeddingModelDeployment": "embedding-deploy",
@@ -351,7 +366,9 @@ No-op stubs return empty results or a `Result.Failure("AI service not configured
 
 Endpoint keys by axis: `FoundryEndpoint` selects/configures the real Azure path (inference). `FoundryResourceName` + `FoundryResourceGroup` target an **existing** Azure Foundry account (the `RunAsExisting`/`PublishAsExisting` parameters). `FoundryProjectEndpoint` + `FoundryAgentName` drive the **server-hosted/pre-existing agent** client path (`AIProjectClient.AsAIAgent(...)`). All four are empty by default and opt-in.
 
-`DisableFoundryLocal` is the local-path **opt-out** (default `false`). The API host attempts the SDK-direct local bootstrap whenever Azure is absent; set this `true` to skip the attempt and force no-op AI. It is the switch RID-free / offline test tiers set on both API boot paths (see *Testing* -> *Deciding the Live Lane*); it has no effect when Azure is wired.
+`DisableFoundryLocal` is the local-path **opt-out** (default `false`). The API host attempts the SDK-direct local bootstrap whenever Azure is absent; set this `true` to skip the attempt and force no-op AI. It is the switch RID-free / offline test tiers set on both API boot paths (see *Testing* -> *Deciding the Live Lane*); it has no effect when Azure is wired. Unlike the other keys here, it is **read host-side via `config.GetValue<bool>("AiServices:DisableFoundryLocal")` in `Program.cs`, not bound on `AiSettings`** - deliberately, because it gates the RID-bound host bootstrap that runs before (and outside) the shared RID-free `Infrastructure.AI` settings binding. The tradeoff: a host knob has no bind-time validation, so a typo in the key silently no-ops. Keep the spelling exact. Shortcut: a single host-read bool; if host-only AI knobs proliferate, promote them to a small host-local options record so they are not stringly-typed in two places.
+
+`DevStubContent` is the manual-local/demo **opt-in** (default `false`). When `true`, in a Development environment, and only when no live provider (Azure or Foundry Local) was wired, the API registers a deterministic `StubContentChatClient` instead of the no-op client and records `AiProviderInfo("stub")` - so a real `dotnet run`/Aspire boot renders populated AI surfaces without a model. It has no effect outside Development, no effect when a real provider is wired, and never greens a live smoke (`stub` is treated like `none`; see *DI Registration* and *Testing* -> *Provider Test Tiers*). Leave it `false` to keep the honest empty/`isConfigured: false` state.
 
 > **Stub rule:** Generate all AI settings with `// TODO: [CONFIGURE]` comments. Use empty strings for endpoints - never hardcode real URLs.
 
@@ -470,6 +487,8 @@ If the target Azure environment requires keyless managed-identity inference inst
 
 > **This is a temporary workaround, not the target architecture.** Use it only while the preferred path (`RunAsFoundryLocal()`) is broken (see *Known issue*). When Aspire ships the fix, migrate back per *Migration: restoring `RunAsFoundryLocal()`* below.
 
+> **The snippet below is verified against `Microsoft.AI.Foundry.Local` `1.2.3` only** (the pin), by the RID-bound `Test.FoundryLocal` live lane (provider `local`, real `qwen2.5-0.5b` completion). The preview SDK surface has shifted across releases - `CreateAsync` returns `Task` (get the manager from the static `Instance`), `StartWebServiceAsync()` needs `Configuration.Web` set first and the bound endpoint reads back from `manager.Urls`, and `IModel.GetChatClientAsync()` is not a `Microsoft.Extensions.AI` client. Re-verify against the installed version before relying on it; treat it as illustrative, not version-agnostic.
+
 In this mode the **AppHost wires no Foundry/`chat` resource at all** - there is no `AddFoundry`, no `RunAsFoundryLocal()`, and **no `ConnectionStrings:chat`**. The AppHost only forwards the opt-in env var to the API host; the API host references the self-contained **`Microsoft.AI.Foundry.Local` 1.2.3** SDK and drives it directly (the SDK starts the Foundry Local service, loads a model, and exposes a local OpenAI-compatible endpoint wrapped as `IChatClient`). The Azure path is untouched and stays on Aspire - `AddFoundry` (provision/existing) + host-side `AddAzureChatCompletionsClient("chat")` over `ConnectionStrings:chat`.
 
 **Why version-pinned here (baseline exception):** the failure is version-specific - Aspire's bundled `0.3.0` discovery only matches the stale `0.8.119` runtime, and only `Microsoft.AI.Foundry.Local` `>= 1.2.x` works against the GA `1.x` runtime. Pin `1.2.3` with an inline reason and drop the pin when Aspire ships against a current SDK.
@@ -501,6 +520,8 @@ In this mode the **AppHost wires no Foundry/`chat` resource at all** - there is 
 </ItemGroup>
 ```
 
+**The RID-bound test lane needs its own direct reference.** The native payload (`Microsoft.AI.Foundry.Local.Core`) ships in a separate RID-bound transitive package, and `PrivateAssets="all"` deliberately stops it flowing into downstream refs - including an in-process `WebApplicationFactory` test host that references the API host project. So the `Test.FoundryLocal` lane (see *Testing* -> *Deciding the Live Lane*) must declare its **own** direct `Microsoft.AI.Foundry.Local` `PackageReference` plus matching `RuntimeIdentifiers`; it cannot inherit the native payload transitively. The RID-free fast tiers never reference it.
+
 **Bootstrap (API host `Program.cs`).** Attempt the local bootstrap by default when Azure is absent and the opt-out is unset, and register the resulting `IChatClient`. A failed bootstrap **falls back to no-op** rather than throwing, so the app still boots. Everything downstream (`AddAiServices` gating, `ChatClientAgent`) is unchanged because it keys off `IChatClient` presence - there is no `ConnectionStrings:chat` to read in this mode:
 
 ```csharp
@@ -514,25 +535,38 @@ using System.ClientModel;                        // ApiKeyCredential
 // Availability-driven, NO opt-in: attempt local when Azure is absent and the opt-out is unset.
 // Fast / RID-free test tiers set AiServices:DisableFoundryLocal=true (see Testing) so they never reach here.
 var azureWired = !string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("chat"));
+// Host-read on purpose (not a bound AiSettings property): this gates the RID-bound host bootstrap,
+// which runs before the RID-free Infrastructure.AI settings binding. Tradeoff: no bind-time
+// validation, so a typo in the key silently no-ops - keep the spelling exact. (See Configuration.)
 var disableLocal = builder.Configuration.GetValue<bool>("AiServices:DisableFoundryLocal");
 if (!azureWired && !disableLocal)
 {
     try
     {
-        var foundryConfig = new Configuration { AppName = appName };
-        await FoundryLocalManager.CreateAsync(foundryConfig, NullLogger.Instance);
-        var manager = FoundryLocalManager.Instance;
+        // Web bind config is REQUIRED before StartWebServiceAsync(), or it throws "Web service
+        // configuration was not provided." Port 0 = ephemeral. This is the INPUT bind address; the
+        // ACTUAL bound endpoint comes from manager.Urls after startup (do not reuse this value).
+        var foundryConfig = new Configuration
+        {
+            AppName = appName,
+            Web = new Configuration.WebService { Urls = "http://127.0.0.1:0" }
+        };
+        await FoundryLocalManager.CreateAsync(foundryConfig, NullLogger.Instance); // returns Task (void)
+        var manager = FoundryLocalManager.Instance;                               // get the singleton, not a return value
 
         var catalog = await manager.GetCatalogAsync();
         var model = await catalog.GetModelAsync("qwen2.5-0.5b")          // tool-capable local model
             ?? throw new InvalidOperationException("Foundry Local model 'qwen2.5-0.5b' not found.");
         if (!await model.IsCachedAsync()) await model.DownloadAsync();
         await model.LoadAsync();
-        await manager.StartWebServiceAsync();                            // local OpenAI-compatible endpoint
+        await manager.StartWebServiceAsync();                            // starts the local OpenAI-compatible endpoint; populates manager.Urls
 
+        // Use the official OpenAI SDK over the BOUND address (manager.Urls is a string[] populated only
+        // after startup) - NOT foundryConfig.Web.Urls (the ephemeral input) and NOT IModel.GetChatClientAsync()
+        // (which returns a non-Microsoft.Extensions.AI client). .AsIChatClient() comes from Microsoft.Extensions.AI.OpenAI.
         var openAi = new OpenAIClient(
             new ApiKeyCredential("not-needed"),                         // Foundry Local needs no key
-            new OpenAIClientOptions { Endpoint = new Uri(foundryConfig.Web!.Urls + "/v1") });
+            new OpenAIClientOptions { Endpoint = new Uri(manager.Urls[0] + "/v1") });
         services.AddChatClient(openAi.GetChatClient(model.Id).AsIChatClient());
         services.AddSingleton(new AiProviderInfo("local"));             // record provider for /ai/status
     }
@@ -570,6 +604,7 @@ When `Aspire.Hosting.Foundry` bundles Foundry Local SDK >= 1.x:
 2. Delete the API-host SDK bootstrap block; the API host returns to host-side `AddAzureChatCompletionsClient("chat").AddChatClient()` gated on `ConnectionStrings:chat`.
 3. Restore the AppHost `RunAsFoundryLocal()` branch (above) so local mode again wires a `chat` resource via `WithReference(chat)`.
 4. Set `foundry.localRuntimeMode: RunAsFoundryLocal` in the resource implementation and drop the availability-driven SDK bootstrap, the `AiServices:DisableFoundryLocal` opt-out, and the RID-bound `Test.FoundryLocal` live lane.
+5. **After changing the gate, grep the removed tokens across comments and docs, not just code.** A gating-mechanism change (here: availability-driven -> `RunAsFoundryLocal`, dropping `DisableFoundryLocal`) is done only when the old token is gone from inline comments and XML doc comments too - not just executable logic. `HANDOFF.md` records the high-level change; the recurring miss is a stale doc comment that still names a removed flag and now actively contradicts the logic. This applies to any gating refactor, in either direction.
 
 ---
 
@@ -663,12 +698,14 @@ Keep the tiers distinct - the model provider must not leak into the fast tiers.
 - **Live model tests are smoke only.** The **Azure** live smoke is HTTP-only (no RID) and may run in the mesh tier (`Test.Aspire`). The **Foundry Local** live smoke must run in a dedicated **RID-bound `Test.FoundryLocal`** project, never in the RID-free mesh (see *Deciding the Live Lane* for why). Both assert response contracts (status, `isConfigured: true`, non-empty/typed fields), not exact model text.
 - **One active-provider lane, not one lane per provider.** Smoke the active provider only - Azure Foundry when configured, else Foundry Local when it bootstraps. Do not copy every app contract once for Azure and again for Local. The active-provider smoke set is: chat, the tool-calling agent, one safe AI write-adjacent path (e.g. triage with `apply=false`, or a draft that may create), and one FlowEngine agent-workflow run. Reserve an `AzureFoundry` category for genuinely Azure-specific behavior (resource selection / provisioning), never for a second copy of a provider-neutral contract. Add a provider-specific copy only when the behavior actually differs by provider.
 - **Never silently pass a live AI test on no-op.** When no real provider is active, the live smoke is `Assert.Inconclusive` with a message naming the absent provider - never green. (See [testing.md](testing.md) -> Never Silently Pass.) The no-op contract tests above cover that state; the live smokes do not.
+- **The dev-stub provider is treated like no-op for tests.** `AiServices:DevStubContent` (see *DI Registration* / *Configuration*) is a manual local/demo aid, not a test mechanism - test hosts inject the fake `IChatClient` (so `hasChatClient` is true and the stub never activates). For the live lane, `provider: stub` reports `isConfigured: false` and is `Inconclusive`, exactly like `none` - never green. If you cover it at all, assert that `stub` maps to `isConfigured: false`; do not smoke synthesized content as if it were a model.
 
 Provider selection priority (the lane mirrors the app's own order):
 
 1. Azure Foundry configured -> use Azure.
 2. else Foundry Local requested / available -> use Local.
-3. else no-op AI.
+3. else dev-stub if `DevStubContent` is set in Development -> provider `stub` (manual/demo only; never green).
+4. else no-op AI.
 
 ### Deciding the Live Lane Without Probing the CLI
 
@@ -677,22 +714,24 @@ Do **not** shell the `foundry` CLI (`foundry service status`, `foundry model inf
 **The RID constraint decides the lane architecture - it is not a preference.** `Microsoft.AI.Foundry.Local` is a native, RID-forcing package (`RuntimeIdentifiers` + `PrivateAssets="all"`) confined to the API host project. The fast tiers are deliberately **RID-free**: the in-memory `WebApplicationFactory` base (`Test.Support`) loads the API into the RID-free test process, and the Aspire mesh (`Test.Aspire`) is likewise RID-free. They **physically cannot load the local SDK at runtime** - so "request Foundry Local for the test graph" is impossible there, not merely undesirable. Two consequences:
 
 1. **Every API-booting tier that is RID-free must force no-op.** Set `AiServices:DisableFoundryLocal=true` so the API host skips the local attempt and registers the no-op `IChatClient`. Set it on **both** boot paths - the in-memory `WebApplicationFactory` base (`CustomApiFactory` / `SqlApiFactory` config) **and** the Aspire AppHost testing branch (`WithEnvironment("AiServices__DisableFoundryLocal", "true")`). Setting one and missing the other lets that tier silently try to start a model.
-2. **The live-local smoke is its own RID-bound project, `Test.FoundryLocal`.** It targets the API host's RIDs, boots the API host directly (not the mesh), **assumes local**, and asserts `Assert.Inconclusive` **only when the SDK cannot bootstrap** (offline, no runtime) - never green on no-op. Category `[TestCategory("LiveAI")]` (plus `FoundryLocal`). The RID-free mesh handles the **Azure** live smoke (HTTP-only); it never hosts a local model.
+2. **The live-local smoke is its own RID-bound project, `Test.FoundryLocal`.** It targets the API host's RIDs, boots the API host directly (not the mesh), **assumes local**, and asserts `Assert.Inconclusive` **only when the SDK cannot bootstrap** (offline, no runtime) - never green on no-op. Category `[TestCategory("LiveAI")]` (plus `FoundryLocal`). The RID-free mesh handles the **Azure** live smoke (HTTP-only); it never hosts a local model. It must declare its **own** direct `Microsoft.AI.Foundry.Local` package reference - `PrivateAssets="all"` on the API host stops the native payload flowing transitively (see *Packages* -> *SDK-direct API-host bootstrap*).
 
 **Gate the live lane on `GET /ai/status`, not on a connection string.** The endpoint reports the provider resolved from the live object graph - `azure` / `local` / `none` - based on which bootstrap path wired `IChatClient`, recorded once at startup. It must not run a CLI probe or call the model. Do not infer the provider by sniffing a connection string: the SDK-direct local path wires no `chat` connection at all, so a connection-string heuristic reports `none` for a working local model. Scaffold it by default whenever AI is enabled.
 
 ```csharp
 // At bootstrap, whichever path wires IChatClient also records the provider name (no CLI, no
-// model call); AddAiServices supplies the "none" fallback. See DI Registration + Aspire section.
+// model call); AddAiServices supplies the dev-stub and "none" fallbacks. See DI Registration + Aspire.
 //   Azure host path:   services.AddSingleton(new AiProviderInfo("azure"));
 //   SDK-direct local:  services.AddSingleton(new AiProviderInfo("local"));
+//   dev-stub (opt-in):  services.TryAddSingleton(new AiProviderInfo("stub"));
 //   no provider wired: services.TryAddSingleton(new AiProviderInfo("none"));
 
 // GET /ai/status - honest, side-effect-free provider signal for tests and ops.
+// isConfigured is provider-derived (a real model only): "stub" and "none" report false, so synthesized
+// dev content is never mistaken for a model and the live smoke stays Inconclusive on stub.
 group.MapGet("/status", (
-    [FromServices] IChatClient chatClient,
     [FromServices] AiProviderInfo provider) =>
-    Results.Ok(new { provider = provider.Name, isConfigured = chatClient is not NoOpChatClient }))
+    Results.Ok(new { provider = provider.Name, isConfigured = provider.Name is "azure" or "local" }))
     .WithName("AiStatus");
 ```
 
