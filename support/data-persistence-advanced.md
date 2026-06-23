@@ -257,6 +257,13 @@ Seeding rules:
 - Check existence before insert.
 - Mark seeded rows with `IsSystem = true`.
 - Register startup tasks in dependency order.
+- Seed a well-known dev user and dev tenant with fixed compile-time GUID constants on the existing
+  `SeedConstants` holder (`SeedConstants.DevUserId`, `SeedConstants.DevTenantId`). The dev write-identity
+  seam stamps `SeedConstants.DevUserId` as the owner and `ScaffoldAuthHandler` emits both as claims, so
+  UI-driven creates resolve the user/tenant FK with no runtime lookup. Never seed the dev principal with a random Guid -
+  a random id forces a lookup and breaks the stamped FK. See
+  [../patterns/api-host-wiring.md](../patterns/api-host-wiring.md) section Dev-Mode Write Identity and
+  [../skills/identity-management.md](../skills/identity-management.md) section Claim-type contract.
 
 ---
 

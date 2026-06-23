@@ -121,7 +121,7 @@ When any of `Test.Aspire`, the `WasmUI` bridge tier, or `Test.Mobile` is in scop
 
 | Project | Harness | Test scope | Template |
 |---|---|---|---|
-| `Test.Unit` | Pure CLR + Moq | Domain rules, mappers, services with mocks | [test-templates-domain.md](../templates/test-templates-domain.md), [test-templates-repository.md](../templates/test-templates-repository.md), [test-templates-service.md](../templates/test-templates-service.md) |
+| `Test.Unit` | Pure CLR + Moq | Domain rules, mappers, services with mocks, Uno MVUX presentation models in `{Project}.Uno.Core` | [test-templates-domain.md](../templates/test-templates-domain.md), [test-templates-repository.md](../templates/test-templates-repository.md), [test-templates-service.md](../templates/test-templates-service.md), [test-templates-presentation.md](../templates/test-templates-presentation.md) |
 | `Test.Endpoints` | `WebApplicationFactory<TProgram>` + EF InMemory | Single endpoint contract: status code, response shape, validation, auth | [test-templates-endpoint.md](../templates/test-templates-endpoint.md) |
 | `Test.E2E` | `WebApplicationFactory<TProgram>` + Testcontainers SQL | Multi-endpoint workflows against real SQL: paged search distinct-page, projection round-trip, FK constraints, child aggregate lifecycle | [test-templates-e2e.md](../templates/test-templates-e2e.md) |
 | `Test.Integration` | Standalone Testcontainers (SQL / Azurite / Redis) | Component: one class vs one real store - repo CRUD/migrations, tenant filter, M:N, audit-repo round-trip, projection pipeline | [test-templates-integration.md](../templates/test-templates-integration.md) |
@@ -298,6 +298,10 @@ public void Projection_And_ToDto_Agree()
 
 **Tenant-admin bypass.** When `enableMultiTenant: true`, pin both paths: `X-{App}-Admin: true` flips `DbContext.BypassTenantFilter` end-to-end (admin sees cross-tenant rows); non-admin cross-tenant access returns 404. The negative path must be a separate test so a regression in either direction surfaces independently.
 
+### Uno MVUX Presentation Unit Tests
+
+When `includeUnoUI: true`, test MVUX presentation records from `src/UI/{Project}.Uno.Core/Presentation` in `Test.Unit/Presentation`. The test project references `{Project}.Uno.Core` only, never the `{Project}.Uno` `Uno.Sdk` app head. Use [../templates/test-templates-presentation.md](../templates/test-templates-presentation.md) for the `SourceContext` harness, stub `HttpMessageHandler`, and local nullable-warning suppressions.
+
 ### Endpoint (Test.Endpoints)
 
 Use `WebApplicationFactory` and validate status code, response shape, validation, and auth contract for one endpoint at a time.
@@ -446,6 +450,7 @@ The build/start/health-gate/connection-string mechanics live in [../templates/te
 | [../templates/test-templates-service.md](../templates/test-templates-service.md) | 5b | Service + mapper tests + consolidated `MapperProjectionParityTests` |
 | [../templates/test-templates-endpoint.md](../templates/test-templates-endpoint.md) | 5b | Endpoint contract tests via WAF + InMemory; `WebApplicationFactoryBase` reference |
 | [../templates/test-templates-e2e.md](../templates/test-templates-e2e.md) | 5b | `SqlApiFactory` + multi-endpoint `{Entity}WorkflowTests` against Testcontainers SQL |
+| [../templates/test-templates-presentation.md](../templates/test-templates-presentation.md) | 5c | Uno MVUX presentation model tests in the fast `Test.Unit` lane |
 | [../templates/test-templates-quality.md](../templates/test-templates-quality.md) | 5d | Architecture / Playwright / Load / Benchmarks / Mutation - load `testing-quality.md` instead |
 | [../templates/test-templates.md](../templates/test-templates.md) | on-demand | Full-reference fallback |
 

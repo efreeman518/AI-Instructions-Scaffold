@@ -95,9 +95,16 @@ public class ScaffoldAuthHandler : AuthenticationHandler<AuthenticationSchemeOpt
     {
         var claims = new[]
         {
-            new Claim(ClaimTypes.NameIdentifier, "scaffold-user"),
+            // Audit id: RequestContext reads oid > NameIdentifier > sub. Use the FIXED seeded dev-user
+            // GUID (SeedConstants.DevUserId) so a stamped owner FK resolves - never a random/string id.
+            new Claim(ClaimTypes.NameIdentifier, SeedConstants.DevUserId.ToString()),
             new Claim(ClaimTypes.Name, "Scaffold Principal"),
-            new Claim("roles", "Admin"),
+            // Roles MUST use ClaimTypes.Role - RequestContext reads c.Type == ClaimTypes.Role. A bare
+            // "roles" string leaves RequestRoles empty and the global-admin bypass never fires.
+            new Claim(ClaimTypes.Role, AppConstants.ROLE_GLOBAL_ADMIN),
+            // Tenant MUST use the "userTenantId" claim RequestContext reads; the seeded dev tenant GUID
+            // (SeedConstants.DevTenantId, same as {App}:DefaultTenantId). Omit it and tenant is null.
+            new Claim("userTenantId", SeedConstants.DevTenantId.ToString()),
         };
         var identity = new ClaimsIdentity(claims, "Scaffold");
         var ticket = new AuthenticationTicket(new ClaimsPrincipal(identity), "Scaffold");
@@ -105,6 +112,20 @@ public class ScaffoldAuthHandler : AuthenticationHandler<AuthenticationSchemeOpt
     }
 }
 ```
+
+### Claim-type contract (non-negotiable)
+
+The handler and the `RequestContext` reader must use the SAME claim types, or the dev principal is
+silently broken end to end - see [../patterns/api-host-wiring.md](../patterns/api-host-wiring.md) -> Request Context Resolution. They must agree on:
+
+| Concern | Handler emits | RequestContext reads |
+|---|---|---|
+| Audit id (owner) | `ClaimTypes.NameIdentifier` = seeded dev-user GUID | `oid` > `NameIdentifier` > `sub` |
+| Roles | `ClaimTypes.Role` | `c.Type == ClaimTypes.Role` |
+| Tenant | `userTenantId` = seeded dev tenant GUID | `c.Type == "userTenantId"` |
+
+A mismatch (e.g. `new Claim("roles", ...)`) yields empty roles -> global-admin tenant-bypass never
+fires; a missing `userTenantId` yields a null tenant -> every list silently returns zero rows.
 
 ## Dev-Mode Auth Patterns
 

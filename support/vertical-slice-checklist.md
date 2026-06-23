@@ -31,7 +31,7 @@ Use this when adding a new entity to an **already-scaffolded** solution. Skip fu
 5. If domain rules needed: `domain-rules-template.md`
 6. **If child collections (1:N owned or M:N junction): `updater-template.md` is required** - the repository's `UpdateFromDto` delegates to a DbContext extension method that uses `CollectionUtility.SyncCollectionWithResult` to add/update/remove children in one call. Without this, aggregate edits silently drop client-side removals.
 7. Test templates per profile (see section Test Slice below): `test-templates-domain.md`, `test-templates-repository.md`, `test-templates-service.md`, `test-templates-endpoint.md`, and for balanced+ profiles `test-templates-integration.md` + `test-templates-e2e.md`
-8. If Uno UI enabled: `uno-mvux-model-template.md`, `uno-xaml-page-template.md`, `uno-ui-client-layer.md`
+8. If Uno UI enabled: `uno-mvux-model-template.md`, `uno-xaml-page-template.md`, `uno-ui-client-layer.md`, `test-templates-presentation.md`
 9. If Blazor UI enabled: `skills/ui-blazor.md` - add a Refit method group, entity list page, and entity new/edit page
 10. If React UI enabled: `skills/ui-react.md` - add API hooks, entity list page, detail/edit page, and form components
 
@@ -156,6 +156,7 @@ dotnet ef migrations add Add{Entity} --project src/Infrastructure/{Project}.Infr
 | `src/Test/Test.Unit/Repositories/{Entity}RepositoryQueryTests.cs` | [test-templates-repository.md](../templates/test-templates-repository.md) | all |
 | `src/Test/Test.Unit/Mappers/{Entity}MapperTests.cs` | [test-templates-service.md](../templates/test-templates-service.md) | all |
 | `src/Test/Test.Unit/Mappers/MapperProjectionParityTests.cs` (add a method per entity) | [test-templates-service.md](../templates/test-templates-service.md) | all |
+| `src/Test/Test.Unit/Presentation/{Entity}PresentationModelTests.cs` | [test-templates-presentation.md](../templates/test-templates-presentation.md) | if Uno UI enabled |
 | `src/Test/Test.Endpoints/Endpoints/{Entity}EndpointsTests.cs` | [test-templates-endpoint.md](../templates/test-templates-endpoint.md) | all |
 | `src/Test/Test.Unit/Cqrs/{Entity}CqrsValidationTests.cs` | [test-templates-cqrs.md](../templates/test-templates-cqrs.md) | if cqrs or switch |
 | `src/Test/Test.Integration/{Entity}RepositoryIntegrationTests.cs` | [test-templates-integration.md](../templates/test-templates-integration.md) | balanced+ |
@@ -176,15 +177,14 @@ For composite slices, include at least one integration scenario that traverses a
 
 Required UI artifacts:
 
-- `Business/Models/{Entity}.cs`
-- `Business/Services/{Feature}/I{Entity}Service.cs`
-- `Business/Services/{Feature}/{Entity}Service.cs`
-- `Presentation/{Entity}ListModel.cs`
-- `Presentation/{Entity}DetailModel.cs`
-- `Presentation/Create{Entity}Model.cs`
-- `Views/{Entity}ListPage.xaml` + `.xaml.cs`
-- `Views/{Entity}DetailPage.xaml` + `.xaml.cs`
-- `Views/Create{Entity}Page.xaml` + `.xaml.cs`
+- `src/UI/{Project}.Uno.Core/Business/Models/{Entity}.cs`
+- `src/UI/{Project}.Uno.Core/Business/Services/{Feature}/I{Entity}Service.cs`
+- `src/UI/{Project}.Uno.Core/Business/Services/{Feature}/{Entity}Service.cs`
+- `src/UI/{Project}.Uno.Core/Presentation/{Entity}ListModel.cs`
+- `src/UI/{Project}.Uno.Core/Presentation/{Entity}PageModel.cs`
+- `src/UI/{Project}.Uno/Views/{Entity}ListPage.xaml` + `.xaml.cs`
+- `src/UI/{Project}.Uno/Views/{Entity}Page.xaml` + `.xaml.cs`
+- `src/Test/Test.Unit/Presentation/{Entity}PresentationModelTests.cs`
 
 Also update `App.xaml.host.cs`:
 

@@ -2,11 +2,13 @@
 
 | | |
 |---|---|
-| **Files** | `src/UI/{Project}.Uno.Core/Business/Models/{Entity}.cs`, `Business/Models/IEntityBase.cs`, `Presentation/Messages/EntityMessage.cs`, `Business/Services/{Feature}/I{Entity}Service.cs`, `Business/Services/{Feature}/{Entity}Service.cs` |
+| **Files** | `src/UI/{Project}.Uno.Core/Client/{Project}ApiClient.cs`, `Business/Models/{Entity}.cs`, `Business/Models/IEntityBase.cs`, `Presentation/Messages/EntityMessage.cs`, `Business/Services/{Feature}/I{Entity}Service.cs`, `Business/Services/{Feature}/{Entity}Service.cs` |
 | **Depends on** | [data-mapping-template](data-mapping-template.md) (API DTO structure) |
 | **Referenced by** | [uno-mvux-model-template](uno-mvux-model-template.md), [ui-uno.md](../skills/ui-uno.md) |
 
 ## Models
+
+All client models, DTO wrappers, API clients, business services, messages, and MVUX presentation models live in `src/UI/{Project}.Uno.Core`. The `src/UI/{Project}.Uno` app head references this library and owns only app startup, routes, XAML views, styles, converters, strings, and platform assets.
 
 ### Client-Side Record Model
 
@@ -171,6 +173,14 @@ public class {Entity}Service(
 - Map client records -> wire DTOs via `entity.ToData()` for POST/PUT
 - Send `EntityMessage<T>` via `IMessenger` after every mutation (create, update, delete)
 - Register as singleton in `App.xaml.host.cs` -> `ConfigureServices`
+
+### Client Contract Rules
+
+- Prefer shared contract types where available: `DefaultRequest<T>`, `DefaultResponse<T>`, `SearchRequest<TFilter>`, and `PagedResponse<T>`.
+- Do not hand-roll client-side envelope DTOs when the shared application/common contract package is already referenced.
+- POST/PUT bodies use `DefaultRequest<T>` with an `Item` property.
+- Single-item GET/create/update responses unwrap `DefaultResponse<T>.Item`.
+- Search responses use `PagedResponse<T>` and its `Data` collection; search requests are not wrapped in `DefaultRequest<T>`.
 
 ## Shared Interfaces
 

@@ -38,6 +38,8 @@ Phase-completion gates and the Pre-Merge Gate still run a full `dotnet restore` 
 
 Gate passes when build and the scoped test command succeed (plus any sub-phase-specific checks listed below).
 
+**Full-solution build flakiness (WASM/browser UI):** when the solution includes a WASM/browser UI project, its build target can lock its output DLL (VBCSCompiler), so a concurrent full-solution `dotnet build` fails intermittently. Prefer building per-project, or run `dotnet build-server shutdown` before a full-solution build. See [troubleshooting.md](troubleshooting.md).
+
 **TDD note:** For Phase 5a/5b, the TDD protocol expects tests to fail (red) before implementation and pass (green) after. The core loop verifies the green state. See [../ai/tdd-protocol.md](../ai/tdd-protocol.md).
 
 ---

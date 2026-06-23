@@ -255,6 +255,12 @@ public class SeedDataTask(
         using var db = await factory.CreateDbContextAsync(ct);
         if (await db.Set<{Entity}>().AnyAsync(ct)) return; // already seeded
 
+        // Seed the dev tenant FIRST (and the dev user, when the app models users as an entity with an
+        // owner FK) so the write-identity seam and ScaffoldAuthHandler - which emit SeedConstants.DevUserId
+        // / DevTenantId as claims - resolve their FKs. Apps whose "owner" is just the audit-id string
+        // (the IRequestContext<string, Guid?> default) need only the tenant.
+        db.Add(Tenant.Create("Dev Tenant", SeedConstants.DevTenantId));
+        db.Add(User.Create(SeedConstants.DevUserId, "Scaffold Principal", SeedConstants.DevTenantId)); // when a user entity exists
         db.Add({Entity}.Create("Sample {Entity}", SeedConstants.DevTenantId));
         await db.SaveChangesAsync(ct);
         logger.LogInformation("Seed data applied for local development.");
@@ -265,7 +271,10 @@ public class SeedDataTask(
 **Rules:**
 - Guard with `AnyAsync` - idempotent, safe on repeat runs.
 - Gate dev-only tasks with `IHostEnvironment.IsDevelopment()`.
-- Use deterministic IDs for dev tenant (`SeedConstants.DevTenantId`) so tests can reference them.
+- Use deterministic IDs for the dev tenant and dev user (`SeedConstants.DevTenantId`,
+  `SeedConstants.DevUserId`) so the dev write-identity seam, `ScaffoldAuthHandler`, and tests can all
+  reference the same rows. See [../support/data-persistence-advanced.md](../support/data-persistence-advanced.md)
+  section Startup Seeding and [api-host-wiring.md](api-host-wiring.md) section Dev-Mode Write Identity.
 
 ---
 

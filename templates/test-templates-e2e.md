@@ -311,11 +311,44 @@ public class {Entity}WorkflowTests
 
 | Scenario | Generate when |
 |---|---|
+| `{PrimaryWorkflow}_EndToEnd_AgainstRealSql` | **Always - at least one.** The app's primary domain journey: the multi-step business workflow that strings several endpoints together (create parent -> add children/state transitions -> the action the app exists to perform -> verify outcome), not isolated CRUD. This is the one test that proves the app actually does its job. See section Primary domain-journey E2E. |
 | `{Entity}_FullCrudCycle_AgainstRealSql` | Every entity exposed via API endpoints. |
 | `{Entity}_Search_ReturnsResults_AgainstRealSql` | Every entity with a search endpoint. |
 | `{Entity}_Search_PaginatesDistinctPages_AgainstRealSql` | Every search endpoint - the cheapest catch for `PageIndex` off-by-one bugs and projection drift across pages. |
 | `{ChildEntity}_CrudCycle_AgainstRealSql` | Entity has child collections exposed via dedicated endpoints. |
 | `{Entity}_ConcurrentUpdates_OptimisticConcurrencyEnforced` | High-contention domains (inventory, reservations, balances). Optional. |
+
+---
+
+## Primary domain-journey E2E
+
+Rich CRUD/health smoke proves the plumbing; it does not prove the app does its job. Generate at least
+one journey test that walks the primary business workflow end to end through the real API/gateway against
+real SQL - the path a real user takes from nothing to the outcome the app exists to produce.
+
+Shape (one class, sequential steps, real SQL):
+
+```csharp
+[TestMethod]
+public async Task {PrimaryWorkflow}_EndToEnd_AgainstRealSql()
+{
+    var client = SqlApiFactory.CreateClient();
+
+    // 1. Create the parent aggregate via the same endpoint the UI calls.
+    var parent = await CreateAsync(client, NewParentDto());
+    // 2. Drive the business steps that make this app what it is (children, state transitions, the action).
+    await AddChildAsync(client, parent.Id, NewChildDto());
+    await TransitionAsync(client, parent.Id, "{NextState}");
+    // 3. Assert the OUTCOME, not just 200s - the projected/derived state the workflow is supposed to yield.
+    var result = await GetAsync(client, parent.Id);
+    Assert.AreEqual("{ExpectedOutcome}", result.Status);
+}
+```
+
+Rules:
+- Drive **writes through the API/gateway**, not the browser - see [ui-blazor-forms.md](../skills/ui-blazor-forms.md) and the *Prefer the API/gateway path for write assertions* note below.
+- If the workflow invokes an AI agent, run it deterministically via the scripted-agent switch so the journey is offline and repeatable - see [ai-integration.md](../skills/ai-integration.md) section Deterministic agents for tests.
+- Seed the FK chain with the shared `SqlAggregateSeeder` ([test-templates-endpoint.md](test-templates-endpoint.md) section SqlAggregateSeeder), not inline per-test setup.
 
 ---
 
@@ -335,6 +368,15 @@ Every endpoint contract uses `DefaultRequest<T>` for body and `DefaultResponse<T
 
 ### Static container ownership
 The container is started and disposed via the **first and last** test class. With multiple workflow test classes, both call `SqlApiFactory.StartContainerAsync()`; the second call is a cheap idempotent return because `_started` is set. This is intentional - DO NOT add reference counting or "is anyone still using it" logic; the static `_started` flag is sufficient.
+
+### Prefer the API/gateway path for write assertions
+Assert writes by calling the API/gateway directly (the `SqlApiFactory` client), not by driving the
+Blazor UI. A browser-driven write adds two failure modes unrelated to the behavior under test: a MudBlazor
+dialog + Refit `AddStandardResilienceHandler` can return 400 before the request leaves the client (the
+same payload sent direct-to-gateway succeeds), and `@bind-Value` commits on blur so a programmatic fill
+can submit stale/empty values (see [troubleshooting.md](../support/troubleshooting.md) and
+[ui-blazor-forms.md](../skills/ui-blazor-forms.md)). Reserve browser-driven steps for render and
+interaction checks; prove create/update/delete through the API.
 
 ---
 

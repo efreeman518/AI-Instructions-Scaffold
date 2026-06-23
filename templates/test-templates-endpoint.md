@@ -161,6 +161,59 @@ The base does this once. Derived classes provide only the test-mode store.
 2. **Required member bypass.** `DbContextBase<TAuditIdType, TTenantIdType>` declares `required` members (e.g., `AuditId`). The base's `WebApplicationFactoryHelpers.CreateContext<T>` uses `ConstructorInfo.Invoke()` via reflection to bypass compile-time `required` enforcement when creating contexts from a test factory.
 3. **Re-provided `IDbContextFactory<T>`.** `DbContextScopedFactory` resolves `IDbContextFactory<T>` - the base registers `TestDbContextFactory<T>` that creates contexts via reflection.
 
+## SqlAggregateSeeder (in Test.Support)
+
+Builders (`Test.Support/Builders/{Entity}Builder.cs`) construct **domain objects in memory**; they do not
+persist a valid FK chain. E2E and integration tests that need a real row to act on (a created parent with
+children, owned by a real user in a real tenant) were duplicating that insert inline, which drifts
+per-test and reintroduces the user/tenant FK bugs the dev seam fixes. Provide one shared seeder in
+`Test.Support` that persists a full FK chain in dependency order through the live DbContext.
+
+`Test/Test.Support/SqlAggregateSeeder.cs`:
+
+```csharp
+namespace Test.Support;
+
+/// <summary>
+/// Persists a valid FK chain (tenant -> user -> aggregate -> children) against a real store via the
+/// transactional DbContext, so workflow/E2E tests start from a row the API will accept. Builders
+/// construct the domain objects; this seeder owns insert order and FK wiring. Idempotent per id.
+/// </summary>
+public sealed class SqlAggregateSeeder(IDbContextFactory<{App}DbContextTrxn> factory)
+{
+    public async Task<SeededContext> SeedAsync(CancellationToken ct = default)
+    {
+        await using var db = await factory.CreateDbContextAsync(ct);
+
+        // 1. Tenant first (and the user, when the app models users as an entity with an owner FK) -
+        //    use the same fixed ids the dev principal/claims use so seeded rows, ScaffoldAuthHandler
+        //    claims, and stamped owners all line up. Drop the user step for audit-id-string owners.
+        if (!await db.Set<Tenant>().AnyAsync(t => t.Id == SeedConstants.DevTenantId, ct))
+            db.Add(Tenant.Create("Test Tenant", SeedConstants.DevTenantId));
+        if (!await db.Set<User>().AnyAsync(u => u.Id == SeedConstants.DevUserId, ct))
+            db.Add(User.Create(SeedConstants.DevUserId, "Test Principal", SeedConstants.DevTenantId));
+
+        // 2. Aggregate + children via the builder, owned by the seeded user/tenant.
+        var parent = new {Entity}Builder()
+            .WithTenant(SeedConstants.DevTenantId)
+            .WithOwner(SeedConstants.DevUserId)
+            .WithChild(/* ... */)
+            .Build();
+        db.Add(parent);
+
+        await db.SaveChangesAsync(ct);
+        return new SeededContext(SeedConstants.DevTenantId, SeedConstants.DevUserId, parent.Id);
+    }
+}
+
+public sealed record SeededContext(Guid TenantId, Guid UserId, Guid AggregateId);
+```
+
+Use it from `[ClassInitialize]`/`[TestInitialize]` in `Test.E2E` and `Test.Integration` after migrations
+are applied, instead of inline seeding. The primary domain-journey E2E
+([test-templates-e2e.md](test-templates-e2e.md) section Primary domain-journey E2E) and the multi-resource
+integration tier ([test-templates-integration.md](test-templates-integration.md)) both consume it.
+
 ## Test.Endpoints derived factory (in-memory)
 
 `Test/Test.Endpoints/CustomApiFactory.cs`:

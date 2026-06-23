@@ -170,6 +170,12 @@ public class IntegrationTestSetup
 
 Cover **migration apply** + **CRUD against real SQL** + **child includes** + **updater navigation-add round-trip** (for entities with an `{Entity}Updater`) + **M:N junction navigation** + **tenant query filter** + **polymorphic indexes** when applicable. Build contexts via `SqlContainerFixture` and gate on `StartupError` in `[TestInitialize]`.
 
+> **Seeding a full FK chain:** repository tests below seed a bare parent in their own unit of work
+> (fine for repo-level assertions). When a test needs the **owner/tenant chain** (a row owned by a real
+> user in a real tenant - e.g. anything exercising the write-identity path), use the shared
+> `SqlAggregateSeeder` from `Test.Support` ([test-templates-endpoint.md](test-templates-endpoint.md)
+> section SqlAggregateSeeder) rather than re-inlining tenant+user inserts per test.
+
 ### File: `Test/Test.Integration/{Entity}RepositoryIntegrationTests.cs`
 
 ```csharp

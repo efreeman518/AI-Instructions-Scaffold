@@ -52,8 +52,8 @@ src/
 |       |-- AppHost/
 |       `-- ServiceDefaults/
 |-- UI/
-|   |-- {Host}.Uno/                     # optional
-|   |-- {Host}.Uno.Core/                # optional
+|   |-- {Host}.Uno/                     # optional Uno.Sdk app head: XAML, styles, platform assets
+|   |-- {Host}.Uno.Core/                # optional Microsoft.NET.Sdk library: MVUX, client, services
 |   |-- {Host}.Blazor/                  # optional
 |   `-- {Host}.React/                   # optional
 |-- Test/
@@ -201,6 +201,7 @@ Application + Infrastructure -> {Host}.Bootstrapper
 - API/Scheduler/FunctionApp reference Bootstrapper and add host-only config.
 - Gateway and UI follow their own skills but must not violate core dependency direction.
 - Optional hosts should be removable without breaking core layer compilation.
+- Uno MVUX presentation records live in `{Host}.Uno.Core`, not in the `{Host}.Uno` `Uno.Sdk` app head. `{Host}.Uno.Core` is a plain `Microsoft.NET.Sdk` library that references MVUX/navigation packages directly so `Test.Unit` can exercise presentation logic without building platform targets.
 
 ---
 

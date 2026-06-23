@@ -55,6 +55,18 @@ Load this file on demand. Keep it out of the default phase context.
 | Phase 5e auth | `AuthConfiguration`, `ScaffoldAuthHandler`, gateway claims forwarding flow | Scaffold auth, Entra-ready wiring, and API claim enrichment path. |
 | Phase 5e AI | `src/Infrastructure/TaskFlow.Infrastructure.AI`, commented AI resources in AppHost | AI service placement, deployment-only stance, and config-driven activation. |
 
+### Uno MVUX Presentation Handoff
+
+TaskFlow currently remains the proof app for Uno patterns, but the scaffold source now expects MVUX presentation records to live in the testable core library. A proof-app agent aligning TaskFlow should:
+
+1. Move all `src/UI/TaskFlow.Uno/Presentation/*.cs` files into `src/UI/TaskFlow.Uno.Core/Presentation` in one migration.
+2. Change namespaces and route imports to `TaskFlow.Uno.Core.Presentation`.
+3. Keep every MVUX record in that one assembly to avoid duplicate generated `BindableXxx` wrapper types.
+4. Add direct `TaskFlow.Uno.Core` package references for MVUX, navigation, messenger, and Kiota client code; keep `Uno.Sdk` only on `TaskFlow.Uno`.
+5. Replace any static `App.*` model calls with injected abstractions such as `IAppShellActions` and `IThemePreferenceService`.
+6. Add `Test.Unit/Presentation` tests from [../templates/test-templates-presentation.md](../templates/test-templates-presentation.md).
+7. Verify with `rtk dotnet build src\TaskFlow.slnx -m:1 -v minimal` and `rtk dotnet test src\Test\Test.Unit\Test.Unit.csproj --no-build --no-restore -v minimal`.
+
 ---
 
 ## Direct Proof Links

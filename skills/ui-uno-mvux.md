@@ -12,12 +12,16 @@ Companion files:
 
 ## MVUX Model Rules
 
-Use partial records in `Presentation/`:
+Use partial records in `src/UI/{Project}.Uno.Core/Presentation` with namespace `{Project}.Uno.Core.Presentation`:
 - Read: `IFeed<T>` / `IListFeed<T>`
 - Mutable UI state: `IState<T>` / `IListState<T>`
 - Commands: public `ValueTask` methods
 - Navigation: `INavigator`
 - Cross-model refresh: `IMessenger` + `.Observe(...)`
+
+The `{Project}.Uno.Core` project is a plain `Microsoft.NET.Sdk` library that references MVUX, navigation, messenger, and generated-client packages directly. Presentation models never live in the `{Project}.Uno` `Uno.Sdk` app head. Keep every MVUX partial record for one app in this one assembly; splitting models across assemblies can make the MVUX generators emit duplicate `BindableXxx` wrappers for shared DTO/state types.
+
+Presentation models use injected dependencies for all shell behavior. Inject `INavigator`, `IThemeService` or an app-owned theme abstraction, `IMessenger`, form guards, and shell action abstractions as needed. Do not call static `App.*` members or static app services from MVUX records; that couples the model to the app head and removes the fast unit-test seam.
 
 ### Feed Refresh After Mutations (Version Counter Pattern)
 
@@ -207,7 +211,7 @@ To make ListView items navigable (e.g., clicking a task row opens its detail pag
 - **Every `Button.Command` silently no-ops (feeds bind, lists render, commands do nothing)**: the first argument to `UseNavigation(...)` in the host config is missing `ReactiveViewModelMappings.ViewModelMappings`. Without it, navigation sets each page's `DataContext` to the **raw MVUX record** - feed properties are real and bind fine, but command methods are only surfaced as `ICommand` on the generated `Bindable{Model}`, so `{x:Bind ViewModel.Command}` resolves against the wrong object and does nothing. There is no exception; the only console signal is `The [{CommandName}] property getter does not exist on type [...Model]`. Fix: `.UseNavigation(ReactiveViewModelMappings.ViewModelMappings, RegisterRoutes, configure: ...)` (see [ui-uno-shell.md](ui-uno-shell.md) host-config block).
 - **`Feed.Async` type inference**: `Feed.Async(service.GetAsync)` may fail with CS0411/CS0453 when the return type is a reference type or the delegate signature is ambiguous. Always use an explicit lambda: `Feed.Async(async ct => await service.GetAsync(ct))`.
 - **`IListFeed` return type**: `ListFeed.Async(...)` callbacks must return `IImmutableList<T>`. Call `.ToImmutableList()` on results. Requires `using System.Collections.Immutable;` (add as global using in csproj, see Project File Rules).
-- **Nullable state**: `IState<T?>` with `State.UpdateAsync` produces CS8714 warnings. Suppress with `#nullable disable` in the record or accept the warning - it's cosmetic.
+- **Nullable state**: `IState<T?>` with `State.UpdateAsync` can produce CS8620/CS8621/CS8714 warnings. Prefer private nullable backing state when practical. In tests, suppress these warnings only around the awaiter/assertion seam; do not add broad production suppressions unless there is no cleaner model shape.
 - **No optional parameters on command methods**: The MVUX Bindable generator emits a compile error like `CS0103: The name 'False' does not exist` when a command method has an optional parameter (e.g. `public ValueTask Refresh(bool hard = false, CancellationToken ct = default)`). Split into two methods (`Refresh(ct)` + `RefreshHard(ct)`) or take the parameter as state instead. CancellationToken default is fine.
 - **`IListState<T>.UpdateAsync` overload ambiguity**: There are two overloads - one updates a single item, one updates the whole list. When you pass a bare lambda the compiler picks the single-item one and you get `'IImmutableList<T>' does not contain 'FindIndex'` or `Operator '??' cannot be applied...`. Explicitly type the parameter to disambiguate:
   ```csharp
@@ -225,6 +229,8 @@ To make ListView items navigable (e.g., clicking a task row opens its detail pag
 Example pattern:
 
 ```csharp
+namespace {Project}.Uno.Core.Presentation;
+
 public partial record TodoItemListModel(
     INavigator Navigator,
     ITodoItemService Service,
@@ -271,6 +277,7 @@ Shell and MainPage serve **distinct roles** in the navigation hierarchy. Mixing 
 ```csharp
 private static void RegisterRoutes(IViewRegistry views, IRouteRegistry routes)
 {
+    // App.xaml.host.cs in the Uno app head imports {Project}.Uno.Core.Presentation.
     views.Register(
         // Viewless root - Shell resolves via NavigateAsync<Shell>()
         new ViewMap(ViewModel: typeof(ShellModel)),

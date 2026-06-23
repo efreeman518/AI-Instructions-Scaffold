@@ -689,6 +689,26 @@ Cover the smallest useful surface first:
 3. Prompt loading works from file-based system prompts.
 4. Disabled AI features do not register or resolve their services.
 
+### Deterministic agents for tests
+
+When the app's primary workflow invokes an AI agent, the primary-journey E2E
+([../templates/test-templates-e2e.md](../templates/test-templates-e2e.md) section Primary domain-journey E2E)
+must run that agent deterministically and offline - no model call. Gate the live model behind a config
+switch so a booted host can swap a scripted agent for the real one. A config switch (not just an injected
+fake) is what makes this work where the test cannot reach the host's DI - the Aspire mesh and any
+separately-launched host - and it is the simplest path for the journey test.
+
+- Add `{App}:AiServices:UseScriptedAgent` (default false). When true, `AddAiServices` registers a scripted
+  `IChatClient`/agent returning canned, deterministic responses (and a fixed tool-call sequence) instead of
+  the live or no-op client.
+- Set it in the E2E/journey host config (the `SqlApiFactory` config, or the Aspire AppHost testing branch
+  alongside `AiServices:DisableFoundryLocal=true`) so the journey is repeatable and needs no provider.
+- It is a test mechanism, distinct from `AiServices:DevStubContent` (a manual demo aid). Like the stub and
+  no-op, the scripted agent reports `isConfigured: false` on `GET /ai/status`, so a live smoke stays
+  `Assert.Inconclusive`, never green, while it is active. In-process unit/service/endpoint tests still
+  inject a fake `IChatClient` directly (see Provider Test Tiers below) - the switch is for the booted-host
+  tiers.
+
 ### Provider Test Tiers (Azure / Local / no-op)
 
 Keep the tiers distinct - the model provider must not leak into the fast tiers.

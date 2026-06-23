@@ -375,6 +375,7 @@ Use the same GUID the data-seed step inserts into the `Tenants` table. When real
 - Register the handler as **Transient** - `DelegatingHandler` instances are pooled per-message by `IHttpMessageHandlerFactory`; scoped/singleton causes lifetime errors.
 - The header name must match the API's `DevRequestContextMiddleware` exactly. Centralize the literal in a shared constant if both projects can see it.
 - Do **not** read the tenant id from a Blazor `IRequestContext` - Blazor Server runs server-side per circuit and there is no inbound tenant header to read from. The configuration value is the source of truth in dev.
+- This config-value rule is for the **read** path (tenant header on outbound calls) only. Create DTOs must **not** carry a client-populated `TenantId` or owner - the API stamps both server-side from the request context. See [../patterns/api-host-wiring.md](../patterns/api-host-wiring.md) section Dev-Mode Write Identity. The UI sends the domain fields; identity is the server's job.
 
 ## Forms & Interaction Patterns
 
@@ -512,6 +513,27 @@ Add both the HTTPS and HTTP dev URLs declared in `launchSettings.json`.
 - Exactly one of each provider (`MudTheme`, `MudPopover`, `MudDialog`, `MudSnackbar`) - at the layout root
 - Dispose clears `FloatService.StateHasChanged` - without this the layout's delegate survives navigation and fires into a disposed component
 
+## Test Selectors
+
+Emit a stable `data-testid` on every element an E2E test drives, so Playwright selectors do not fall
+back to MudBlazor-generated CSS classes (which churn across MudBlazor versions and break tests silently).
+MudBlazor components forward unknown attributes to the rendered root, so `data-testid` passes through.
+
+Required `data-testid` coverage:
+- Nav links: `data-testid="nav-{entity}"` on each `MudNavLink`.
+- Page actions: `new-{entity}`, `save`, `delete`, `cancel` on the `MudButton`s.
+- Dialog inputs: one per field, e.g. `field-{property}` on each `MudTextField`/`MudSelect`.
+- Grids: `grid-{entity}` on the table and `row-{id}` on each row.
+
+```razor
+<MudNavLink Href="/{entities}" data-testid="nav-{entity}">{Entity}</MudNavLink>
+<MudButton OnClick="OpenCreate" data-testid="new-{entity}">New</MudButton>
+<MudTextField @bind-Value="_title" Label="Title" data-testid="field-title" />
+```
+
+The consumption-side preference ("prefer stable selectors") lives in
+[testing-quality.md](testing-quality.md); this is the generation-side rule that makes those selectors exist.
+
 ## Generation Checklist
 
 - [ ] `includeBlazorUI: true` set in domain inputs
@@ -527,6 +549,8 @@ Add both the HTTPS and HTTP dev URLs declared in `launchSettings.json`.
 - [ ] Pages: Dashboard, {Entity}List (server paging + filters), {Entity}Page (new/edit), Settings, Error
 - [ ] Blazor UI calls the Gateway only - never the API host directly
 - [ ] Aggregate edit pages bind children to `_model.<Collection>` and persist via the single Create/Update call (no per-child API calls) - see [ui-blazor-forms.md](ui-blazor-forms.md) section Editing Parent Aggregates with Child Collections
+- [ ] Each create form binds a field for every required `{Entity}.Create(...)` arg (or is marked a stub) - see [ui-blazor-forms.md](ui-blazor-forms.md) section Editable Forms Against `init`-Only DTO Records
+- [ ] `data-testid` on nav links, New/Save/Delete buttons, dialog inputs, and grids/rows - see section Test Selectors
 
 ## Coexistence With Uno
 

@@ -80,6 +80,12 @@ internal class {Entity}Service(
         // [MULTI-TENANT] Stamp tenant from request context - DTOs arrive without TenantId from API layer
         dto.TenantId = RequestTenantId ?? Guid.Empty;
 
+        // [IDENTITY] Stamp owner/created-by from request context when the entity has one - UI-driven
+        // creates arrive with an empty owner and would otherwise violate the user FK. The audit id is a
+        // real seeded user GUID in dev (ScaffoldAuthHandler -> DevSeedIds.UserId). See
+        // ../patterns/api-host-wiring.md section Dev-Mode Write Identity. Omit for ownerless entities.
+        // dto.OwnerId = dto.OwnerId is null or default ? ParseAuditId(requestContext.AuditId) : dto.OwnerId;
+
         // Structure validation (delegates to StructureValidators for common checks)
         var validation = {Entity}StructureValidator.ValidateCreate(dto);
         if (validation.IsFailure) return Result<DefaultResponse<{Entity}Dto>>.Failure(validation.Errors);

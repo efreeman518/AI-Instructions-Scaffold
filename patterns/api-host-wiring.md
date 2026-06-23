@@ -182,6 +182,12 @@ private static void AddRequestContextServices(IServiceCollection services)
 }
 ```
 
+> **Claim source must match these reads.** When the scaffold runs with auth on via `ScaffoldAuthHandler`,
+> that handler must emit roles as `ClaimTypes.Role`, tenant as a `userTenantId` claim, and the seeded
+> dev-user GUID as `NameIdentifier` - see
+> [../skills/identity-management.md](../skills/identity-management.md) section Claim-type contract. The
+> reads above are the other half of that contract; a mismatch silently empties roles and tenant.
+
 ### Dev-Mode Tenant Fallback (Auth Off)
 
 When the scaffold ships with auth off (`Auth:Enabled: false` or no `Auth` section), `userTenantId` claims are absent and the tenant resolves to `null`. The EF tenant query filter then matches nothing and the entire UI looks silently empty (zero rows on every list). Two acceptable mitigations - pick **one** and record it in `HANDOFF.md`:
@@ -214,6 +220,31 @@ public sealed class DevRequestContextMiddleware(RequestDelegate next)
 Inside the `IRequestContext` factory, prefer `httpContext.Items["DevTenantId"]` when the `userTenantId` claim is absent. Production paths still rely on claims - the dev branch is a `IsDevelopment()` short-circuit.
 
 **Symptom:** if a Blazor or external client lands at the API without either a tenant claim or the dev header, every list endpoint returns an empty payload and no error. Log the resolved tenant id at `Information` once per request during dev so the empty-payload case is observable.
+
+### Dev-Mode Write Identity (owner/tenant stamping)
+
+The tenant fallback above fixes the **read** path (query-filter tenant). The **write** path needs the
+same treatment: UI-driven create DTOs arrive with an empty owner/created-by and (often) an empty
+`TenantId`, because the browser has no identity to populate them. If nothing stamps them server-side,
+every UI-driven create violates the user/tenant FK.
+
+Stamp owner and tenant from `IRequestContext` on the create path when the inbound DTO leaves them empty.
+The application service is the natural seam - it already stamps tenant in its `CreateAsync` (see
+[../templates/service-template.md](../templates/service-template.md)):
+
+```csharp
+// Application service CreateAsync, before the factory call:
+dto.TenantId = RequestTenantId ?? dto.TenantId;       // already present
+dto.OwnerId  = dto.OwnerId == Guid.Empty || dto.OwnerId is null
+    ? ParseAuditId(requestContext.AuditId)            // dev: SeedConstants.DevUserId via ScaffoldAuthHandler
+    : dto.OwnerId;
+```
+
+For the owner FK to resolve, the audit id must be a real, seeded user GUID - hence the
+`ScaffoldAuthHandler` emits the fixed `SeedConstants.DevUserId` and the dev seeder inserts that user (see
+[../support/data-persistence-advanced.md](../support/data-persistence-advanced.md) section Startup Seeding). The
+client never sends tenant/owner; the server owns them in every mode. Production resolves both from
+claims; dev resolves them from the scaffold principal + seeded user.
 
 ---
 

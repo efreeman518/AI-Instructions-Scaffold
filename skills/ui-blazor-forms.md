@@ -56,6 +56,16 @@ Edit pages must declare **local mutable fields** for every editable property and
 - One local field per bound property - do not try to project intermediate types or use computed properties on the DTO.
 - Re-baseline against the local fields, not the DTO, in the unsaved-changes prompt (see *Unsaved-Changes Prompt on Navigation*).
 - Convert to and from the DTO at the page's edges (`OnParametersSetAsync` and `SaveAsync`); the middle of the page should not see the DTO record at all.
+- **Create mode must cover every required argument of the domain `{Entity}.Create(...)` factory**, not
+  just the display field. A form that posts only `Title` while `Create()` also requires (say) a
+  reference id, an assignee, or a type produces a DTO the domain rejects, so the create never
+  round-trips. Bind a local field for each required `Create()` arg (and any required child collection).
+  If a form intentionally ships partial, mark it `@* TODO: [STUB] missing <args> *@` at the top and log
+  it in `.scaffold/INSTRUCTION-GAPS.md` - never leave a silently-incomplete create form.
+- **`@bind-Value` commits on blur, not per keystroke.** A Playwright `fill` that does not blur the field
+  leaves the bound local field at its old value, so the submitted DTO is blank. Set `Immediate="true"`
+  on inputs an E2E test fills (or have the test trigger a blur). This is also why write assertions are
+  better driven through the API/gateway - see the E2E template's *Prefer the API/gateway path* note.
 
 ## MudBlazor `ShowMessageBoxAsync` Fallback
 

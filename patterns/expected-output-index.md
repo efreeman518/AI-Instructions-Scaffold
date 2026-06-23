@@ -138,12 +138,12 @@ Source: [../skills/ui-uno.md](../skills/ui-uno.md), [../skills/ui-uno-shell.md](
 | WASM wrapper host | `src/Host/{Project}.Uno.WasmHost/{Project}.Uno.WasmHost.csproj` |
 | App entry | `src/UI/{Project}.Uno/App.xaml`, `App.xaml.cs`, `App.xaml.host.cs`, `Program.cs` |
 | App config | `src/UI/{Project}.Uno/appsettings.json` (+ environment variants) |
-| Shell | `src/UI/{Project}.Uno/Views/Shell.xaml`, `Shell.xaml.cs`, `Presentation/ShellModel.cs` |
+| Shell | `src/UI/{Project}.Uno/Views/Shell.xaml`, `Shell.xaml.cs`; `src/UI/{Project}.Uno.Core/Presentation/ShellModel.cs` |
 | Business model (per entity) | `src/UI/{Project}.Uno.Core/Business/Models/{Entity}.cs` |
 | Business service (per feature) | `src/UI/{Project}.Uno.Core/Business/Services/{Feature}/I{Entity}Service.cs`, `{Entity}Service.cs` |
 | Kiota client (generated) | `src/UI/{Project}.Uno.Core/Client/` |
-| MVUX model list (per entity) | `src/UI/{Project}.Uno/Presentation/{Entity}ListModel.cs` |
-| MVUX model new/edit (per entity) | `src/UI/{Project}.Uno/Presentation/{Entity}Model.cs` |
+| MVUX model list (per entity) | `src/UI/{Project}.Uno.Core/Presentation/{Entity}ListModel.cs` |
+| MVUX model new/edit (per entity) | `src/UI/{Project}.Uno.Core/Presentation/{Entity}PageModel.cs` |
 | Page list (per entity) | `src/UI/{Project}.Uno/Views/{Entity}ListPage.xaml` + `.xaml.cs` |
 | Page new/edit (per entity) | `src/UI/{Project}.Uno/Views/{Entity}Page.xaml` + `.xaml.cs` |
 | Styles / strings / converters | `src/UI/{Project}.Uno/Styles/`, `Strings/`, `Converters/` |

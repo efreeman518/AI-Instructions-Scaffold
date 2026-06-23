@@ -36,7 +36,7 @@ For frontier-model loading (>=200K context), all three may be loaded together. F
 
 | Profile | Scope |
 |---|---|
-| `starter` | Host wiring, auth/http, route maps, list/detail/settings pages, MVUX models, service layer, mock/live switch |
+| `starter` | Host wiring, auth/http, route maps, list/page/settings pages, MVUX models, service layer, mock/live switch |
 | `full` | `starter` + richer shell, dialog/flyout routes, expanded page set and UX flows |
 
 Prefer `starter` until core vertical slices stabilize.
@@ -49,7 +49,6 @@ src/UI/{Project}.Uno/
   App.xaml.cs
   App.xaml.host.cs
   appsettings.json
-  Presentation/           # MVUX models
   Views/
   Styles/
   Strings/
@@ -59,6 +58,7 @@ src/UI/{Project}.Uno/
     iOS/
     WebAssembly/
 src/UI/{Project}.Uno.Core/
+  Presentation/           # MVUX models, one assembly for generated bindables
   Business/
     Models/
     Services/
@@ -74,8 +74,8 @@ Detailed structure rules live in [ui-uno-shell.md](ui-uno-shell.md) section Proj
 - [ ] `includeUnoUI: true` set in domain inputs
 - [ ] `GatewayBaseUrl` present in `appsettings*.json`
 - [ ] Auth + HTTP + navigation configured in `App.xaml.host.cs` (see [ui-uno-shell.md](ui-uno-shell.md))
-- [ ] `Business/Models`, `Business/Services`, `Presentation`, `Views` scaffolded
-- [ ] Business services and generated clients live in `src/UI/{Project}.Uno.Core`; XAML/MVUX/platform heads live in `src/UI/{Project}.Uno`
+- [ ] `src/UI/{Project}.Uno.Core` contains `Presentation`, `Business/Models`, `Business/Services`, and `Client`
+- [ ] `src/UI/{Project}.Uno` contains only app startup, XAML views, styles, converters, strings, and platform assets
 - [ ] `Features:UseMocks` implemented (mock + live path)
 - [ ] Core pages scaffolded: Home, {Entity}List, {Entity}Page (unified add/edit + children), Settings (+ Login when auth enabled)
 - [ ] Each entity uses single page pattern: `{Entity}Page` with form fields + children sections
