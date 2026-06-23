@@ -28,7 +28,7 @@ namespace Infrastructure.Repositories;
 /// <summary>
 /// RepositoryBase generic args: <TDbContext, TAuditId, TTenantId>
 ///   TAuditId = string (matches IRequestContext.AuditId type)
-///   TTenantId = Guid? (matches ITenantEntity<Guid> - nullable for non-tenant scenarios)
+///   TTenantId = Guid? (matches ITenantEntity<TenantId> - nullable for non-tenant scenarios)
 /// </summary>
 public class {Entity}RepositoryTrxn({Project}DbContextTrxn dbContext)
     : RepositoryBase<{Project}DbContextTrxn, string, Guid?>(dbContext), I{Entity}RepositoryTrxn
@@ -207,31 +207,39 @@ generic contracts add only entity-typed convenience. They belong in `<packagePre
 `<packagePrefix>.Data` (canonical `EF.*` shown):
 
 ```csharp
-// EF.Data.Contracts - open-generic contracts
-public interface IRepositoryTrxn<TEntity> : IRepositoryBase where TEntity : class
+// EF.Data.Contracts - open-generic contracts (typed ID overloads)
+public interface IRepositoryTrxn<TEntity, TId> : IRepositoryBase
+    where TEntity : EntityBase<TId>
+    where TId : struct, IDomainId<TId>
 {
-    Task<TEntity?> GetAsync(Guid id, CancellationToken ct = default);                // tracked
+    Task<TEntity?> GetAsync(TId id, CancellationToken ct = default);                 // tracked
 }
-public interface IRepositoryQuery<TEntity> : IRepositoryBase where TEntity : class
+public interface IRepositoryQuery<TEntity, TId> : IRepositoryBase
+    where TEntity : EntityBase<TId>
+    where TId : struct, IDomainId<TId>
 {
-    Task<TEntity?> GetAsync(Guid id, CancellationToken ct = default);                // no-tracking
+    Task<TEntity?> GetAsync(TId id, CancellationToken ct = default);                 // no-tracking
     Task<IReadOnlyList<TEntity>> ListAsync(Expression<Func<TEntity, bool>> predicate, CancellationToken ct = default);
 }
 
 // EF.Data - generic impls over RepositoryBase (audit id = string, tenant id = Guid?)
-public class RepositoryTrxn<TEntity, TDbContext>(TDbContext db)
-    : RepositoryBase<TDbContext, string, Guid?>(db), IRepositoryTrxn<TEntity>
-    where TEntity : EntityBase where TDbContext : DbContextBase<string, Guid?>
+public class RepositoryTrxn<TEntity, TId, TDbContext>(TDbContext db)
+    : RepositoryBase<TDbContext, string, Guid?>(db), IRepositoryTrxn<TEntity, TId>
+    where TEntity : EntityBase<TId>
+    where TId : struct, IDomainId<TId>
+    where TDbContext : DbContextBase<string, Guid?>
 {
-    public async Task<TEntity?> GetAsync(Guid id, CancellationToken ct = default)
+    public async Task<TEntity?> GetAsync(TId id, CancellationToken ct = default)
         => await GetEntityAsync<TEntity>(true, filter: e => e.Id == id, cancellationToken: ct)
             .ConfigureAwait(ConfigureAwaitOptions.None);
 }
-public class RepositoryQuery<TEntity, TDbContext>(TDbContext db)
-    : RepositoryBase<TDbContext, string, Guid?>(db), IRepositoryQuery<TEntity>
-    where TEntity : EntityBase where TDbContext : DbContextBase<string, Guid?>
+public class RepositoryQuery<TEntity, TId, TDbContext>(TDbContext db)
+    : RepositoryBase<TDbContext, string, Guid?>(db), IRepositoryQuery<TEntity, TId>
+    where TEntity : EntityBase<TId>
+    where TId : struct, IDomainId<TId>
+    where TDbContext : DbContextBase<string, Guid?>
 {
-    public async Task<TEntity?> GetAsync(Guid id, CancellationToken ct = default)
+    public async Task<TEntity?> GetAsync(TId id, CancellationToken ct = default)
         => await GetEntityAsync<TEntity>(false, filter: e => e.Id == id, cancellationToken: ct)
             .ConfigureAwait(ConfigureAwaitOptions.None);
     public async Task<IReadOnlyList<TEntity>> ListAsync(Expression<Func<TEntity, bool>> predicate, CancellationToken ct = default)
@@ -255,18 +263,23 @@ generic-coverable entity:
 
 ```csharp
 // Infrastructure.Repositories/{App}GenericRepositories.cs
-public sealed class {App}RepositoryTrxn<TEntity>({App}DbContextTrxn db)
-    : RepositoryTrxn<TEntity, {App}DbContextTrxn>(db) where TEntity : EntityBase { }
-public sealed class {App}RepositoryQuery<TEntity>({App}DbContextQuery db)
-    : RepositoryQuery<TEntity, {App}DbContextQuery>(db) where TEntity : EntityBase { }
+public sealed class {App}RepositoryTrxn<TEntity, TId>({App}DbContextTrxn db)
+    : RepositoryTrxn<TEntity, TId, {App}DbContextTrxn>(db)
+    where TEntity : EntityBase<TId>
+    where TId : struct, IDomainId<TId> { }
+
+public sealed class {App}RepositoryQuery<TEntity, TId>({App}DbContextQuery db)
+    : RepositoryQuery<TEntity, TId, {App}DbContextQuery>(db)
+    where TEntity : EntityBase<TId>
+    where TId : struct, IDomainId<TId> { }
 
 // Bootstrapper/RegisterServices.Database.cs
-services.AddScoped(typeof(IRepositoryTrxn<>), typeof({App}RepositoryTrxn<>));
-services.AddScoped(typeof(IRepositoryQuery<>), typeof({App}RepositoryQuery<>));
+services.AddScoped(typeof(IRepositoryTrxn<,>), typeof({App}RepositoryTrxn<,>));
+services.AddScoped(typeof(IRepositoryQuery<,>), typeof({App}RepositoryQuery<,>));
 ```
 
-Consumers (services, CQRS handlers) inject `IRepositoryTrxn<{Entity}>` / `IRepositoryQuery<{Entity}>`
-and call `GetAsync(id)`, `ListAsync(predicate)`, `Create(ref e)`, `Delete(e)`, `SaveChangesAsync(...)`.
+Consumers (services, CQRS handlers) inject `IRepositoryTrxn<{Entity}, {Entity}Id>` / `IRepositoryQuery<{Entity}, {Entity}Id>`
+and call `GetAsync({Entity}Id.From(rawGuid))`, `ListAsync(predicate)`, `Create(ref e)`, `Delete(e)`, `SaveChangesAsync(...)`.
 
 ### Split aggregate: bespoke read extends the generic pair
 
@@ -356,7 +369,7 @@ The 2-param overload retries on `DbUpdateConcurrencyException` using the specifi
 
 - **Repositories inherit `RepositoryBase<TContext, TAuditId, TTenantId>`** - provides `GetEntityAsync`, `Create(ref)`, `UpdateFull(ref)`, `Delete(entity)`, `DeleteAsync(predicate)`, `SaveChangesAsync(OptimisticConcurrencyWinner, CancellationToken)`, `QueryPageProjectionAsync`, `QueryPageAsync`. These are **protected helpers for repository implementations only** - none of them appear on `IRepositoryQuery<T>` / `IRepositoryTrxn<T>`, so services and handlers can never call them; consumers get `GetAsync` / `ListAsync` plus the bespoke `Search{Entity}sAsync` methods (GR-14)
 - **`DB` property** - `RepositoryBase` exposes `protected TDbContext DB => dbContext;` for calling extension methods (e.g. Updater) on the context
-- **Generic args:** `TAuditId = string` (matches `IRequestContext.AuditId`), `TTenantId = Guid?` (matches `ITenantEntity<Guid>` - nullable for non-tenant scenarios)
+- **Generic args:** `TAuditId = string` (matches `IRequestContext.AuditId`), `TTenantId = Guid?` (matches `ITenantEntity<TenantId>` - nullable for non-tenant scenarios)
 - **`QueryPageProjectionAsync` signature:** `(Expression<Func<T, TProject>> projector, bool readNoLock, int? pageSize, int? pageIndex, Expression<Func<T, bool>>? filter, Func<IQueryable<T>, IOrderedQueryable<T>>? orderBy, bool includeTotal, SplitQueryThresholdOptions?, CancellationToken, params includes[])`
 - **`SearchRequest<TFilter>`** is a record: `PageSize` (int), `PageIndex` (int), `Sorts` (IEnumerable\<Sort\>?), `Filter` (TFilter?). Does **not** have `Page`, `PageNumber`, `SortBy`, or `SortDirection`
 - **Trxn repository**: Uses `{Project}DbContextTrxn` (tracking, audit interceptor, read-write)

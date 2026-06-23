@@ -165,10 +165,12 @@ See [troubleshooting.md](../support/troubleshooting.md) for the canonical paging
 Base configuration (CRITICAL -- must exist in every project):
 
 ```csharp
-public abstract class EntityBaseConfiguration<T>(bool pkClusteredIndex = false)
-    : IEntityTypeConfiguration<T> where T : EntityBase
+public abstract class EntityBaseConfiguration<TEntity, TId>(bool pkClusteredIndex = false)
+    : IEntityTypeConfiguration<TEntity>
+    where TEntity : EntityBase<TId>
+    where TId : struct, IDomainId<TId>
 {
-    public virtual void Configure(EntityTypeBuilder<T> builder)
+    public virtual void Configure(EntityTypeBuilder<TEntity> builder)
     {
         builder.HasKey(e => e.Id).IsClustered(pkClusteredIndex);
         builder.Property(e => e.Id).ValueGeneratedNever();

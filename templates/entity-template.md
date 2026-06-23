@@ -9,33 +9,61 @@
 | **Depends on** | [domain-specification-schema.md](../ai/domain-specification-schema.md), [resource-implementation-schema.md](../ai/resource-implementation-schema.md) |
 | **Referenced by** | [data-mapping-template](data-mapping-template.md), [ef-configuration-template](ef-configuration-template.md) |
 
+## File: Domain/Shared/Ids/DomainIds.cs
+
+> **Centralized ID types - one file per bounded context, never scattered into individual entity files.**
+> Define all domain ID structs here. `TenantId` is typically defined in a shared package; add it here only for apps that own their own tenant concept.
+
+```csharp
+using EF.Domain.Contracts;
+
+namespace Domain.Shared.Ids;
+
+public readonly record struct {Entity}Id(Guid Value) : IDomainId<{Entity}Id>
+{
+    public static {Entity}Id From(Guid value) => new(value);
+    public static implicit operator Guid({Entity}Id id) => id.Value;
+    public override string ToString() => Value.ToString();
+}
+
+// Repeat pattern for each entity ID in the bounded context:
+// public readonly record struct {OtherEntity}Id(Guid Value) : IDomainId<{OtherEntity}Id> { ... }
+```
+
+> `TenantId` follows the same pattern and is typically shared across the solution (defined once in a shared project or package).
+
+---
+
 ## File: Domain/Model/Entities/{Entity}.cs
 
 > **EntityBase properties (inherited, do NOT redefine):**
-> - `Guid Id { get; init; }` - auto-generated `Guid.CreateVersion7()`, init-only, rejects `Guid.Empty`
+> - `{Entity}Id Id { get; init; }` - typed domain ID, auto-generated via `Guid.CreateVersion7()`, init-only
 > - `byte[]? RowVersion { get; set; }` - nullable, configured via `.IsRowVersion()` in EF config
+>
+> `EntityBase<TId>` is the generic base where `TId : IDomainId<TId>`. The typed `Id` property replaces the raw `Guid Id`.
 >
 > **Do NOT inherit `AuditableBase<T>`** unless audit fields must live on the entity itself. The default pattern uses `AuditInterceptor` on the `DbContext` to manage audit metadata externally.
 
 ```csharp
 using Domain.Shared;
 using Domain.Shared.Constants;
+using Domain.Shared.Ids;
 using EF.Domain;
 using EF.Domain.Contracts;
 
 namespace Domain.Model;
 
-public class {Entity} : EntityBase, ITenantEntity<Guid>  // [MULTI-TENANT] omit ITenantEntity<Guid> for single-tenant
+public class {Entity} : EntityBase<{Entity}Id>, ITenantEntity<TenantId>  // [MULTI-TENANT] omit ITenantEntity<TenantId> for single-tenant
 {
     // ===== Factory Create - the ONLY way to create an instance =====
     public static DomainResult<{Entity}> Create(Guid tenantId, string name, /* additional params */)
     {
-        var entity = new {Entity}(tenantId, name);
+        var entity = new {Entity}(TenantId.From(tenantId), name);  // wrap raw Guid on intake
         return entity.Valid().Map(_ => entity);
     }
 
     // ===== Private constructor - enforces factory usage =====
-    private {Entity}(Guid tenantId, string name)
+    private {Entity}(TenantId tenantId, string name)
     {
         TenantId = tenantId;
         Name = name;
@@ -45,7 +73,7 @@ public class {Entity} : EntityBase, ITenantEntity<Guid>  // [MULTI-TENANT] omit 
     private {Entity}() { }
 
     // ===== Properties - private setters enforce immutability outside domain methods =====
-    public Guid TenantId { get; init; }  // init for tenant (set once)
+    public TenantId TenantId { get; init; }  // init for tenant (set once)
     public string Name { get; private set; } = null!;
     public {Entity}Flags Flags { get; private set; } = {Entity}Flags.None;
 
@@ -78,7 +106,7 @@ public class {Entity} : EntityBase, ITenantEntity<Guid>  // [MULTI-TENANT] omit 
 
     public DomainResult Remove{ChildEntity}(Guid id)
     {
-        var child = {ChildEntity}s.FirstOrDefault(c => c.Id == id);
+        var child = {ChildEntity}s.FirstOrDefault(c => c.Id.Value == id);  // unwrap for Guid comparison
         if (child != null) {ChildEntity}s.Remove(child);
         return DomainResult.Success();  // Desired-state: always succeeds
     }
@@ -88,7 +116,7 @@ public class {Entity} : EntityBase, ITenantEntity<Guid>  // [MULTI-TENANT] omit 
     {
         var errors = new List<DomainError>();
 
-        if (TenantId == Guid.Empty) errors.Add(DomainError.Create("Tenant ID cannot be empty.")); // [MULTI-TENANT]
+        if (TenantId.Value == Guid.Empty) errors.Add(DomainError.Create("Tenant ID cannot be empty.")); // [MULTI-TENANT]
         if (string.IsNullOrWhiteSpace(Name)) errors.Add(DomainError.Create("Name is required."));
         if (Name?.Length < DomainConstants.RULE_DEFAULT_NAME_LENGTH_MIN)
             errors.Add(DomainError.Create($"Name must be at least {DomainConstants.RULE_DEFAULT_NAME_LENGTH_MIN} characters."));
@@ -101,6 +129,12 @@ public class {Entity} : EntityBase, ITenantEntity<Guid>  // [MULTI-TENANT] omit 
     }
 }
 ```
+
+> **Child factory calls (cross-boundary):** When calling a child entity's factory that still accepts raw `Guid`, unwrap the typed ID:
+> ```csharp
+> {ChildEntity}.Create(TenantId.Value, Id.Value, body);
+> ```
+> **Optional DomainGuard:** `DomainGuard.NotEmpty(tenantId, nameof(tenantId))` can replace the manual empty-check in `Valid()` for brevity.
 
 ## Critical domain-method rules
 
@@ -186,31 +220,34 @@ When the child collection property name differs from `{ChildEntity}s`, use the e
 
 ## File: Domain/Model/Entities/{Parent}{Related}.cs (Join Entity)
 
-Default many-to-many join entity pattern - inherits `EntityBase` with FK on both sides. Only use a pure composite-key join (no `EntityBase`) when confident the join will remain a pure association.
+Default many-to-many join entity pattern - inherits `EntityBase<{Parent}{Related}Id>` with FK on both sides. Only use a pure composite-key join (no `EntityBase`) when confident the join will remain a pure association.
 
 ```csharp
+using Domain.Shared.Ids;
 using EF.Domain;
 
 namespace Domain.Model;
 
-public class {Parent}{Related} : EntityBase
+public class {Parent}{Related} : EntityBase<{Parent}{Related}Id>
 {
-    public static DomainResult<{Parent}{Related}> Create(Guid parentId, Guid relatedId)
+    public static DomainResult<{Parent}{Related}> Create(Guid tenantId, Guid parentId, Guid relatedId)
     {
-        var entity = new {Parent}{Related}(parentId, relatedId);
+        var entity = new {Parent}{Related}(TenantId.From(tenantId), {Parent}Id.From(parentId), {Related}Id.From(relatedId));
         return DomainResult<{Parent}{Related}>.Success(entity);
     }
 
-    private {Parent}{Related}(Guid parentId, Guid relatedId)
+    private {Parent}{Related}(TenantId tenantId, {Parent}Id parentId, {Related}Id relatedId)
     {
+        TenantId = tenantId;
         {Parent}Id = parentId;
         {Related}Id = relatedId;
     }
 
     private {Parent}{Related}() { }
 
-    public Guid {Parent}Id { get; init; }
-    public Guid {Related}Id { get; init; }
+    public TenantId TenantId { get; init; }
+    public {Parent}Id {Parent}Id { get; init; }
+    public {Related}Id {Related}Id { get; init; }
 
     public {Parent} {Parent} { get; private set; } = null!;
     public {Related} {Related} { get; private set; } = null!;

@@ -122,19 +122,29 @@ If `applicationStyle` is `cqrs` or `switch`, include `CQRS` in `localPackageLaye
 ### `EF.Domain`
 
 ```csharp
+public interface IDomainId<TSelf> where TSelf : IDomainId<TSelf>
+{
+    Guid Value { get; }
+    static abstract TSelf From(Guid value);
+}
+```
+
+```csharp
 public interface IEntityBase<TId> { TId Id { get; init; } }
 ```
 
 ```csharp
-public abstract class EntityBase : IEntityBase<Guid>
+public abstract class EntityBase<TId> : IEntityBase<TId>
+    where TId : IDomainId<TId>
 {
-    public Guid Id { get; init; }   // uses Guid.CreateVersion7()
+    public TId Id { get; init; }     // typed domain ID, value set from Guid.CreateVersion7()
     public byte[]? RowVersion { get; set; }
 }
 ```
 
 ```csharp
-public abstract class AuditableBase<TAuditIdType> : EntityBase
+public abstract class AuditableBase<TAuditIdType, TId> : EntityBase<TId>
+    where TId : IDomainId<TId>
 {
     public DateTime CreatedDate { get; set; }
     public TAuditIdType CreatedBy { get; set; }

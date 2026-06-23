@@ -137,8 +137,23 @@ If using Node Playwright and a shell wrapper mangles `npx`, invoke the local CLI
 
 ### C# Host Wrapping a TypeScript Playwright Suite
 
+**Scaffold rule: do NOT generate C# wrapper classes that directly invoke browser APIs (clicking, filling, navigating).** Generate TypeScript spec files and a single `TypeScriptPlaywrightRunner.cs` that orchestrates Node process lifecycle. The browser work stays in TypeScript; C# owns host lifecycle and MSTest integration only.
+
+**TypeScript spec files must import from shared utilities (`utils/blazorTestUtils.ts` or equivalent) rather than writing inline `page.click()` / `page.fill()` chains:**
+```typescript
+import { waitForPageReady, navigateToNewTask, clickSaveNewTask, fillField } from "../utils/blazorTestUtils";
+
+// Use helpers instead of raw page.* chains
+await waitForPageReady(page);
+await fillField(page, "Name", "My Task");
+await clickSaveNewTask(page);
+```
+
+**`playwright.config.ts` must use intelligent browser detection with env-var fallback.** Do not hard-code browser executable paths in generated specs.
+
 When `Test.PlaywrightUI` is a C# MSTest project that drives an existing TypeScript Playwright suite (so Aspire can select runnable hosts in C#, then hand off browser execution to TS), the child-process runner must be disciplined or failures vanish into test-host timeout noise:
 
+- **Use `TypeScriptPlaywrightRunner.cs` as the entry point.** It detects Playwright-managed Chromium vs. system Chrome, manages Node process lifecycle and cancellation, and returns `CommandResult` / `BrowserReadiness` records. Do not build a one-off per-test runner - a single shared runner class serves the whole project.
 - **Invoke `node` against the local CLI, not `npx`.** Resolve `node_modules/@playwright/test/cli.js` relative to the project directory and start `node.exe`/`node` with it via `ProcessStartInfo.ArgumentList`. `npx` can resolve through a broken local npm shim and silently run the wrong binary; a missing `node` on PATH should surface as a clear `Node.js is not available on PATH` error, not a generic Win32 failure.
 - **Capture stdout and stderr even on cancellation.** Start the async reads (`ReadToEndAsync`) before awaiting exit, and return both streams in the result on the cancellation path too - a Playwright failure that arrives as the test host cancels must still reach the TRX, not disappear.
 - **Kill the entire process tree.** On `OperationCanceledException`, call `process.Kill(entireProcessTree: true)` (swallow `InvalidOperationException` if it already exited), then `await WaitForExitAsync(CancellationToken.None)` so orphaned browser/node children do not leak and hold locks.

@@ -2,7 +2,7 @@
 
 Reference patterns: [../patterns/api-host-wiring.md](../patterns/api-host-wiring.md) (Request Context Resolution), [../patterns/data-layer-wiring.md](../patterns/data-layer-wiring.md) (Multi-tenant Query Filter).
 
-> **Applicability:** This skill applies only when the domain specification enables multi-tenancy. The TaskFlow reference app demonstrates full multi-tenant patterns. For single-tenant scaffolds, skip this entire file - omit `ITenantEntity<Guid>`, `ITenantBoundaryValidator`, tenant query filters, tenant stamping, and tenant-scoped search enforcement. The service template marks optional sections with `// [MULTI-TENANT]`.
+> **Applicability:** This skill applies only when the domain specification enables multi-tenancy. The TaskFlow reference app demonstrates full multi-tenant patterns. For single-tenant scaffolds, skip this entire file - omit `ITenantEntity<TenantId>`, `ITenantBoundaryValidator`, tenant query filters, tenant stamping, and tenant-scoped search enforcement. The service template marks optional sections with `// [MULTI-TENANT]`.
 
 ## Purpose
 
@@ -16,7 +16,7 @@ Enforce tenant isolation through data, service, and request-context layers with 
 
 ## Non-Negotiables
 
-1. Tenant-scoped entities implement `ITenantEntity<Guid>`.
+1. Tenant-scoped entities implement `ITenantEntity<TenantId>`.
 2. DbContext applies tenant query filters automatically for tenant entities.
 3. Services validate tenant boundary before returning/modifying entity data.
 4. Create/update flows derive tenant from request context, not client payload.
@@ -32,13 +32,13 @@ public interface ITenantEntity<TTenantId>
     TTenantId TenantId { get; }
 }
 
-public class TodoItem : EntityBase, ITenantEntity<Guid>
+public class TodoItem : EntityBase<TodoItemId>, ITenantEntity<TenantId>
 {
-    public Guid TenantId { get; init; }
+    public TenantId TenantId { get; init; }
 }
 ```
 
-`TenantId` should be immutable after creation.
+`TenantId` is a typed value struct (`TenantId : IDomainId<TenantId>`) and should be immutable after creation.
 
 ---
 
@@ -48,7 +48,7 @@ public class TodoItem : EntityBase, ITenantEntity<Guid>
 private void ConfigureTenantQueryFilters(ModelBuilder modelBuilder)
 {
     var tenantEntityClrTypes = modelBuilder.Model.GetEntityTypes()
-        .Where(et => typeof(ITenantEntity<Guid>).IsAssignableFrom(et.ClrType))
+        .Where(et => typeof(ITenantEntity<TenantId>).IsAssignableFrom(et.ClrType))
         .Select(et => et.ClrType);
 
     foreach (var clrType in tenantEntityClrTypes)
@@ -176,7 +176,7 @@ Minimum test matrix:
 
 ## Verification
 
-- [ ] tenant entities implement `ITenantEntity<Guid>`
+- [ ] tenant entities implement `ITenantEntity<TenantId>`
 - [ ] DbContext applies tenant query filters for tenant entities
 - [ ] request context resolves tenant/roles from claims (with background fallback)
 - [ ] `TenantBoundaryValidator` is used in service operations

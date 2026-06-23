@@ -137,19 +137,21 @@ public abstract class {App}DbContextBase(DbContextOptions options)
         modelBuilder.ApplyConfigurationsFromAssembly(                            // 3. All IEntityTypeConfiguration<T>
             typeof({App}DbContextBase).Assembly);
 
+        modelBuilder.ConfigureDomainIdConversions();                             // 3b. Auto-register IDomainId<T> value converters
+
         ConfigureDefaultDataTypes(modelBuilder);                                 // 4. Global type defaults
         SetTableNames(modelBuilder);                                             // 5. Table naming convention
         ConfigureTenantQueryFilters(modelBuilder);                               // 6. Tenant filters
     }
 ```
 
-**Dynamic tenant query filter** -- applied to every entity implementing `ITenantEntity<Guid>`:
+**Dynamic tenant query filter** -- applied to every entity implementing `ITenantEntity<TenantId>`:
 
 ```csharp
     private void ConfigureTenantQueryFilters(ModelBuilder modelBuilder)
     {
         var tenantEntityClrTypes = modelBuilder.Model.GetEntityTypes()
-            .Where(entityType => typeof(ITenantEntity<Guid>).IsAssignableFrom(entityType.ClrType))
+            .Where(entityType => typeof(ITenantEntity<TenantId>).IsAssignableFrom(entityType.ClrType))
             .Select(entityType => entityType.ClrType);
 
         foreach (var clrType in tenantEntityClrTypes)

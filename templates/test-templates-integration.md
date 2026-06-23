@@ -170,6 +170,27 @@ public class IntegrationTestSetup
 
 Cover **migration apply** + **CRUD against real SQL** + **child includes** + **updater navigation-add round-trip** (for entities with an `{Entity}Updater`) + **M:N junction navigation** + **tenant query filter** + **polymorphic indexes** when applicable. Build contexts via `SqlContainerFixture` and gate on `StartupError` in `[TestInitialize]`.
 
+> **Typed ID - assertion pitfall:** Entity `Id` is now `{Entity}Id` (a typed value struct), not `Guid`. A direct equality comparison between a `Guid` and a typed ID will not compile or silently fail. Always unwrap `.Value` when comparing a typed ID against a raw `Guid`:
+> ```csharp
+> // WRONG - type mismatch, will not compile
+> Assert.AreEqual(categoryId, result.CategoryId);
+>
+> // RIGHT - unwrap the typed ID
+> Assert.AreEqual(categoryId, result.CategoryId.Value);
+> Assert.AreEqual(categoryId, result.CategoryId?.Value);  // nullable form
+> Assert.AreNotEqual(Guid.Empty, entity.Id.Value);
+> ```
+>
+> **Generic repo construction:** When constructing the generic repository pair directly in tests (for CRUD-only/join entities), include the typed ID parameter:
+> ```csharp
+> // OLD - will not compile with typed ID constraints
+> var repo = new {App}RepositoryTrxn<Tag>(db);
+>
+> // NEW
+> var repo = new {App}RepositoryTrxn<Tag, TagId>(db);
+> ```
+> Bespoke repos (`{Entity}RepositoryTrxn`) are constructed without type parameters - they do not change.
+
 > **Seeding a full FK chain:** repository tests below seed a bare parent in their own unit of work
 > (fine for repo-level assertions). When a test needs the **owner/tenant chain** (a row owned by a real
 > user in a real tenant - e.g. anything exercising the write-identity path), use the shared
@@ -243,7 +264,7 @@ public class {Entity}RepositoryIntegrationTests
         db.{Entities}.Add(entity);
         await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins);
         var id = entity.Id;
-        Assert.AreNotEqual(Guid.Empty, id);
+        Assert.AreNotEqual(Guid.Empty, id.Value);  // unwrap typed ID for Guid comparison
 
         // Read
         var fetched = await db.{Entities}.FindAsync(id);
@@ -274,7 +295,7 @@ public class {Entity}RepositoryIntegrationTests
         db.{Entities}.Add(entity);
         await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins);
 
-        var childResult = {ChildEntity}.Create(TenantA, entity.Id, "Child body");
+        var childResult = {ChildEntity}.Create(TenantA, entity.Id.Value, "Child body");  // unwrap typed IDs for cross-boundary factory
         db.{ChildEntities}.Add(childResult.Value!);
         await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins);
 
@@ -303,7 +324,7 @@ public class {Entity}RepositoryIntegrationTests
     [Timeout(120000)]
     public async Task {Entity}_UpdateFromDto_AddsChildToReloadedParent_AgainstRealSql()
     {
-        Guid parentId;
+        {Entity}Id parentId;  // typed ID - not Guid
 
         // Seed a bare parent in its own unit of work.
         await using (var seed = SqlContainerFixture.CreateTrxnContext())
@@ -323,11 +344,12 @@ public class {Entity}RepositoryIntegrationTests
 
         // Desired-state DTO carries a NEW child (no Id -> create path). The DTO collection property
         // mirrors the entity navigation; fill the child's required fields for your domain.
+        // DTOs still carry Guid - unwrap typed ID with .Value when populating DTO fields.
         var dto = new {Entity}Dto
         {
-            Id = parentId,
+            Id = parentId.Value,
             Name = "Updater Parent",
-            {ChildEntities} = [new {ChildEntity}Dto { /* required fields */ {Entity}Id = parentId }]
+            {ChildEntities} = [new {ChildEntity}Dto { /* required fields */ {Entity}Id = parentId.Value }]
         };
 
         var repo = new {Entity}RepositoryTrxn(db);
@@ -359,7 +381,7 @@ public class {Entity}RepositoryIntegrationTests
         db.Tags.Add(tag);
         await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins);
 
-        var bridge = {Entity}Tag.Create(TenantA, entity.Id, tag.Id);
+        var bridge = {Entity}Tag.Create(TenantA, entity.Id.Value, tag.Id.Value);  // unwrap typed IDs for cross-boundary factory
         db.{Entity}Tags.Add(bridge.Value!);
         await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins);
 

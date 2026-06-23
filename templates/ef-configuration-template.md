@@ -17,13 +17,15 @@ using EF.Domain;
 
 namespace Infrastructure.Data.Configuration;
 
-public abstract class EntityBaseConfiguration<T>(bool pkClusteredIndex = false)
-    : IEntityTypeConfiguration<T> where T : EntityBase
+public abstract class EntityBaseConfiguration<TEntity, TId>(bool pkClusteredIndex = false)
+    : IEntityTypeConfiguration<TEntity>
+    where TEntity : EntityBase<TId>
+    where TId : struct, IDomainId<TId>
 {
-    public virtual void Configure(EntityTypeBuilder<T> builder)
+    public virtual void Configure(EntityTypeBuilder<TEntity> builder)
     {
-        builder.HasKey(e => e.Id).IsClustered(pkClusteredIndex); // Default non-clustered PK (Guid); pass true to cluster
-        builder.Property(e => e.Id).ValueGeneratedNever();       // Client-generated V7 GUIDs
+        builder.HasKey(e => e.Id).IsClustered(pkClusteredIndex); // Default non-clustered PK; pass true to cluster
+        builder.Property(e => e.Id).ValueGeneratedNever();       // Client-generated V7 GUIDs (wrapped into TId)
         builder.Property(e => e.RowVersion).IsRowVersion();       // Optimistic concurrency
     }
 }
@@ -42,7 +44,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Infrastructure.Data.Configuration;
 
-public class {Entity}Configuration : EntityBaseConfiguration<{Entity}>
+public class {Entity}Configuration : EntityBaseConfiguration<{Entity}, {Entity}Id>
 {
     public override void Configure(EntityTypeBuilder<{Entity}> builder)
     {
@@ -116,7 +118,7 @@ When workflows include compensations:
 ```csharp
 namespace Infrastructure.Data.Configuration;
 
-public class {ChildEntity}Configuration : EntityBaseConfiguration<{ChildEntity}>
+public class {ChildEntity}Configuration : EntityBaseConfiguration<{ChildEntity}, {ChildEntity}Id>
 {
     public override void Configure(EntityTypeBuilder<{ChildEntity}> builder)
     {
@@ -174,6 +176,20 @@ protected static void ConfigureDefaultDataTypes(ModelBuilder modelBuilder)
 
 > **Individual configurations can override these defaults** when the domain requires it (e.g., `.HasPrecision(18, 8)` for currency exchange rates).
 
+## Domain ID Value Converter Auto-Registration
+
+Domain IDs are typed value objects (`{Entity}Id : IDomainId<{Entity}Id>`). **Do NOT hand-wire individual `HasConversion<>` calls** for each ID property. Call the extension method once in `OnModelCreating` and it scans all entity properties automatically:
+
+```csharp
+// In {App}DbContextBase.OnModelCreating, after ApplyConfigurationsFromAssembly:
+modelBuilder.ConfigureDomainIdConversions();
+```
+
+This applies `DomainIdValueConverter<T>` to non-nullable domain ID properties and `NullableDomainIdValueConverter<T>` to nullable ones across all entities. The method is defined in `DomainIdConversionExtensions.cs` (Infrastructure.Data or the shared EF package).
+
+> **Add step to OnModelCreating order** (see [data-layer-wiring.md](../patterns/data-layer-wiring.md)):
+> After step 3 (`ApplyConfigurationsFromAssembly`), add step 3b: `modelBuilder.ConfigureDomainIdConversions();`
+
 ## Notes
 
 - `EntityBaseConfiguration<T>` handles `Id` (non-clustered PK, client-generated V7 GUID) and `RowVersion` (concurrency token) - NO audit fields
@@ -185,3 +201,4 @@ protected static void ConfigureDefaultDataTypes(ModelBuilder modelBuilder)
 - All string properties must have `HasMaxLength()` with a realistic length - no unbounded `nvarchar(max)` unless the field genuinely stores large text
 - All `decimal` properties use `HasPrecision(10, 4)` by default - override per-property when needed
 - All `DateTime` properties map to `datetime2` - the global convention handles this, but explicit `.HasColumnType("datetime2")` is acceptable for clarity
+- Domain ID properties (`{Entity}Id`, `TenantId`, etc.) are handled by `ConfigureDomainIdConversions()` - no per-property `HasConversion<>` needed

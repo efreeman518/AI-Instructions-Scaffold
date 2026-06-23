@@ -112,7 +112,7 @@ Use these links first. If a branch or path has moved, search inside the same rep
 
 ## High-Value Proof Checks
 
-- **Multi-tenant proof:** TaskFlow demonstrates full multi-tenancy - `ITenantEntity<Guid>`, `ITenantBoundaryValidator`, `ValidationHelper`, `TenantBoundaryLoggingExtensions`, tenant query filters, tenant stamping, and global-admin bypass. Not all scaffolds require multi-tenancy.
+- **Multi-tenant proof:** TaskFlow demonstrates full multi-tenancy - `ITenantEntity<TenantId>` (typed domain ID), `ITenantBoundaryValidator`, `ValidationHelper`, `TenantBoundaryLoggingExtensions`, tenant query filters, tenant stamping, and global-admin bypass. Not all scaffolds require multi-tenancy.
 - **Service pattern proof:** TaskFlow services use `BuildResponse` helper, `ErrorConstants.ERROR_ITEM_NOTFOUND`, `nameof(Entity)`, `[LoggerMessage]` source-gen logging, and `DefaultRequest<T>`/`DefaultResponse<T>` as `record` types.
 - **Dual DbContext proof:** TaskFlow uses `TaskFlowDbContextTrxn` for writes and `TaskFlowDbContextQuery` for read-only/no-tracking access.
 - **Repository proof:** TaskFlow splits repository contracts and implementations into transaction and query variants.

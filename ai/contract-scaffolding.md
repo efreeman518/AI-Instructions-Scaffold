@@ -120,10 +120,10 @@ Generate entity classes with the correct shape but no domain logic:
 
 ```csharp
 // Domain.Model/{Entity}/{Entity}.cs
-public class {Entity} : EntityBase, ITenantEntity<Guid>
+public class {Entity} : EntityBase<{Entity}Id>, ITenantEntity<TenantId>
 {
     // Properties (from resource-implementation.yaml)
-    public Guid TenantId { get; init; }
+    public TenantId TenantId { get; init; }
     public string Name { get; private set; } = null!;
     // ... all properties
 

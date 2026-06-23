@@ -192,7 +192,7 @@ private static void AddRequestContextServices(IServiceCollection services)
 
 When the scaffold ships with auth off (`Auth:Enabled: false` or no `Auth` section), `userTenantId` claims are absent and the tenant resolves to `null`. The EF tenant query filter then matches nothing and the entire UI looks silently empty (zero rows on every list). Two acceptable mitigations - pick **one** and record it in `HANDOFF.md`:
 
-1. **Single-tenant scaffold** (preferred when only one tenant exists in dev): drop `ITenantEntity<Guid>` from the entity, remove the tenant query filter, and skip this section.
+1. **Single-tenant scaffold** (preferred when only one tenant exists in dev): drop `ITenantEntity<TenantId>` from the entity, remove the tenant query filter, and skip this section.
 2. **Dev tenant header**: keep multi-tenancy on, register a `DevRequestContextMiddleware` that reads a tenant id from a project-scoped header (e.g., `X-{App}-Tenant`) **only when** `app.Environment.IsDevelopment()` and `Auth:Enabled` is false. The matching Blazor `TenantHeaderHandler` lives in [../skills/ui-blazor.md](../skills/ui-blazor.md) -> *Dev Tenant Header*.
 
 Wire the middleware before `UseAuthentication`:
