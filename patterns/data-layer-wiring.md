@@ -137,13 +137,15 @@ public abstract class {App}DbContextBase(DbContextOptions options)
         modelBuilder.ApplyConfigurationsFromAssembly(                            // 3. All IEntityTypeConfiguration<T>
             typeof({App}DbContextBase).Assembly);
 
-        modelBuilder.ConfigureDomainIdConversions();                             // 3b. Auto-register IDomainId<T> value converters
+        modelBuilder.ConfigureDomainIdConversions();                             // 3b. Register missing IDomainId<T> CLR properties, then converters
 
         ConfigureDefaultDataTypes(modelBuilder);                                 // 4. Global type defaults
         SetTableNames(modelBuilder);                                             // 5. Table naming convention
         ConfigureTenantQueryFilters(modelBuilder);                               // 6. Tenant filters
     }
 ```
+
+`ConfigureDomainIdConversions()` must inspect CLR properties, not only EF metadata properties already returned by `entityType.GetProperties()`. EF Core 10 validates unmapped CLR properties during model build; if a typed ID property such as `TenantId` is not pre-registered, the API can fail at startup and higher tiers such as `Test.E2E` or `Test.Aspire` will surface timeouts or inconclusive startup failures. Fix the helper once instead of adding repeated `TenantId` configuration to every entity.
 
 **Dynamic tenant query filter** -- applied to every entity implementing `ITenantEntity<TenantId>`:
 

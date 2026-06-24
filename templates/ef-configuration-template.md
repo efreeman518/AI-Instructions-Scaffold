@@ -187,6 +187,17 @@ modelBuilder.ConfigureDomainIdConversions();
 
 This applies `DomainIdValueConverter<T>` to non-nullable domain ID properties and `NullableDomainIdValueConverter<T>` to nullable ones across all entities. The method is defined in `DomainIdConversionExtensions.cs` (Infrastructure.Data or the shared EF package).
 
+**EF Core 10 model validation requirement:** the helper must inspect CLR properties on each mapped entity type, not only `entityType.GetProperties()`. `GetProperties()` returns properties EF has already registered; an unmapped typed ID such as `TenantId : IDomainId<TenantId>` may be absent from that list and still fail model validation as an unsupported CLR property. The helper must pre-register every public instance CLR property whose non-nullable type implements `IDomainId<TSelf>` before applying converters:
+
+1. Iterate `modelBuilder.Model.GetEntityTypes()` and inspect `entityType.ClrType.GetProperties(...)`.
+2. For each domain ID property, call `modelBuilder.Entity(entityType.ClrType).Property(property.PropertyType, property.Name)` when `entityType.FindProperty(property.Name)` is null.
+3. Apply the domain ID converter to the resulting EF metadata property.
+4. Skip properties explicitly ignored by the model and skip value objects intentionally mapped as owned or complex types.
+
+Do not paper over this by adding `builder.Property(e => e.TenantId)` to every entity config. If all tenant entities fail at once, the conversion helper is the likely fix point.
+
+Converted value object defaults must use the **model CLR type**, not the provider/storage type. For example, a `Locale` property converted to `string` must use `.HasDefaultValue(Locale.Default)`, not `.HasDefaultValue("en-US")`. Fix the runtime model configuration in `OnModelCreating` or the entity configuration; generated migration snapshot/designer files may echo the old literal but are not the source of runtime model building.
+
 > **Add step to OnModelCreating order** (see [data-layer-wiring.md](../patterns/data-layer-wiring.md)):
 > After step 3 (`ApplyConfigurationsFromAssembly`), add step 3b: `modelBuilder.ConfigureDomainIdConversions();`
 
@@ -201,4 +212,4 @@ This applies `DomainIdValueConverter<T>` to non-nullable domain ID properties an
 - All string properties must have `HasMaxLength()` with a realistic length - no unbounded `nvarchar(max)` unless the field genuinely stores large text
 - All `decimal` properties use `HasPrecision(10, 4)` by default - override per-property when needed
 - All `DateTime` properties map to `datetime2` - the global convention handles this, but explicit `.HasColumnType("datetime2")` is acceptable for clarity
-- Domain ID properties (`{Entity}Id`, `TenantId`, etc.) are handled by `ConfigureDomainIdConversions()` - no per-property `HasConversion<>` needed
+- Domain ID properties (`{Entity}Id`, `TenantId`, etc.) are handled by `ConfigureDomainIdConversions()` - no per-property `HasConversion<>` needed, and the helper must pre-register unmapped domain ID CLR properties before applying converters
