@@ -126,6 +126,19 @@ dotnet ef migrations script --idempotent `
   -o migrations.sql
 ```
 
+### Mapping-Foundation Neutrality Gate
+
+After any refactor to typed-ID or value-object mapping, verify that the runtime model is schema-neutral before adding or regenerating migrations:
+
+```powershell
+dotnet ef migrations has-pending-model-changes `
+  --project src/Infrastructure/{Project}.Infrastructure.Data `
+  --startup-project src/Infrastructure/{Project}.Infrastructure.Data `
+  --context {App}DbContextTrxn
+```
+
+The result must be `No changes`. If EF reports pending model changes, reconcile the moved facet (max length, nullability, default value, column type, FK shape) in configuration. Do not blind-regenerate a migration for a mapping-foundation refactor.
+
 ### Data Migrations
 
 Migration files should contain schema changes only. Use one-time background jobs for non-trivial backfill and use `migrationBuilder.Sql()` only for simple, safe updates.

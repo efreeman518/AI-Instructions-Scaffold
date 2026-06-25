@@ -66,6 +66,11 @@ public class {Entity}Configuration : EntityBaseConfiguration<{Entity}, {Entity}I
                .IsRequired()
                .HasMaxLength(200);  // nvarchar(200) - realistic length for names
 
+        // Value-object converters such as Email/Locale are registered once in
+        // {App}DbContextBase.ConfigureConventions. Keep only per-property facets here:
+        // builder.Property(e => e.Email).IsRequired();
+        // builder.Property(e => e.Locale).HasDefaultValue(Locale.Default);
+
         // decimal(10,4) is the global default from ConfigureDefaultDataTypes;
         // override here only if this property needs different precision:
         // builder.Property(e => e.Price).HasPrecision(10, 4);
@@ -176,30 +181,40 @@ protected static void ConfigureDefaultDataTypes(ModelBuilder modelBuilder)
 
 > **Individual configurations can override these defaults** when the domain requires it (e.g., `.HasPrecision(18, 8)` for currency exchange rates).
 
-## Domain ID Value Converter Auto-Registration
+## Domain ID and Value-Object Conversion Conventions
 
-Domain IDs are typed value objects (`{Entity}Id : IDomainId<{Entity}Id>`). **Do NOT hand-wire individual `HasConversion<>` calls** for each ID property. Call the extension method once in `OnModelCreating` and it scans all entity properties automatically:
+Domain IDs are typed value objects (`{Entity}Id : IDomainId<{Entity}Id>`). **Do NOT hand-wire individual `HasConversion<>` calls** for each ID property and do not scan entity metadata from `OnModelCreating`. Register conversions at the type level in `ConfigureConventions` before EF builds the model:
 
 ```csharp
-// In {App}DbContextBase.OnModelCreating, after ApplyConfigurationsFromAssembly:
-modelBuilder.ConfigureDomainIdConversions();
+using EF.Data;
+
+public abstract class {App}DbContextBase(DbContextOptions options)
+    : DbContextBase<string, Guid?>(options)
+{
+    protected override void ConfigureConventions(ModelConfigurationBuilder cb)
+    {
+        base.ConfigureConventions(cb);
+
+        cb.RegisterDomainIdConversions(typeof({Entity}Id).Assembly);
+        cb.Properties<Email>()
+            .HaveConversion<EmailValueConverter>()
+            .HaveMaxLength(320);
+        cb.Properties<Locale>()
+            .HaveConversion<LocaleValueConverter>()
+            .HaveMaxLength(20);
+    }
+}
 ```
 
-This applies `DomainIdValueConverter<T>` to non-nullable domain ID properties and `NullableDomainIdValueConverter<T>` to nullable ones across all entities. The method is defined in `DomainIdConversionExtensions.cs` (Infrastructure.Data or the shared EF package).
+`RegisterDomainIdConversions` lives in the EF.Data package (`EF.Data` namespace). It scans the supplied assembly for `IDomainId<T>` structs and registers each converter as pre-convention model configuration, so EF discovers and converts mapped IDs, previously unmapped scalar IDs such as `TenantId`, and nullable FK IDs without an app-local reflection loop.
 
-**EF Core 10 model validation requirement:** the helper must inspect CLR properties on each mapped entity type, not only `entityType.GetProperties()`. `GetProperties()` returns properties EF has already registered; an unmapped typed ID such as `TenantId : IDomainId<TenantId>` may be absent from that list and still fail model validation as an unsupported CLR property. The helper must pre-register every public instance CLR property whose non-nullable type implements `IDomainId<TSelf>` before applying converters:
+Use one non-nullable `DomainIdValueConverter<T>` implementation for nullable and non-nullable properties. EF never passes null into a converter. Do not create or keep `NullableDomainIdValueConverter<T>` or nullable value-object converters.
 
-1. Iterate `modelBuilder.Model.GetEntityTypes()` and inspect `entityType.ClrType.GetProperties(...)`.
-2. For each domain ID property, call `modelBuilder.Entity(entityType.ClrType).Property(property.PropertyType, property.Name)` when `entityType.FindProperty(property.Name)` is null.
-3. Apply the domain ID converter to the resulting EF metadata property.
-4. Skip properties explicitly ignored by the model and skip value objects intentionally mapped as owned or complex types.
+Register value-object converters once per type when the storage shape is consistent across the model. In entity configs, keep only facets the convention cannot safely carry, such as `.IsRequired()`, `.HasDefaultValue(Locale.Default)`, and indexes. Do not repeat `.HasConversion<EmailValueConverter>()` or shared `.HasMaxLength(...)` on every entity.
 
-Do not paper over this by adding `builder.Property(e => e.TenantId)` to every entity config. If all tenant entities fail at once, the conversion helper is the likely fix point.
+Exceptions stay per-property: a value object mapped to different provider types across entities, owned/complex types configured with `OwnsOne`, and raw-`Guid` polymorphic columns such as `OwnerId` / `EntityId`.
 
 Converted value object defaults must use the **model CLR type**, not the provider/storage type. For example, a `Locale` property converted to `string` must use `.HasDefaultValue(Locale.Default)`, not `.HasDefaultValue("en-US")`. Fix the runtime model configuration in `OnModelCreating` or the entity configuration; generated migration snapshot/designer files may echo the old literal but are not the source of runtime model building.
-
-> **Add step to OnModelCreating order** (see [data-layer-wiring.md](../patterns/data-layer-wiring.md)):
-> After step 3 (`ApplyConfigurationsFromAssembly`), add step 3b: `modelBuilder.ConfigureDomainIdConversions();`
 
 ## Notes
 
@@ -212,4 +227,5 @@ Converted value object defaults must use the **model CLR type**, not the provide
 - All string properties must have `HasMaxLength()` with a realistic length - no unbounded `nvarchar(max)` unless the field genuinely stores large text
 - All `decimal` properties use `HasPrecision(10, 4)` by default - override per-property when needed
 - All `DateTime` properties map to `datetime2` - the global convention handles this, but explicit `.HasColumnType("datetime2")` is acceptable for clarity
-- Domain ID properties (`{Entity}Id`, `TenantId`, etc.) are handled by `ConfigureDomainIdConversions()` - no per-property `HasConversion<>` needed, and the helper must pre-register unmapped domain ID CLR properties before applying converters
+- Domain ID properties (`{Entity}Id`, `TenantId`, nullable FKs) are handled by `ConfigureConventions` / `RegisterDomainIdConversions` - no per-property `HasConversion<>` and no `OnModelCreating` reflection loop
+- Stable value objects such as `Email` and `Locale` are handled by `ConfigureConventions` once per type; entity configs keep only required/default/index facets

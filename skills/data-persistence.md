@@ -90,6 +90,15 @@ Load [../support/data-persistence-advanced.md](../support/data-persistence-advan
 public abstract class {Project}DbContextBase(DbContextOptions options)
     : DbContextBase<string, Guid?>(options)
 {
+    protected override void ConfigureConventions(ModelConfigurationBuilder cb)
+    {
+        base.ConfigureConventions(cb);
+
+        cb.RegisterDomainIdConversions(typeof(TenantId).Assembly);
+        cb.Properties<Email>().HaveConversion<EmailValueConverter>().HaveMaxLength(320);
+        cb.Properties<Locale>().HaveConversion<LocaleValueConverter>().HaveMaxLength(20);
+    }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -135,6 +144,7 @@ Key rules:
 - **A per-entity repository interface earns its place only when it adds logic beyond `RepositoryBase`/`IRepositoryBase`.** Under `repositoryContractStyle: hybrid`/`generic-only` (default `hybrid`), CRUD-only / append-only / join entities use the shared open-generic `IRepositoryTrxn<T>`/`IRepositoryQuery<T>` pair and get **no** per-entity repository - see [repository-template.md](../templates/repository-template.md) section Generic Repository Pair. Emit a bespoke per-aggregate repo only for multi-include loads, `UpdateFromDto` child sync, paged/projected `Search`, or polymorphic/hierarchy/multi-key queries.
 - Write repo: `{Entity}RepositoryTrxn` with includes and `UpdateFromDto` delegation to DbContext extension.
 - Query repo: `{Entity}RepositoryQuery` with paged search using EF-safe projector expressions; under `hybrid`/`generic-only` it extends `IRepositoryQuery<{Entity}>` so generic get/list stay inherited.
+- Query predicates over converted columns compare the whole typed property to a typed constant built outside the expression (`e.TenantId == tenantId`, `u.Email == email`). Never use `.Value` or other member access on a value-converted property inside `Where`, `Any`, `ListAsync`, `QuerySpec`, or message-handler predicates.
 - Use transactional repo for writes, query repo for read/projection.
 
 ### Updater Pattern
@@ -239,6 +249,7 @@ await repoTrxn.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, ct);
 
 - [ ] Both `{App}DbContextTrxn` and `{App}DbContextQuery` exist
 - [ ] Query context is configured for no-tracking reads
+- [ ] Domain ID and stable value-object converters are registered in `ConfigureConventions`, not per-property and not from an `OnModelCreating` reflection loop
 - [ ] Each entity has explicit `IEntityTypeConfiguration<T>` inheriting `EntityBaseConfiguration<T>`
 - [ ] `EntityBaseConfiguration<T>` configures `HasKey`, `ValueGeneratedNever`, `IsRowVersion()`
 - [ ] Repositories are split for write and read concerns
@@ -263,6 +274,7 @@ await repoTrxn.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, ct);
 - Inline backfill SQL inside an EF migration - blocks deployment on long-running data work and offers no retry handle. Use a background job for complex transforms; keep migrations idempotent and structural.
 - Mega-migrations that bundle multiple features - hard to revert and obscures the diff. One migration per feature/slice, named `YYYYMMDD_Description`.
 - Renaming a migration after it has been shared - every other developer's state diverges; never rename a migration once pushed.
+- Member access on a value-converted property inside an EF-translated predicate - compiles and passes model validation, then fails at runtime with `InvalidOperationException: The LINQ expression ... could not be translated`. Build typed IDs/value objects outside the expression and compare the whole property. Use `.Value` only in domain code or post-materialization LINQ-to-objects.
 
 ---
 

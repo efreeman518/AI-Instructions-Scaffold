@@ -67,6 +67,8 @@ Assert:
 
 If a slice spans multiple entities/stores, run at least one integration path that covers the full composite flow.
 
+`minimal` does not prove EF query-translation correctness. Unit tests and WAF endpoint tests can pass while predicates over converted columns, owned-type filters, projections, or `Contains`/`LIKE` calls fail against SQL. In `balanced` and higher, include at least one real relational-provider search/list path per searchable aggregate, through `Test.E2E` when the behavior is HTTP workflow-shaped or `Test.Integration` when one repository/component is enough.
+
 ---
 
 ## Hosted Browser UI (Test.PlaywrightUI)
@@ -196,6 +198,8 @@ Every startup step must have its own timeout and progress log: Docker preflight,
 
 Generated `WasmUI` assemblies must include `[assembly: DoNotParallelize]`. AppHost-backed browser classes fight over containers, ports, WASM output, and cold-start state when MSTest runs them in parallel.
 
+The shared AppHost-backed `WasmAppHost` builds the WASM head and starts Aspire once per assembly. Its lazy single-start guard must use static fixture state, for example `_app != null && _staticBaseUrl != null`, then copy `_staticBaseUrl` into each test's fresh `WasmTestSettings`. Never guard on the per-test `settings.BaseUrl`; each test gets a new settings instance and would re-enter the clean rebuild while the first `*.WasmHost.exe` still holds the staged output. Reset the static URL during assembly cleanup. Symptom of the broken guard: the second `WasmUI` test fails with `MSB3027` / `MSB3021` copying a locked `*.WasmHost.exe`; after the fix, later tests skip rebuild and start in seconds.
+
 ### Uno WASM: Browser Diagnostics
 
 Browser diagnostics are part of the harness, not an optional debugging add-on. Capture these on navigation failure, bridge-state timeout, page error, or Playwright exception:
@@ -261,6 +265,7 @@ All test projects must be registered in the `.slnx` so both Test Explorers disco
 - [ ] Hosted Playwright stack is reachable and base URL is correct.
 - [ ] Aspire-hosted UI tests use the current resource URL, not a stale dashboard URL or default Vite port.
 - [ ] AppHost-backed `WasmUI` tests start the Aspire graph in testing mode, keep required resources live, and disable only optional hosts.
+- [ ] AppHost-backed `WasmUI` fixture caches the resolved base URL in static state and guards on static `_app` / URL state, not per-test settings.
 - [ ] `WasmUI` tests use named Aspire endpoints and `CreateHttpClient(resource, "http")`, not fixed local ports.
 - [ ] `WasmUI` assemblies are `[assembly: DoNotParallelize]`.
 - [ ] WASM browser diagnostics capture console, errors, failed requests, response errors, URL, HTML, scripts, canvas count, body text, and bridge state.

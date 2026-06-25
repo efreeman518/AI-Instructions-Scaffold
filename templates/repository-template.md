@@ -95,12 +95,22 @@ public class {Entity}RepositoryQuery({Project}DbContextQuery dbContext)
     {
         Expression<Func<{Entity}, bool>>? filter = null;
 
-        if (tenantId.HasValue && !string.IsNullOrWhiteSpace(search))
-            filter = e => e.TenantId == tenantId && e.Name.Contains(search);
+        var searchText = string.IsNullOrWhiteSpace(search) ? null : search.Trim();
+
+        if (tenantId.HasValue && searchText is not null)
+        {
+            var typedTenantId = TenantId.From(tenantId.Value);
+            filter = e => e.TenantId == typedTenantId && e.Name.Contains(searchText);
+        }
         else if (tenantId.HasValue)
-            filter = e => e.TenantId == tenantId;
-        else if (!string.IsNullOrWhiteSpace(search))
-            filter = e => e.Name.Contains(search);
+        {
+            var typedTenantId = TenantId.From(tenantId.Value);
+            filter = e => e.TenantId == typedTenantId;
+        }
+        else if (searchText is not null)
+        {
+            filter = e => e.Name.Contains(searchText);
+        }
 
         var result = await QueryPageProjectionAsync(
             {Entity}Mapper.ProjectorStaticItems,
@@ -121,10 +131,17 @@ public class {Entity}RepositoryQuery({Project}DbContextQuery dbContext)
     {
         if (filter == null) return null;
 
+        var requireTenantId = filter.TenantId.HasValue;
+        var tenantId = requireTenantId ? TenantId.From(filter.TenantId.GetValueOrDefault()) : default;
+        var hasName = !string.IsNullOrWhiteSpace(filter.Name);
+        var name = hasName ? filter.Name.Trim() : string.Empty;
+        var hasFlags = filter.Flags.HasValue;
+        var flags = filter.Flags.GetValueOrDefault();
+
         return e =>
-            (!filter.TenantId.HasValue || e.TenantId == filter.TenantId) &&
-            (string.IsNullOrWhiteSpace(filter.Name) || e.Name.Contains(filter.Name)) &&
-            (!filter.Flags.HasValue || e.Flags.HasFlag(filter.Flags.Value));
+            (!requireTenantId || e.TenantId == tenantId) &&
+            (!hasName || e.Name.Contains(name)) &&
+            (!hasFlags || e.Flags.HasFlag(flags));
     }
 
     // ===== Order Builder =====
@@ -335,6 +352,37 @@ return await QueryPageProjectionAsync<Category, CategoryDto>(
 Every query repo search method must follow this pattern. Use `{Entity}Mapper.Projection` when the search result matches the canonical full DTO shape. Use `{Entity}Mapper.ProjectorSearch` only when the entity has a deliberately lean list/grid shape. The service layer then direct-returns the result without post-mapping.
 
 > **PageIndex pitfall:** `ComposeIQueryable` in EF.Data expects **1-based** `pageIndex` (it does `pageIndex - 1` internally). `SearchRequest<T>.PageIndex` defaults to `0`. Without `Math.Max(1, request.PageIndex)`, a default request produces a negative SQL `OFFSET`, crashing with `SqlException: The offset specified in a OFFSET clause may not be negative`.
+
+## Critical: Value-Converted Predicate Boundary
+
+EF Core cannot translate member access on a value-converted property. This compiles and passes model validation, then fails at runtime against a real relational provider:
+
+```csharp
+// FAIL WRONG - member access on converted columns cannot translate to SQL
+filter = e => e.TenantId.Value == request.Filter.TenantId!.Value;
+filter = u => u.Email.Value.Contains(term);
+```
+
+Build typed IDs and value objects from raw filter input before the expression, then compare the whole property:
+
+```csharp
+// OK CORRECT - converter handles the typed property comparison
+if (filter.TenantId.HasValue)
+{
+    var tenantId = TenantId.From(filter.TenantId.Value);
+    queryFilter = e => e.TenantId == tenantId;
+}
+
+if (!string.IsNullOrWhiteSpace(filter.Email))
+{
+    var email = Email.From(filter.Email);
+    queryFilter = u => u.Email == email;
+}
+```
+
+Applies to `QueryPageProjectionAsync`, `ListAsync`, `Where`, `Any`, `First`, `Single`, `QuerySpec`, search handlers, and message handlers. The `.Value` unwrap idiom is correct only in domain code or post-materialization LINQ-to-objects, for example `entity.Children.First(c => c.Id.Value == id)` or `list.Select(e => e.Id.Value)`.
+
+Prefer typed-to-typed comparison (`e.TenantId == tenantId`) over implicit `Guid` comparison. Value objects with no LIKE-able backing, such as `Email` or `Locale`, are exact matches. Keep `Contains` / `StartsWith` / `LIKE` for plain string columns such as `Name`, `Title`, or `DisplayName`.
 
 ## Critical: Delete Pattern (MUST call `Delete(entity)`)
 

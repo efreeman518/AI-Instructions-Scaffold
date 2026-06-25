@@ -246,6 +246,8 @@ For phase gates and validation commands, see [execution-gates.md](execution-gate
 |---|---|---|
 | Search returns empty/0 results | `SearchRequest.PageSize` defaults to 0 | Send a nonzero `PageSize` (e.g. 100) and a `PageIndex` valid for the base the repo expects - see the `PageIndex pitfall` note in [repository-template.md](../templates/repository-template.md) |
 | Search returns 500 / negative OFFSET | `PageIndex = 0` reaches `ComposeIQueryable` (which does `pageIndex - 1`) without a guard | Guard in the repo with `Math.Max(1, request.PageIndex)`; see the `PageIndex pitfall` note in [repository-template.md](../templates/repository-template.md) |
+| Search/list returns generic 500; server exception says LINQ expression could not be translated | Predicate uses member access on a value-converted property (`e.TenantId.Value`, `u.Email.Value.Contains(...)`) | Reproduce the predicate against the real SQL provider, read the actual `InvalidOperationException`, then build typed IDs/value objects outside the expression and compare the whole property (`e.TenantId == tenantId`, `u.Email == email`) |
+| Same EF translation bug appears in one failing endpoint | The same boundary antipattern is usually copied into latent query/message paths without direct E2E coverage | Sweep all `ListAsync`, `Where`, `Any`, `First`, `Single`, `QuerySpec`, search handler, and message-handler predicates for the same pattern and fix the class, not only the failing call path |
 | Tenant-scoped queries return empty | `IRequestContext.TenantId` is null in test host | Override request context with fixed `TestTenantId` |
 | All writes return `NotImplementedException` | Wrong `SaveChangesAsync` overload used | Use `SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, ct)` |
 | Delete test passes but entity still exists | `Delete(entity)` not called | Call `repoTrxn.Delete(entity)` before save |
@@ -302,7 +304,15 @@ For phase gates and validation commands, see [execution-gates.md](execution-gate
 
 ### Detailed Fix Patterns
 
-#### 1) Tenant Query Filter in Tests
+#### 1) EF Translation 500s: Read the Real Exception, Then Sweep the Pattern
+
+HTTP often surfaces only a generic 500. The actionable failure is server-side, usually `InvalidOperationException: The LINQ expression ... could not be translated`. Before changing code, reproduce the failing predicate against the real relational provider used by the test or app, such as resolving the real DbContext from the test factory services and running the query once against the Testcontainer.
+
+For value-converted properties, never infer the cause from status code alone. Confirm the actual expression, then fix predicates by building typed IDs or value objects outside the expression and comparing the whole converted property. Keep `.Value` unwrapping only in domain code or post-materialization LINQ-to-objects.
+
+After one boundary/translation bug is confirmed, sweep the codebase for the class of defect. Search repository queries, `ListAsync` predicates, `Where` / `Any` / `First` / `Single`, search handlers, message handlers, and `QuerySpec` builders. Fix every copied antipattern in one pass, including paths the current E2E failure did not hit.
+
+#### 2) Tenant Query Filter in Tests
 
 ```csharp
 services.AddScoped<IRequestContext<string, Guid?>>(provider =>
@@ -310,7 +320,7 @@ services.AddScoped<IRequestContext<string, Guid?>>(provider =>
         Guid.NewGuid().ToString(), "Test.Endpoints", TestTenantId, []));
 ```
 
-#### 2) SearchRequest Defaults
+#### 3) SearchRequest Defaults
 
 Always send explicit paging:
 
@@ -323,7 +333,7 @@ new SearchRequest<MyFilter>
 }
 ```
 
-#### 3) Rate Limiter Override in Test Host
+#### 4) Rate Limiter Override in Test Host
 
 ```csharp
 services.AddRateLimiter(options =>
@@ -333,13 +343,13 @@ services.AddRateLimiter(options =>
 });
 ```
 
-#### 4) SaveChangesAsync Overload
+#### 5) SaveChangesAsync Overload
 
 ```csharp
 await repoTrxn.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, ct);
 ```
 
-#### 5) ProblemDetails Debug Leak Guard
+#### 6) ProblemDetails Debug Leak Guard
 
 ```csharp
 builder.Services.AddProblemDetails(options =>

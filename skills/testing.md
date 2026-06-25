@@ -61,6 +61,8 @@ Rule: start balanced, then add hosted UI and performance suites when slices stab
 
 The `resource-implementation.yaml` test booleans drive **generation**: `comprehensive` implies `includeAspireTests` + `includePlaywrightUITests` (plus Load/Benchmarks/Mutation) when those flags are omitted. Setting a flag explicitly overrides the profile default. `includeMobileTests` (`Test.Mobile`, Uno native Appium) and the Skia-canvas `WasmUI` bridge tier require `includeUnoUI`; generate them in balanced+ when Uno is in scope. Do not confuse `includeE2ETests` (`Test.E2E`, WebApplicationFactory + Testcontainers SQL) with `includePlaywrightUITests` (`Test.PlaywrightUI`, browser-driven) - they are distinct tiers.
 
+EF query-translation correctness requires a real relational provider. `minimal` (Unit + Endpoint) does not cover translated predicates, projections, owned-type filters, or value-converted columns because endpoint tests use the in-memory WAF path. In `balanced` and higher, add at least one real-SQL search/list path per searchable aggregate: `Test.E2E` for HTTP workflow coverage or `Test.Integration` for repository/component coverage.
+
 ## Capability-Gated Test Tiers (the early decision drives the rest)
 
 The early Phase 2 capability pick - `scaffoldMode` plus the `include*UI` / `useAspire` host flags ([resource-implementation-schema.md](../ai/resource-implementation-schema.md) Question 2) - determines which tiers exist **at all**. An `api-only` / no-UI scaffold has none of the rows below: no project, no category, no env var, no setup-script branch, no VS Code task. Do not default these on; a tier appears only because a capability was selected early.
@@ -133,6 +135,8 @@ When any of `Test.Aspire`, the `WasmUI` bridge tier, or `Test.Mobile` is in scop
 | `Test.Mutation` | Stryker.NET + MSTest | Focused mutation testing for high-value domain/service paths | [test-templates-quality.md](../templates/test-templates-quality.md) |
 
 Rule: PlaywrightUI is a different harness. Never merge it with WAF tests.
+
+Real-SQL tiers are the only tiers that prove EF translation. Use them for predicates over value-converted properties (`TenantId`, nullable typed FKs, `Email`, `Locale`), projections, `Contains` / `LIKE`, and owned-type filters. Unit, endpoint, and model-validation tests can all stay green while SQL translation would throw at runtime.
 
 **AI live-local smoke is a separate RID-bound tier.** When `includeAiServices: true` and the Foundry Local provider is in scope, its live smoke runs in a dedicated RID-bound `Test.FoundryLocal` project - the RID-free mesh (`Test.Aspire`) and in-memory WAF base physically cannot load the native `Microsoft.AI.Foundry.Local` SDK. Every other API-booting tier forces no-op via `AiServices:DisableFoundryLocal` (set on both the WAF base and the AppHost testing branch). Owner: [ai-integration.md](ai-integration.md) section Deciding the Live Lane Without Probing the CLI.
 
@@ -458,6 +462,7 @@ The build/start/health-gate/connection-string mechanics live in [../templates/te
 
 - [ ] Unit tests pass.
 - [ ] Endpoint tests run via WAF in-memory host.
+- [ ] Each searchable aggregate has at least one real relational-provider search/list path in `balanced` or higher.
 - [ ] Harness split is respected (WAF vs hosted Playwright).
 - [ ] Categories match intended command filters.
 - [ ] Mutation tests use `TestCategory=Mutation` and the Stryker config uses the same test-case filter.

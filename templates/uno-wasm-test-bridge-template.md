@@ -131,11 +131,14 @@ Required fixture behavior:
 - Clear coverage/profiler environment variables for child `dotnet` commands; set profiling disabled flags and `MSBUILDDISABLENODEREUSE=1`.
 - Write a test-owned stamp file after a successful clean rebuild. Freshness checks require that stamp so old developer builds are not silently accepted.
 - Start the Aspire AppHost in testing mode. Keep required backing resources live. Disable only optional hosts such as scheduler, admin, external mappers, notifications, or other non-test-critical processes.
+- Start the Aspire AppHost and rebuild the WASM head once per test assembly. Cache both the running app and the resolved base URL in static fields. On later tests, copy the static base URL into the fresh `WasmTestSettings` and reuse the running graph.
+- Guard the lazy single-start on static fixture state (`_app != null && _staticBaseUrl != null`), not on the per-test `settings.BaseUrl`. A per-test settings guard re-enters the clean rebuild on the second test while the first `*.WasmHost.exe` still holds output files, causing `MSB3027` / `MSB3021` lock failures.
 - Wait for required resources to become healthy before using them.
 - Resolve Gateway and UI base URLs through named Aspire endpoints. Use `CreateHttpClient(resource, "http")`; do not assume fixed local ports.
 - Warm up real Gateway auth before browser navigation.
 - Bound every startup step with its own timeout and progress log.
 - Stop/dispose the Aspire graph in assembly cleanup. If explicit Docker cleanup is needed, scope it to this test run only.
+- Reset the static base URL during assembly cleanup.
 
 Generated assembly:
 
@@ -242,6 +245,7 @@ For Node/TS Playwright, the same shape applies: `await page.waitForFunction(() =
 - [ ] Docker missing marks `Assert.Inconclusive` with a fix; Docker present starts real resources.
 - [ ] Child `dotnet` restore/build commands clear profiler env vars.
 - [ ] WASM clean rebuild deletes both target `bin` and target `obj`, then writes a test-owned stamp.
+- [ ] Lazy single-start guard checks static `_app` / base URL state, not per-test `WasmTestSettings.BaseUrl`.
 - [ ] Named Aspire endpoints are used for Gateway/UI URLs; no fixed local port fallback ships in tests.
 - [ ] Browser diagnostics are included in every navigation/state-timeout failure.
 - [ ] Assembly-level `[DoNotParallelize]` exists for AppHost-backed `WasmUI`.

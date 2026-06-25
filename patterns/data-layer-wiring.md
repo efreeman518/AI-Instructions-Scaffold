@@ -128,6 +128,15 @@ The base context inherits from `DbContextBase<string, Guid?>` (from EF.Data). `O
 public abstract class {App}DbContextBase(DbContextOptions options)
     : DbContextBase<string, Guid?>(options)
 {
+    protected override void ConfigureConventions(ModelConfigurationBuilder cb)
+    {
+        base.ConfigureConventions(cb);
+
+        cb.RegisterDomainIdConversions(typeof(TenantId).Assembly);               // Pre-convention ID converters from EF.Data
+        cb.Properties<Email>().HaveConversion<EmailValueConverter>().HaveMaxLength(320);
+        cb.Properties<Locale>().HaveConversion<LocaleValueConverter>().HaveMaxLength(20);
+    }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);                                      // 1. Base class config
@@ -137,15 +146,13 @@ public abstract class {App}DbContextBase(DbContextOptions options)
         modelBuilder.ApplyConfigurationsFromAssembly(                            // 3. All IEntityTypeConfiguration<T>
             typeof({App}DbContextBase).Assembly);
 
-        modelBuilder.ConfigureDomainIdConversions();                             // 3b. Register missing IDomainId<T> CLR properties, then converters
-
         ConfigureDefaultDataTypes(modelBuilder);                                 // 4. Global type defaults
         SetTableNames(modelBuilder);                                             // 5. Table naming convention
         ConfigureTenantQueryFilters(modelBuilder);                               // 6. Tenant filters
     }
 ```
 
-`ConfigureDomainIdConversions()` must inspect CLR properties, not only EF metadata properties already returned by `entityType.GetProperties()`. EF Core 10 validates unmapped CLR properties during model build; if a typed ID property such as `TenantId` is not pre-registered, the API can fail at startup and higher tiers such as `Test.E2E` or `Test.Aspire` will surface timeouts or inconclusive startup failures. Fix the helper once instead of adding repeated `TenantId` configuration to every entity.
+`RegisterDomainIdConversions` is an EF.Data extension used from `ConfigureConventions`, not an app-local `OnModelCreating` reflection loop. Type-level pre-convention registration lets EF discover and convert all `IDomainId<T>` properties, including unmapped scalar IDs such as `TenantId` and nullable FKs, before EF Core 10 validates the model. Value objects with one storage shape across the app (`Email`, `Locale`) follow the same type-level convention pattern. Keep per-property config only for required/default/index facets or for value objects that intentionally use different provider types in different entities.
 
 **Dynamic tenant query filter** -- applied to every entity implementing `ITenantEntity<TenantId>`:
 
@@ -320,6 +327,17 @@ dotnet ef migrations add InitialCreate `
 - Before Phase 5e tests that need a database
 
 **Post-scaffold:** Once the baseline is established and the project is in production, switch to incremental migrations with descriptive names.
+
+**Mapping-foundation neutrality gate:** After refactoring how typed IDs or value objects are mapped, prove the change is schema-neutral before adding or regenerating migrations:
+
+```powershell
+dotnet ef migrations has-pending-model-changes `
+  --project src/Infrastructure/{Project}.Infrastructure.Data `
+  --startup-project src/Infrastructure/{Project}.Infrastructure.Data `
+  --context {App}DbContextTrxn
+```
+
+The command must report `No changes`. If it reports drift, a facet moved (max length, nullability, default, column type, or FK shape). Reconcile the runtime model configuration. Do not blind-regenerate a migration for a mapping-foundation refactor.
 
 ### Production migration bundle
 

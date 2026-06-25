@@ -134,6 +134,7 @@ public class {Entity} : EntityBase<{Entity}Id>, ITenantEntity<TenantId>  // [MUL
 > ```csharp
 > {ChildEntity}.Create(TenantId.Value, Id.Value, body);
 > ```
+> These `.Value` unwraps are domain/post-materialization code. Do not copy this pattern into EF-translated predicates (`Where`, `Any`, `ListAsync`, search `QuerySpec`). In database predicates, build the typed ID outside the expression and compare the whole property, for example `e.TenantId == tenantId`.
 > **Optional DomainGuard:** `DomainGuard.NotEmpty(tenantId, nameof(tenantId))` can replace the manual empty-check in `Valid()` for brevity.
 
 ## Critical domain-method rules
