@@ -192,7 +192,7 @@ Also available:
 - tenant filter helpers
 - concurrency-aware `SaveChangesAsync(OptimisticConcurrencyWinner winner, ...)`
 
-`EntityBaseConfiguration<T>` standardizes:
+`EntityBaseConfiguration<TEntity, TId>` standardizes:
 - key mapping (`Id`)
 - `ValueGeneratedNever()`
 - row-version configuration

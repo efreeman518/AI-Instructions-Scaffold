@@ -61,7 +61,7 @@ Rules:
 | `EntityBase` | common Id + rowversion base entity |
 | `ITenantEntity<TTenantId>` | tenant ownership contract |
 | `DomainResult<T>` | domain-level success/failure monad |
-| `EntityBaseConfiguration<T>` | base EF configuration rules |
+| `EntityBaseConfiguration<TEntity, TId>` | base EF configuration rules |
 | `RepositoryBase<TContext, TAuditId, TTenantId>` | common repository operations |
 | `IRequestContext<TAuditId, TTenantId>` | scoped audit/tenant/role context |
 | `IInternalMessageBus` | internal publish/subscribe pipeline |

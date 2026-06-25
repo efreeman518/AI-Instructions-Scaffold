@@ -133,11 +133,11 @@ After any refactor to typed-ID or value-object mapping, verify that the runtime 
 ```powershell
 dotnet ef migrations has-pending-model-changes `
   --project src/Infrastructure/{Project}.Infrastructure.Data `
-  --startup-project src/Infrastructure/{Project}.Infrastructure.Data `
+  --startup-project src/Host/{Host}.Api `
   --context {App}DbContextTrxn
 ```
 
-The result must be `No changes`. If EF reports pending model changes, reconcile the moved facet (max length, nullability, default value, column type, FK shape) in configuration. Do not blind-regenerate a migration for a mapping-foundation refactor.
+Use the same `--project` / `--startup-project` rooting that real migrations use. If the Data project itself carries the design-time factory and `Microsoft.EntityFrameworkCore.Design`, you may run with the Data project as startup instead. The result must be `No changes`. If EF reports pending model changes, reconcile the moved facet (max length, nullability, default value, column type, FK shape) in configuration. Do not blind-regenerate a migration for a mapping-foundation refactor.
 
 ### Data Migrations
 

@@ -273,9 +273,9 @@ public class RepositoryQuery<TEntity, TId, TDbContext>(TDbContext db)
 
 ### Open-generic DI registration (closed-over-context subclass)
 
-`RepositoryBase` needs the concrete `TDbContext`, so the generic impls carry two type parameters and
-cannot be registered as a one-arg open generic directly. Generate a one-arg subclass per app that
-closes over each context, then register the open generic against it - once, serving every
+`RepositoryBase` needs the concrete `TDbContext`, so the generic impls carry entity, ID, and context
+type parameters and cannot be registered as a two-arg open generic directly. Generate a two-arg
+subclass per app that closes over each context, then register the open generic against it - once, serving every
 generic-coverable entity:
 
 ```csharp
@@ -305,12 +305,12 @@ side into the generic pair and write a slim bespoke query repo that **extends** 
 get/list stay inherited (recommended shape for new code):
 
 ```csharp
-public interface I{Entity}RepositoryQuery : IRepositoryQuery<{Entity}>
+public interface I{Entity}RepositoryQuery : IRepositoryQuery<{Entity}, {Entity}Id>
 {
     Task<PagedResponse<{Entity}Dto>> Search{Entity}sAsync(SearchRequest<{Entity}SearchFilter> request, CancellationToken ct = default);
 }
 public class {Entity}RepositoryQuery({App}DbContextQuery db)
-    : RepositoryQuery<{Entity}, {App}DbContextQuery>(db), I{Entity}RepositoryQuery   // inherits GetAsync/ListAsync
+    : RepositoryQuery<{Entity}, {Entity}Id, {App}DbContextQuery>(db), I{Entity}RepositoryQuery   // inherits GetAsync/ListAsync
 { /* Search{Entity}sAsync via QueryPageProjectionAsync */ }
 
 services.AddScoped<I{Entity}RepositoryQuery, {Entity}RepositoryQuery>();             // alongside the open-generic pair
@@ -415,7 +415,7 @@ The 2-param overload retries on `DbUpdateConcurrencyException` using the specifi
 
 ## Notes
 
-- **Repositories inherit `RepositoryBase<TContext, TAuditId, TTenantId>`** - provides `GetEntityAsync`, `Create(ref)`, `UpdateFull(ref)`, `Delete(entity)`, `DeleteAsync(predicate)`, `SaveChangesAsync(OptimisticConcurrencyWinner, CancellationToken)`, `QueryPageProjectionAsync`, `QueryPageAsync`. These are **protected helpers for repository implementations only** - none of them appear on `IRepositoryQuery<T>` / `IRepositoryTrxn<T>`, so services and handlers can never call them; consumers get `GetAsync` / `ListAsync` plus the bespoke `Search{Entity}sAsync` methods (GR-14)
+- **Repositories inherit `RepositoryBase<TContext, TAuditId, TTenantId>`** - provides `GetEntityAsync`, `Create(ref)`, `UpdateFull(ref)`, `Delete(entity)`, `DeleteAsync(predicate)`, `SaveChangesAsync(OptimisticConcurrencyWinner, CancellationToken)`, `QueryPageProjectionAsync`, `QueryPageAsync`. These are **protected helpers for repository implementations only** - none of them appear on `IRepositoryQuery<TEntity, TId>` / `IRepositoryTrxn<TEntity, TId>`, so services and handlers can never call them; consumers get `GetAsync` / `ListAsync` plus the bespoke `Search{Entity}sAsync` methods (GR-14)
 - **`DB` property** - `RepositoryBase` exposes `protected TDbContext DB => dbContext;` for calling extension methods (e.g. Updater) on the context
 - **Generic args:** `TAuditId = string` (matches `IRequestContext.AuditId`), `TTenantId = Guid?` (matches `ITenantEntity<TenantId>` - nullable for non-tenant scenarios)
 - **`QueryPageProjectionAsync` signature:** `(Expression<Func<T, TProject>> projector, bool readNoLock, int? pageSize, int? pageIndex, Expression<Func<T, bool>>? filter, Func<IQueryable<T>, IOrderedQueryable<T>>? orderBy, bool includeTotal, SplitQueryThresholdOptions?, CancellationToken, params includes[])`
@@ -425,7 +425,7 @@ The 2-param overload retries on `DbUpdateConcurrencyException` using the specifi
 - **UpdateFromDto** delegates to `DB.UpdateFromDto(entity, dto, relatedDeleteBehavior)` - a DbContext extension method (see updater-template.md)
 - Projectors (`{Entity}Mapper.Projection` by default, `{Entity}Mapper.ProjectorSearch` for intentional lean grid shapes) used in query repo for efficient SQL translation
 - No `SaveChangesAsync` override on query repo - read-only by design
-- Entity-specific repositories for bespoke read/write logic; the open-generic `IRepositoryTrxn<T>`/`IRepositoryQuery<T>` pair (see [Generic Repository Pair](#generic-repository-pair-repositorycontractstyle-hybrid--generic-only)) covers simple CRUD / join / append-only entities under `repositoryContractStyle: hybrid`/`generic-only`. **Aggregate roots that own child collections ALWAYS get a bespoke `{Root}RepositoryTrxn` + `{Root}Updater` regardless of query complexity or contract style (GR-15)** - the include-load + `UpdateFromDto` graph sync cannot live on the generic pair, and the application/CQRS layer can only reach it through `I{Root}RepositoryTrxn`
+- Entity-specific repositories for bespoke read/write logic; the open-generic `IRepositoryTrxn<TEntity, TId>` / `IRepositoryQuery<TEntity, TId>` pair (see [Generic Repository Pair](#generic-repository-pair-repositorycontractstyle-hybrid--generic-only)) covers simple CRUD / join / append-only entities under `repositoryContractStyle: hybrid`/`generic-only`. **Aggregate roots that own child collections ALWAYS get a bespoke `{Root}RepositoryTrxn` + `{Root}Updater` regardless of query complexity or contract style (GR-15)** - the include-load + `UpdateFromDto` graph sync cannot live on the generic pair, and the application/CQRS layer can only reach it through `I{Root}RepositoryTrxn`
 - Use `ConfigureAwait(ConfigureAwaitOptions.None)` in repository methods (library code)
 
 ---

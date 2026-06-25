@@ -218,8 +218,8 @@ Converted value object defaults must use the **model CLR type**, not the provide
 
 ## Notes
 
-- `EntityBaseConfiguration<T>` handles `Id` (non-clustered PK, client-generated V7 GUID) and `RowVersion` (concurrency token) - NO audit fields
-- **ALL entity configurations MUST inherit from `EntityBaseConfiguration<T>`** - this was a verified bug; without it, RowVersion doesn't work and Id may be auto-generated
+- `EntityBaseConfiguration<TEntity, TId>` handles `Id` (non-clustered PK, client-generated V7 GUID wrapped in a typed ID) and `RowVersion` (concurrency token) - NO audit fields
+- **ALL entity configurations MUST inherit from `EntityBaseConfiguration<TEntity, TId>`** - this was a verified bug; without it, RowVersion doesn't work and Id may be auto-generated
 - Audit fields (CreatedDate, CreatedBy, UpdatedDate, UpdatedBy) are managed by the `AuditInterceptor` on the DbContext, not configured here
 - Clustered index on `(TenantId, Id)` ensures tenant data locality
 - Composite indexes always lead with `TenantId` for filtered queries

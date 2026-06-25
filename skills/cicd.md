@@ -491,7 +491,7 @@ migrate:
         dotnet ef migrations bundle --self-contained -r linux-x64 \
           --context {App}DbContextTrxn \
           --project src/Infrastructure/{Project}.Infrastructure.Data \
-          --startup-project src/Infrastructure/{Project}.Infrastructure.Data \
+          --startup-project src/Host/{Host}.Api \
           -o efbundle
     - uses: azure/login@v3
       with:
@@ -511,7 +511,7 @@ migrate:
 
 Migration gotchas (these cost real time):
 
-- **`--startup-project` must reference `Microsoft.EntityFrameworkCore.Design`.** In this scaffold only the Data project references Design and ships a `DesignTimeDbContextFactory`; the API host does not. So use the **Data project as BOTH `--project` and `--startup-project`**. Pointing `--startup-project` at the API fails with "doesn't reference Microsoft.EntityFrameworkCore.Design". (See [data-layer-wiring.md](../patterns/data-layer-wiring.md).)
+- **`--startup-project` must reference `Microsoft.EntityFrameworkCore.Design`.** Use the same startup project that real migration commands use. The example above points at the API host. If the Data project itself owns the design-time factory and Design reference, use the Data project as both `--project` and `--startup-project` instead. (See [data-layer-wiring.md](../patterns/data-layer-wiring.md).)
 - **Dual contexts:** if Trxn (read/write) and Query (read-only) share one schema, only the write context has migrations. Bundle the write context only.
 - **Entra auth:** `Authentication=Active Directory Default` in the connection string. The OIDC principal already has `db_owner` from provisioning (Aspire `AddAzureSqlServer` grants it), so no manual user creation is needed.
 - **Firewall:** Azure SQL blocks GitHub runners. Open a temporary `az sql server firewall-rule` for the runner IP and remove it in a `trap`/`always()`. Alternative when SQL is private-endpoint-only: run the bundle as a manual-trigger ACA Job inside the VNet instead of from the runner.

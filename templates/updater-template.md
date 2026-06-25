@@ -196,9 +196,9 @@ Only create + remove needed - junction entities have no updatable properties. Th
 CollectionUtility.SyncCollectionWithResult<TaskItemTag, TagDto, Guid>(
     updatedEntity.TaskItemTags,
     dto.Tags ?? [],
-    e => e.TagId,           // match on FK, not junction Id
+    e => e.TagId.Value,     // LINQ-to-objects sync: unwrap typed FK to match DTO Guid
     i => i.Id,
-    createFunc: incomingDto => updatedEntity.AssociateTag(incomingDto.Id!.Value),
+    createFunc: incomingDto => updatedEntity.AssociateTag(TagId.From(incomingDto.Id!.Value)),
     removeFunc: toRemove =>
     {
         if (relatedDeleteBehavior == RelatedDeleteBehavior.None) return DomainResult.Success();

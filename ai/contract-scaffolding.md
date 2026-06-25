@@ -65,21 +65,21 @@ public interface I{Entity}Service
 
 **Repository contract surface.** Read `repositoryContractStyle` from `.scaffold/resource-implementation.yaml` (default `hybrid`) and classify each entity before emitting repository contracts. An interface earns its place only when it adds logic beyond `RepositoryBase` / `IRepositoryBase` (which already expose generic-method CRUD: `Create<T>`, `Delete<T>`, `GetEntityAsync<T>`, `QueryPageProjectionAsync<T,TProject>`, `SaveChangesAsync`, ...).
 
-- **Generic-coverable** (join entities, append-only logs, simple CRUD): under `hybrid` / `generic-only`, emit **no** per-entity repository interface. The entity resolves the open-generic pair `IRepositoryTrxn<{Entity}>` / `IRepositoryQuery<{Entity}>` (typed get-by-id + list-by-predicate, plus inherited generic CRUD), registered once as open generics (see step 5).
+- **Generic-coverable** (join entities, append-only logs, simple CRUD): under `hybrid` / `generic-only`, emit **no** per-entity repository interface. The entity resolves the open-generic pair `IRepositoryTrxn<{Entity}, {Entity}Id>` / `IRepositoryQuery<{Entity}, {Entity}Id>` (typed get-by-id + list-by-predicate, plus inherited generic CRUD), registered once as open generics (see step 5).
 - **Bespoke** (multi-include aggregate loads, child-collection sync via `UpdateFromDto`, paged/projected `Search`, polymorphic / hierarchy / multi-key queries): emit a per-aggregate contract. Under `hybrid` / `generic-only` it **extends** the generic pair so get/list stay inherited and only the bespoke method is added:
 
 ```csharp
 // Application.Contracts/Repositories/I{Entity}RepositoryTrxn.cs  (bespoke writes only)
 // Application.Contracts/Repositories/I{Entity}RepositoryQuery.cs (bespoke reads only)
-public interface I{Entity}RepositoryQuery : IRepositoryQuery<{Entity}>   // hybrid / generic-only: extend the generic pair
+public interface I{Entity}RepositoryQuery : IRepositoryQuery<{Entity}, {Entity}Id>   // hybrid / generic-only: extend the generic pair
 {
     Task<PagedResponse<{Entity}Dto>> Search{Entity}sAsync(SearchRequest<{Entity}SearchFilter> request, CancellationToken ct = default);
 }
 ```
 
-A single aggregate may split: a pure-CRUD write side uses `IRepositoryTrxn<{Entity}>` while a search-bearing read side keeps a bespoke `I{Entity}RepositoryQuery`. Under `per-entity` (legacy), emit `I{Entity}RepositoryTrxn` / `I{Entity}RepositoryQuery : IRepositoryBase` for **every** entity. For `applicationStyle: cqrs`, prefer query objects / specifications under `Features/{Entity}` over adding repository query methods. The generic pair, its closed-over-context subclass, and the open-generic registration are in [../templates/repository-template.md](../templates/repository-template.md).
+A single aggregate may split: a pure-CRUD write side uses `IRepositoryTrxn<{Entity}, {Entity}Id>` while a search-bearing read side keeps a bespoke `I{Entity}RepositoryQuery`. Under `per-entity` (legacy), emit `I{Entity}RepositoryTrxn` / `I{Entity}RepositoryQuery : IRepositoryBase` for **every** entity. For `applicationStyle: cqrs`, prefer query objects / specifications under `Features/{Entity}` over adding repository query methods. The generic pair, its closed-over-context subclass, and the open-generic registration are in [../templates/repository-template.md](../templates/repository-template.md).
 
-Derive interface signatures from the entity's properties, relationships, and operations in `.scaffold/resource-implementation.yaml`. Use shared base types from `<packagePrefix>.*` (`IRepositoryBase`, `IRepositoryTrxn<T>`, `IRepositoryQuery<T>`, `SearchRequest<T>`, `PagedResponse<T>`, etc.) - sourced from `customNugetFeeds` packages or `src/Packages/<packagePrefix>.*` projects per `packageStrategy`.
+Derive interface signatures from the entity's properties, relationships, and operations in `.scaffold/resource-implementation.yaml`. Use shared base types from `<packagePrefix>.*` (`IRepositoryBase`, `IRepositoryTrxn<TEntity, TId>`, `IRepositoryQuery<TEntity, TId>`, `SearchRequest<T>`, `PagedResponse<T>`, etc.) - sourced from `customNugetFeeds` packages or `src/Packages/<packagePrefix>.*` projects per `packageStrategy`.
 
 **DTOs:**
 ```csharp
@@ -242,8 +242,8 @@ Register in `RegisterServices.cs`:
 // hybrid / generic-only: register the generic pair ONCE as open generics via the closed-over-context
 // subclass - serves every generic-coverable entity. The generic impl is a real package type (not a
 // stub), so it needs no No-Op even at Phase 4 (it runs against the Phase-4 DbContext shells).
-services.AddScoped(typeof(IRepositoryTrxn<>), typeof({App}RepositoryTrxn<>));
-services.AddScoped(typeof(IRepositoryQuery<>), typeof({App}RepositoryQuery<>));
+services.AddScoped(typeof(IRepositoryTrxn<,>), typeof({App}RepositoryTrxn<,>));
+services.AddScoped(typeof(IRepositoryQuery<,>), typeof({App}RepositoryQuery<,>));
 
 // No-op stubs for BESPOKE repositories only (replaced with real impls in Phase 5a) + per-entity
 // service stubs (replaced in Phase 5b). Under per-entity style, emit repo stubs for every entity.
@@ -320,7 +320,7 @@ Developer reviews the scaffolded shape against the verification checklist below.
 
 - [ ] `.slnx` exists and includes all projects
 - [ ] `dotnet build` succeeds from solution root
-- [ ] Every entity from `.scaffold/resource-implementation.yaml` has: DTO, entity shell, builders, and a repository contract per `repositoryContractStyle` - generic-coverable entities resolve the open-generic `IRepositoryTrxn<T>`/`IRepositoryQuery<T>` (no per-entity interface); bespoke entities have a per-aggregate contract that extends the generic pair (`per-entity` style emits both interfaces for every entity)
+- [ ] Every entity from `.scaffold/resource-implementation.yaml` has: DTO, entity shell, builders, and a repository contract per `repositoryContractStyle` - generic-coverable entities resolve the open-generic `IRepositoryTrxn<TEntity, TId>` / `IRepositoryQuery<TEntity, TId>` (no per-entity interface); bespoke entities have a per-aggregate contract that extends the generic pair (`per-entity` style emits both interfaces for every entity)
 - [ ] All no-op stubs satisfy their interfaces (no abstract/unimplemented methods)
 - [ ] Test.Support contains `UnitTestBase`, `InMemoryDbBuilder`, `DbSupport`, `Utility`, `TestConstants`, `JsonTestOptions`, `LocalSqlSettings`, `WebApplicationFactoryBase`
 - [ ] `Test.Endpoints/CustomApiFactory.cs` and `Test.E2E/SqlApiFactory.cs` derive from `WebApplicationFactoryBase<Program, {App}DbContextTrxn, {App}DbContextQuery>` (do not duplicate the swap-out logic)

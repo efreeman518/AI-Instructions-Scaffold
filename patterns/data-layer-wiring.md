@@ -38,8 +38,8 @@ private static void AddDatabaseServices(IServiceCollection services, IConfigurat
     // Repository registrations. Under repositoryContractStyle: hybrid/generic-only, register the
     // open-generic pair ONCE (serves every generic-coverable entity via the closed-over-context
     // subclasses) and add bespoke repos only where read/write logic earns a per-aggregate contract.
-    services.AddScoped(typeof(IRepositoryTrxn<>), typeof({App}RepositoryTrxn<>));
-    services.AddScoped(typeof(IRepositoryQuery<>), typeof({App}RepositoryQuery<>));
+    services.AddScoped(typeof(IRepositoryTrxn<,>), typeof({App}RepositoryTrxn<,>));
+    services.AddScoped(typeof(IRepositoryQuery<,>), typeof({App}RepositoryQuery<,>));
     services.AddScoped<I{Entity}RepositoryQuery, {Entity}RepositoryQuery>();   // bespoke only
     services.AddScoped<I{Root}RepositoryTrxn, {Root}RepositoryTrxn>();         // ALWAYS for aggregate roots with owned children (GR-15), even under generic-only
     // (repositoryContractStyle: per-entity - omit the open generics and register a pair per entity.)
@@ -239,7 +239,7 @@ public class LoadCacheStartup(
     IConfiguration config,
     ILogger<LoadCacheStartup> logger,
     IFusionCacheProvider cache,
-    IRepositoryQuery<{Entity}> repoQuery) : IStartupTask
+    IRepositoryQuery<{Entity}, {Entity}Id> repoQuery) : IStartupTask
 {
     public async Task ExecuteAsync(CancellationToken cancellationToken = default)
     {
@@ -310,7 +310,7 @@ dotnet ef migrations add InitialCreate `
   --context {App}DbContextTrxn
 ```
 
-> **`--startup-project` must reference `Microsoft.EntityFrameworkCore.Design`.** The commands above point `--startup-project` at the API host - that only works if the API references the Design package. If the scaffold keeps the Design reference and a `DesignTimeDbContextFactory` in the **Data project only** (the common case here), use the Data project as **both** `--project` and `--startup-project`:
+> **`--startup-project` must reference `Microsoft.EntityFrameworkCore.Design`.** The commands above point `--startup-project` at the API host - that only works if the API references the Design package. If the scaffold keeps the Design reference and a `DesignTimeDbContextFactory` in the **Data project only**, use the Data project as **both** `--project` and `--startup-project`:
 >
 > ```powershell
 > dotnet ef migrations add InitialCreate `
@@ -333,11 +333,11 @@ dotnet ef migrations add InitialCreate `
 ```powershell
 dotnet ef migrations has-pending-model-changes `
   --project src/Infrastructure/{Project}.Infrastructure.Data `
-  --startup-project src/Infrastructure/{Project}.Infrastructure.Data `
+  --startup-project src/Host/{Host}.Api `
   --context {App}DbContextTrxn
 ```
 
-The command must report `No changes`. If it reports drift, a facet moved (max length, nullability, default, column type, or FK shape). Reconcile the runtime model configuration. Do not blind-regenerate a migration for a mapping-foundation refactor.
+Use the same `--project` / `--startup-project` rooting that real migrations use. If the Data project itself carries the design-time factory and `Microsoft.EntityFrameworkCore.Design`, you may run with the Data project as startup instead. The command must report `No changes`. If it reports drift, a facet moved (max length, nullability, default, column type, or FK shape). Reconcile the runtime model configuration. Do not blind-regenerate a migration for a mapping-foundation refactor.
 
 ### Production migration bundle
 
