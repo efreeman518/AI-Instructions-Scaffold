@@ -18,7 +18,9 @@ Uno renders WASM two ways:
 
 If the app paints to a Skia canvas, DOM selectors are not "flaky" - they are structurally absent. Use the bridge below: the app publishes its own state to `globalThis`, and Playwright waits on **state**, not DOM.
 
-Detect the renderer once: open the WASM app, run `document.querySelectorAll('[xamltype]').length` in the console. `0` with a single `<canvas>` present means Skia - use the bridge.
+Hard rule: a Skia-canvas Uno WASM test that uses `getByText`, role selectors, labels, or DOM text assertions is wrong. The browser DOM cannot expose text painted inside the canvas.
+
+Detect the renderer once: open the WASM app, run `document.querySelectorAll('[xamltype]').length` in the console. `0` with a single `<canvas>` present means Skia - use the bridge. Also assert at least one rendered canvas larger than 100x100; that proves the app painted something even though text is not in the DOM.
 
 ## Bridge contract
 
@@ -27,8 +29,12 @@ The bridge exposes a single global the test harness polls:
 ```js
 globalThis.__{app}TestState = {
   testMode: true,            // echoes the requested test mode
-  page: "TodayPage",         // current page/route name
-  section: "today",          // selected section/tab
+  page: "HomePage",          // current page/route name
+  section: "home",           // selected section/tab
+  hasToken: true,             // token/session present after test auth
+  onboardingComplete: true,   // normalized boolean for common assertions
+  status: "ready",            // "starting" | "authenticating" | "ready" | "error"
+  error: null,                // { type, message } only when startup fails
   auth: "authenticated",     // "anonymous" | "authenticating" | "authenticated"
   onboarding: "complete",    // "fresh" | "in-progress" | "complete"
   adsVisible: false,         // any flag the test asserts on
@@ -41,9 +47,11 @@ Activation is **query-string gated** and **default-off**. Nothing is published u
 ```text
 ?{app}TestMode=true
 &{app}TestAuth=true
+&{app}TestReset=true
 &{app}TestEmail=wasm-test@local.test
 &{app}TestOnboarding=complete
-&{app}TestSection=today
+&{app}TestSection=home
+&{app}TestGatewayBaseUrl={url-encoded-aspire-gateway-url}
 ```
 
 Rules:
@@ -52,8 +60,10 @@ Rules:
 2. **Default-off.** Publish nothing unless `{app}TestMode=true` is present in the query string (or an equivalent test-only app setting). No flag -> the global is never defined -> production behaviour is untouched.
 3. **Real local auth.** When `{app}TestAuth=true`, drive the **real** local auth flow through the Gateway with the supplied email. Do not inject a fake token - that bypasses the wiring the test exists to prove.
 4. **Onboarding states.** Support at least `complete` and `fresh` so a test can exercise both the returning-user and first-run shells.
-5. **Publish on every state transition.** Re-publish `__{app}TestState` after navigation, auth change, and onboarding change so the harness can await the next state without a full reboot.
-6. **Startup error shape.** In the WASM startup path, publish exception type and message only. Avoid `Exception.ToString()` there; Mono can double fault while formatting stack traces after runtime/class-library mismatches.
+5. **Gateway URL override.** `{app}TestGatewayBaseUrl` is required for Aspire-backed tests. Without it, the app can fall back to a hard-coded dev port while Aspire assigned a dynamic gateway port.
+6. **Reset support.** `{app}TestReset=true` clears test-local persisted auth/onboarding state before boot so reruns do not inherit an old browser session.
+7. **Publish on every state transition.** Re-publish `__{app}TestState` after navigation, auth change, and onboarding change so the harness can await the next state without a full reboot.
+8. **Startup error shape.** In the WASM startup path, publish exception type and message only. Avoid `Exception.ToString()` there; Mono can double fault while formatting stack traces after runtime/class-library mismatches.
 
 ## Bridge (representative shape)
 
@@ -89,24 +99,46 @@ internal static class {Project}TestBridge
 
         // Honour onboarding / section / auth requests from the query string.
         TestOnboarding = args["{app}TestOnboarding"] ?? "complete";
-        TestSection = args["{app}TestSection"] ?? "today";
+        TestSection = args["{app}TestSection"] ?? "home";
         TestEmail = args["{app}TestEmail"];
+        TestGatewayBaseUrl = args["{app}TestGatewayBaseUrl"];
+        WantsReset = string.Equals(args["{app}TestReset"], "true", StringComparison.OrdinalIgnoreCase);
         WantsAuth = string.Equals(args["{app}TestAuth"], "true", StringComparison.OrdinalIgnoreCase);
     }
 
     public static string TestOnboarding { get; private set; } = "complete";
-    public static string TestSection { get; private set; } = "today";
+    public static string TestSection { get; private set; } = "home";
     public static string? TestEmail { get; private set; }
+    public static string? TestGatewayBaseUrl { get; private set; }
+    public static bool WantsReset { get; private set; }
     public static bool WantsAuth { get; private set; }
 
     /// <summary>Re-publish the snapshot after any page / auth / onboarding transition.</summary>
-    public static void Publish(string page, string section, string auth, string onboarding, bool adsVisible, bool ready)
+    public static void Publish(
+        string page,
+        string section,
+        string auth,
+        string onboarding,
+        bool adsVisible,
+        bool ready,
+        string status,
+        string? error = null)
     {
         if (!_enabled) return;
 
         var snapshot = JsonSerializer.Serialize(new
         {
-            testMode = true, page, section, auth, onboarding, adsVisible, ready
+            testMode = true,
+            page,
+            section,
+            hasToken = auth == "authenticated",
+            onboardingComplete = onboarding == "complete",
+            status,
+            error,
+            auth,
+            onboarding,
+            adsVisible,
+            ready
         });
         WebAssemblyRuntime.InvokeJS($"globalThis.__{app}TestState = {snapshot};");
     }
@@ -135,10 +167,12 @@ Required fixture behavior:
 - Guard the lazy single-start on static fixture state (`_app != null && _staticBaseUrl != null`), not on the per-test `settings.BaseUrl`. A per-test settings guard re-enters the clean rebuild on the second test while the first `*.WasmHost.exe` still holds output files, causing `MSB3027` / `MSB3021` lock failures.
 - Wait for required resources to become healthy before using them.
 - Resolve Gateway and UI base URLs through named Aspire endpoints. Use `CreateHttpClient(resource, "http")`; do not assume fixed local ports.
-- Warm up real Gateway auth before browser navigation.
+- Warm up real Gateway auth before browser navigation by posting to the local login endpoint, for example `POST api/auth/login`, with the same test email the browser receives.
+- Build browser URLs with `{app}TestMode=true`, `{app}TestAuth=true`, `{app}TestReset=true`, `{app}TestEmail`, `{app}TestOnboarding`, `{app}TestSection`, and `{app}TestGatewayBaseUrl`. The gateway URL must be URL-encoded and must come from Aspire's named Gateway endpoint.
 - Bound every startup step with its own timeout and progress log.
 - Stop/dispose the Aspire graph in assembly cleanup. If explicit Docker cleanup is needed, scope it to this test run only.
 - Reset the static base URL during assembly cleanup.
+- Run `dotnet build` or `dotnet test` on the generated `Test.PlaywrightUI` project before handoff. Namespace mismatches between wrapper tests and shared runner types are scaffold defects, not runtime issues.
 
 Generated assembly:
 
@@ -180,6 +214,12 @@ Browser diagnostics captured by the harness:
 - HTML snippet, script list, canvas count, body text.
 - Last `__{app}TestState` JSON.
 
+Node/TypeScript runner rules:
+
+- Use `@playwright/test` version `1.61.1` or newer. Older versions can emit Node 26 `DEP0205 module.register()` deprecation noise that hides useful failure output.
+- Do not pass `--reporter=line` from a C# or CI child-process runner. Its carriage-return progress output can hide failure detail in captured stdout/stderr. Use `list`, `dot`, or the default reporter when output is captured.
+- Keep C# runner namespaces and TypeScript runner namespaces aligned with the generated project. The solution build is the gate.
+
 ## Playwright: wait on state, not DOM
 
 ### File: `Test/Test.PlaywrightUI/Uno/{Entity}CanvasTests.cs`
@@ -201,7 +241,7 @@ public class {Entity}CanvasTests
 
     [TestMethod]
     [Timeout(300000)]
-    public async Task Given_TestMode_When_AppBoots_Then_ReachesTodaySectionAuthenticated()
+    public async Task Given_TestMode_When_AppBoots_Then_ReachesHomeSectionAuthenticated()
     {
         var settings = WasmTestSettings.From(TestContext);
         if (!settings.Enabled)
@@ -214,33 +254,37 @@ public class {Entity}CanvasTests
             var url = WasmTestHarness.BuildUrl(
                 activeSettings,
                 onboarding: "complete",
-                section: "today");
+                section: "home");
 
             await WasmTestHarness.NavigateAsync(page, activeSettings, url);
             var state = await WasmTestHarness.WaitForStateAsync(
                 page,
                 activeSettings,
-                s => s.Status == "ready" && s.Auth == "authenticated" && s.Section == "today",
-                "ready authenticated today");
+                s => s.Status == "ready" && s.Auth == "authenticated" && s.Section == "home",
+                "ready authenticated home");
 
             Assert.AreEqual("authenticated", state.Auth);
-            Assert.AreEqual("today", state.Section);
+            Assert.AreEqual("home", state.Section);
             await WasmTestHarness.AssertCanvasRenderedAsync(page, activeSettings);
-            await WasmTestHarness.SaveScreenshotAsync(page, activeSettings, TestContext, "{entity}-canvas-today");
+            await WasmTestHarness.SaveScreenshotAsync(page, activeSettings, TestContext, "{entity}-canvas-home");
         });
     }
 }
 ```
 
-For Node/TS Playwright, the same shape applies: `await page.waitForFunction(() => globalThis.__{app}TestState?.ready === true, { timeout: 120000 })`, then read fields off the returned handle. Keep the 120 s timeout for WASM cold-start ([../skills/testing-quality.md](../skills/testing-quality.md)).
+For Node/TS Playwright, the same shape applies: `await page.waitForFunction(() => globalThis.__{app}TestState?.status === "ready", { timeout: 120000 })`, then read fields off the returned handle. Keep the 120 s timeout for WASM cold-start ([../skills/testing-quality.md](../skills/testing-quality.md)).
 
 ## Verification
 
 - [ ] Bridge file is guarded by the WASM compilation symbol and absent from Android/iOS/desktop output.
 - [ ] With no `{app}TestMode=true`, `globalThis.__{app}TestState` is undefined (production untouched).
 - [ ] `{app}TestAuth=true` drives **real** Gateway local auth, not an injected token.
+- [ ] `{app}TestGatewayBaseUrl` is passed from Aspire's dynamic Gateway endpoint; no hard-coded dev gateway port remains.
+- [ ] Gateway auth is warmed before navigation.
+- [ ] `{app}TestReset=true` prevents stale browser state from satisfying the smoke.
 - [ ] Both `complete` and `fresh` onboarding states are reachable via the query string.
 - [ ] Tests await `__{app}TestState` fields; no DOM/role/text selector is used against the canvas.
+- [ ] Tests assert a rendered canvas larger than 100x100.
 - [ ] `WasmUI` tests start Aspire in testing mode when the app needs AppHost resources.
 - [ ] Docker missing marks `Assert.Inconclusive` with a fix; Docker present starts real resources.
 - [ ] Child `dotnet` restore/build commands clear profiler env vars.
@@ -251,3 +295,5 @@ For Node/TS Playwright, the same shape applies: `await page.waitForFunction(() =
 - [ ] Assembly-level `[DoNotParallelize]` exists for AppHost-backed `WasmUI`.
 - [ ] Each canvas test saves a screenshot artifact.
 - [ ] Canvas tests carry `[TestCategory("WasmUI")]` and a class `<summary>` with a manual-run command.
+- [ ] Node runner uses `@playwright/test` `1.61.1` or newer and does not use `--reporter=line`.
+- [ ] Generated `Test.PlaywrightUI` compiles in the solution before handoff.
