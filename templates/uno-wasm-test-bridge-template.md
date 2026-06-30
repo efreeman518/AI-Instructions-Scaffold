@@ -16,6 +16,8 @@ Uno renders WASM two ways:
 - **Managed/native DOM renderer** - each control maps to a DOM element carrying `xamltype` / `xamlautomationid`. The coordinate-click + `querySelectorAll` strategy in [../skills/ui-uno-platforms.md](../skills/ui-uno-platforms.md) (Playwright Testing Against Uno WASM) works here.
 - **Skia canvas renderer** - the whole app paints into one `<canvas>`. There are **no per-control DOM nodes**. `querySelectorAll("p")`, `getBoundingClientRect()` on text, and DOM/role selectors all return nothing. Coordinate-clicking by scanning DOM text is impossible.
 
+Skia tests must not use `getByText`, role selectors, labels, or body text for app text. Functional assertions must prefer app-owned bridge state such as `window.__AppTestState` / `globalThis.__{app}TestState`. If the bridge does not exist yet, limit proof to canvas paint: visible size, nonblank fingerprint/pixel hash, stable chrome click, and fingerprint delta. Pixel-only tests are smoke only; they do not prove CRUD, nested children, or persistence correctness. Full CRUD stays in DOM-capable UIs unless Uno exposes reliable bridge state for every asserted transition.
+
 If the app paints to a Skia canvas, DOM selectors are not "flaky" - they are structurally absent. Use the bridge below: the app publishes its own state to `globalThis`, and Playwright waits on **state**, not DOM.
 
 Hard rule: a Skia-canvas Uno WASM test that uses `getByText`, role selectors, labels, or DOM text assertions is wrong. The browser DOM cannot expose text painted inside the canvas.
@@ -169,7 +171,7 @@ Required fixture behavior:
 - Resolve Gateway and UI base URLs through named Aspire endpoints. Use `CreateHttpClient(resource, "http")`; do not assume fixed local ports.
 - Warm up real Gateway auth before browser navigation by posting to the local login endpoint, for example `POST api/auth/login`, with the same test email the browser receives.
 - Build browser URLs with `{app}TestMode=true`, `{app}TestAuth=true`, `{app}TestReset=true`, `{app}TestEmail`, `{app}TestOnboarding`, `{app}TestSection`, and `{app}TestGatewayBaseUrl`. The gateway URL must be URL-encoded and must come from Aspire's named Gateway endpoint.
-- Bound every startup step with its own timeout and progress log.
+- Bound every startup step with its own timeout and progress log. Uno WASM first build needs long split budgets: restore default 600 s, build default 1200 s, startup default at least 900 s. Do not use one shared startup timeout for restore plus build plus AppHost plus browser boot.
 - Stop/dispose the Aspire graph in assembly cleanup. If explicit Docker cleanup is needed, scope it to this test run only.
 - Reset the static base URL during assembly cleanup.
 - Run `dotnet build` or `dotnet test` on the generated `Test.PlaywrightUI` project before handoff. Namespace mismatches between wrapper tests and shared runner types are scaffold defects, not runtime issues.
@@ -183,7 +185,7 @@ Generated assembly:
 
 Required files:
 
-- `WasmTestSettings.cs`: reads `{APP}_WASM_TESTS_ENABLED`, `{APP}_WASM_BROWSER`, `{APP}_WASM_HEADLESS`, `{APP}_WASM_TEST_EMAIL`, `{APP}_WASM_STARTUP_TIMEOUT_SECONDS`, and `{APP}_WASM_PAGE_LOAD_TIMEOUT_SECONDS`. Treat only `false`, `0`, or `no` as opt-out.
+- `WasmTestSettings.cs`: reads `{APP}_WASM_TESTS_ENABLED`, `{APP}_WASM_BROWSER`, `{APP}_WASM_HEADLESS`, `{APP}_WASM_TEST_EMAIL`, `{APP}_WASM_RESTORE_TIMEOUT_SECONDS`, `{APP}_WASM_BUILD_TIMEOUT_SECONDS`, `{APP}_WASM_STARTUP_TIMEOUT_SECONDS`, and `{APP}_WASM_PAGE_LOAD_TIMEOUT_SECONDS`. Treat only `false`, `0`, or `no` as opt-out. Defaults: restore 600 s, build 1200 s, startup 900 s minimum.
 - `WasmAppHost.cs`: owns Docker preflight, clean restore/build, AppHost startup, resource health waits, named endpoint resolution, Gateway auth warm-up, and cleanup.
 - `WasmTestHarness.cs`: owns Playwright startup, browser diagnostics, URL building, bridge-state polling, canvas assertions, screenshot artifacts, and failure messages.
 
@@ -217,6 +219,9 @@ Browser diagnostics captured by the harness:
 Node/TypeScript runner rules:
 
 - Use `@playwright/test` version `1.61.1` or newer. Older versions can emit Node 26 `DEP0205 module.register()` deprecation noise that hides useful failure output.
+- Run one TypeScript project per child process (`node .../cli.js test --project <name>`). Do not run every Playwright project in one process.
+- Read `{APP}_PLAYWRIGHT_PROJECT_TIMEOUT_SECONDS` and `{APP}_PLAYWRIGHT_TEST_TIMEOUT_SECONDS`; fail fast with command, exit code, stdout, stderr, and timeout value.
+- On timeout/cancellation, kill the child process tree (`Kill(entireProcessTree: true)`) before returning failure.
 - Do not pass `--reporter=line` from a C# or CI child-process runner. Its carriage-return progress output can hide failure detail in captured stdout/stderr. Use `list`, `dot`, or the default reporter when output is captured.
 - Keep C# runner namespaces and TypeScript runner namespaces aligned with the generated project. The solution build is the gate.
 
@@ -272,7 +277,7 @@ public class {Entity}CanvasTests
 }
 ```
 
-For Node/TS Playwright, the same shape applies: `await page.waitForFunction(() => globalThis.__{app}TestState?.status === "ready", { timeout: 120000 })`, then read fields off the returned handle. Keep the 120 s timeout for WASM cold-start ([../skills/testing-quality.md](../skills/testing-quality.md)).
+For Node/TS Playwright, the same shape applies: `await page.waitForFunction(() => globalThis.__{app}TestState?.status === "ready", { timeout: 900000 })`, then read fields off the returned handle. Keep the 900 s startup budget for first Uno WASM boot and keep restore/build timeouts separate ([../skills/testing-quality.md](../skills/testing-quality.md)).
 
 ## Verification
 
@@ -284,10 +289,10 @@ For Node/TS Playwright, the same shape applies: `await page.waitForFunction(() =
 - [ ] `{app}TestReset=true` prevents stale browser state from satisfying the smoke.
 - [ ] Both `complete` and `fresh` onboarding states are reachable via the query string.
 - [ ] Tests await `__{app}TestState` fields; no DOM/role/text selector is used against the canvas.
-- [ ] Tests assert a rendered canvas larger than 100x100.
+- [ ] Tests assert a rendered canvas larger than 100x100 and a nonblank fingerprint/pixel hash.
 - [ ] `WasmUI` tests start Aspire in testing mode when the app needs AppHost resources.
 - [ ] Docker missing marks `Assert.Inconclusive` with a fix; Docker present starts real resources.
-- [ ] Child `dotnet` restore/build commands clear profiler env vars.
+- [ ] Child `dotnet` restore/build commands clear profiler env vars and use separate timeout values.
 - [ ] WASM clean rebuild deletes both target `bin` and target `obj`, then writes a test-owned stamp.
 - [ ] Lazy single-start guard checks static `_app` / base URL state, not per-test `WasmTestSettings.BaseUrl`.
 - [ ] Named Aspire endpoints are used for Gateway/UI URLs; no fixed local port fallback ships in tests.
@@ -295,5 +300,5 @@ For Node/TS Playwright, the same shape applies: `await page.waitForFunction(() =
 - [ ] Assembly-level `[DoNotParallelize]` exists for AppHost-backed `WasmUI`.
 - [ ] Each canvas test saves a screenshot artifact.
 - [ ] Canvas tests carry `[TestCategory("WasmUI")]` and a class `<summary>` with a manual-run command.
-- [ ] Node runner uses `@playwright/test` `1.61.1` or newer and does not use `--reporter=line`.
+- [ ] Node runner uses `@playwright/test` `1.61.1` or newer, one project per process, bounded timeout env vars, process-tree kill, captured stdout/stderr, and no `--reporter=line`.
 - [ ] Generated `Test.PlaywrightUI` compiles in the solution before handoff.

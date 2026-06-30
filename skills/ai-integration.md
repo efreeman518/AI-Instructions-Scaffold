@@ -59,6 +59,7 @@ Notes:
 12. **Read the target class constructor before injecting new dependencies into scaffold agents or tool classes.** Generated constructors may differ from what session notes describe. Reading the actual constructor first avoids duplicate-parameter or mismatched-arity compile errors.
 13. **Scaffold mode is the default.** AI Search is `deployment-only` (no local emulator). Foundry models have a local path: a model runs on-device via Foundry Local, so chat, streaming, and code-hosted agents work with no Azure subscription (Foundry *Projects* and Foundry-*hosted* agents still require Azure). The **target** local path is Aspire `RunAsFoundryLocal()`; while that is broken against GA Foundry Local (see *Aspire Integration* -> *Known issue*), the local path is the **temporary** SDK-direct API-host bootstrap. When no model and no Foundry Local are wired, AI services must register as no-op stubs (including a no-op `IChatClient`) so the app boots without cloud credentials. A live model is wired only when a Foundry deployment is referenced; record any remaining Azure-only dependency (Search, Foundry Agent Service) in `HANDOFF.md`.
 14. **Function-tool schemas must be provider-compatible.** Avoid nullable optional tool parameters such as `string? status = null` when targeting Azure AI Inference / Foundry Local. `AIFunctionFactory` can emit JSON Schema union types like `["string","null"]`, and some inference endpoints reject them. Prefer non-null optional strings with empty defaults (`string status = ""`) or explicit DTOs with provider-safe schema.
+15. **AI provider contract explicit.** Runtime order is Azure Foundry when `ConnectionStrings:chat`/configured Foundry endpoint exists, else Foundry Local when available and not disabled, else no-op. No-op allowed for non-live AI tests and offline boot only. Live AI tests never green on `none` or `stub`.
 
 ---
 
@@ -349,6 +350,9 @@ No-op stubs return empty results or a `Result.Failure("AI service not configured
     "UseAgents": false,
     "UseVectorSearch": false,
     "DisableFoundryLocal": false,
+    "RequireFoundryLocal": false,
+    "LocalModel": "qwen2.5-0.5b",
+    "LocalWebUrl": "http://127.0.0.1:52415",
     "DevStubContent": false,
     "FoundryEndpoint": "https://ai-foundry-{resource}.services.ai.azure.com/",
     "AgentModelDeployment": "gpt-4o-deploy",
@@ -369,6 +373,8 @@ Endpoint keys by axis: `FoundryEndpoint` selects/configures the real Azure path 
 `DisableFoundryLocal` is the local-path **opt-out** (default `false`). The API host attempts the SDK-direct local bootstrap whenever Azure is absent; set this `true` to skip the attempt and force no-op AI. It is the switch RID-free / offline test tiers set on both API boot paths (see *Testing* -> *Deciding the Live Lane*); it has no effect when Azure is wired. Unlike the other keys here, it is **read host-side via `config.GetValue<bool>("AiServices:DisableFoundryLocal")` in `Program.cs`, not bound on `AiSettings`** - deliberately, because it gates the RID-bound host bootstrap that runs before (and outside) the shared RID-free `Infrastructure.AI` settings binding. The tradeoff: a host knob has no bind-time validation, so a typo in the key silently no-ops. Keep the spelling exact. Shortcut: a single host-read bool; if host-only AI knobs proliferate, promote them to a small host-local options record so they are not stringly-typed in two places.
 
 `DevStubContent` is the manual-local/demo **opt-in** (default `false`). When `true`, in a Development environment, and only when no live provider (Azure or Foundry Local) was wired, the API registers a deterministic `StubContentChatClient` instead of the no-op client and records `AiProviderInfo("stub")` - so a real `dotnet run`/Aspire boot renders populated AI surfaces without a model. It has no effect outside Development, no effect when a real provider is wired, and never greens a live smoke (`stub` is treated like `none`; see *DI Registration* and *Testing* -> *Provider Test Tiers*). Leave it `false` to keep the honest empty/`isConfigured: false` state.
+
+`RequireFoundryLocal` is a live-test host knob, default `false`. Set it `true` only in `Test.FoundryLocal` so SDK bootstrap failure throws for the test harness to classify: missing/undiscoverable runtime -> `Assert.Inconclusive`; installed/discovered runtime that falls back no-op, times out, or reports wrong `/api/v1/ai/status` -> `Assert.Fail`. `LocalModel` and `LocalWebUrl` feed the SDK-direct bootstrap.
 
 > **Stub rule:** Generate all AI settings with `// TODO: [CONFIGURE]` comments. Use empty strings for endpoints - never hardcode real URLs.
 
@@ -522,7 +528,7 @@ In this mode the **AppHost wires no Foundry/`chat` resource at all** - there is 
 
 **The RID-bound test lane needs its own direct reference.** The native payload (`Microsoft.AI.Foundry.Local.Core`) ships in a separate RID-bound transitive package, and `PrivateAssets="all"` deliberately stops it flowing into downstream refs - including an in-process `WebApplicationFactory` test host that references the API host project. So the `Test.FoundryLocal` lane (see *Testing* -> *Deciding the Live Lane*) must declare its **own** direct `Microsoft.AI.Foundry.Local` `PackageReference` plus matching `RuntimeIdentifiers`; it cannot inherit the native payload transitively. The RID-free fast tiers never reference it.
 
-**Bootstrap (API host `Program.cs`).** Attempt the local bootstrap by default when Azure is absent and the opt-out is unset, and register the resulting `IChatClient`. A failed bootstrap **falls back to no-op** rather than throwing, so the app still boots. Everything downstream (`AddAiServices` gating, `ChatClientAgent`) is unchanged because it keys off `IChatClient` presence - there is no `ConnectionStrings:chat` to read in this mode:
+**Bootstrap (API host `Program.cs`).** Attempt the local bootstrap by default when Azure is absent and the opt-out is unset, and register the resulting `IChatClient`. A failed bootstrap **falls back to no-op** rather than throwing, so the app still boots. Exception: when `AiServices:RequireFoundryLocal=true` (set only by `Test.FoundryLocal`), rethrow so live-local tests can fail instead of masking provider drift. Everything downstream (`AddAiServices` gating, `ChatClientAgent`) is unchanged because it keys off `IChatClient` presence - there is no `ConnectionStrings:chat` to read in this mode:
 
 ```csharp
 using Microsoft.AI.Foundry.Local;                // FoundryLocalManager, Configuration
@@ -539,6 +545,7 @@ var azureWired = !string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionS
 // which runs before the RID-free Infrastructure.AI settings binding. Tradeoff: no bind-time
 // validation, so a typo in the key silently no-ops - keep the spelling exact. (See Configuration.)
 var disableLocal = builder.Configuration.GetValue<bool>("AiServices:DisableFoundryLocal");
+var requireLocal = builder.Configuration.GetValue<bool>("AiServices:RequireFoundryLocal");
 if (!azureWired && !disableLocal)
 {
     try
@@ -572,8 +579,10 @@ if (!azureWired && !disableLocal)
     }
     catch (Exception ex)
     {
-        // Bootstrap failed (no runtime, offline, model unavailable) -> fall back to no-op.
-        // Log via your bootstrap logger; do NOT rethrow. AddAiServices then records
+        // Bootstrap failed (no runtime, offline, model unavailable) -> fall back to no-op
+        // unless Test.FoundryLocal set RequireFoundryLocal=true.
+        if (requireLocal) throw;
+        // Log via your bootstrap logger. AddAiServices then records
         // AiProviderInfo("none") and registers NoOpChatClient, so the app still boots.
         _ = ex;
     }
@@ -716,6 +725,7 @@ Keep the tiers distinct - the model provider must not leak into the fast tiers.
 - **Application / service / endpoint tests use a fake `IChatClient`** (a small deterministic stand-in, or a Moq double) - never a real Azure or Foundry Local model. Cover with fakes: the response contract, the parse guard (model JSON wrapped in extra text, or non-parseable output), the no-write path (a triage/draft that must not persist), and the write behavior (a parseable response that does persist). These live in `Test.Unit` / `Test.Endpoints`.
 - **Cover the no-op fallback explicitly.** Assert that with no provider wired, `AddAiServices` registers the no-op `IChatClient` (and no-op search/agent) with `AiProviderInfo("none")`, that `GET /ai/status` reports `provider: none`, and that each AI endpoint returns its `isConfigured: false` contract without persisting. A no-op path that is never asserted is an untested fallback.
 - **Live model tests are smoke only.** The **Azure** live smoke is HTTP-only (no RID) and may run in the mesh tier (`Test.Aspire`). The **Foundry Local** live smoke must run in a dedicated **RID-bound `Test.FoundryLocal`** project, never in the RID-free mesh (see *Deciding the Live Lane* for why). Both assert response contracts (status, `isConfigured: true`, non-empty/typed fields), not exact model text.
+- **Status mismatch fails live local.** `Test.FoundryLocal` sets `AiServices:RequireFoundryLocal=true`, starts the API host directly, calls `/api/v1/ai/status`, and requires `provider: local` plus `isConfigured: true` before chat/tool smoke. `Assert.Inconclusive` only when Foundry Local runtime is missing or undiscoverable. If runtime is installed/discovered but provider falls back to `none`, reports `stub`, times out, or status lies, call `Assert.Fail`.
 - **One active-provider lane, not one lane per provider.** Smoke the active provider only - Azure Foundry when configured, else Foundry Local when it bootstraps. Do not copy every app contract once for Azure and again for Local. The active-provider smoke set is: chat, the tool-calling agent, one safe AI write-adjacent path (e.g. triage with `apply=false`, or a draft that may create), and one FlowEngine agent-workflow run. Reserve an `AzureFoundry` category for genuinely Azure-specific behavior (resource selection / provisioning), never for a second copy of a provider-neutral contract. Add a provider-specific copy only when the behavior actually differs by provider.
 - **Never silently pass a live AI test on no-op.** When no real provider is active, the live smoke is `Assert.Inconclusive` with a message naming the absent provider - never green. (See [testing.md](testing.md) -> Never Silently Pass.) The no-op contract tests above cover that state; the live smokes do not.
 - **The dev-stub provider is treated like no-op for tests.** `AiServices:DevStubContent` (see *DI Registration* / *Configuration*) is a manual local/demo aid, not a test mechanism - test hosts inject the fake `IChatClient` (so `hasChatClient` is true and the stub never activates). For the live lane, `provider: stub` reports `isConfigured: false` and is `Inconclusive`, exactly like `none` - never green. If you cover it at all, assert that `stub` maps to `isConfigured: false`; do not smoke synthesized content as if it were a model.
@@ -726,6 +736,8 @@ Provider selection priority (the lane mirrors the app's own order):
 2. else Foundry Local requested / available -> use Local.
 3. else dev-stub if `DevStubContent` is set in Development -> provider `stub` (manual/demo only; never green).
 4. else no-op AI.
+
+`Test.Aspire` runs RID-free with `AiServices:DisableFoundryLocal=true`; its live AI smoke is Azure-only and inconclusive when Azure Foundry is not configured. `Test.FoundryLocal` owns local live proof and is the only tier allowed to load native Foundry Local packages. Unit/endpoint tests use fake or no-op clients and never native Foundry Local.
 
 ### Deciding the Live Lane Without Probing the CLI
 
@@ -756,6 +768,8 @@ group.MapGet("/status", (
 ```
 
 ### Agent Tests
+
+Code-hosted agent tests must control tool use through request/options, not prompt wording. Add request flag such as `UseTools` (default `true`). No-tool smoke sets `UseTools=false` and maps to `ChatOptions.ToolMode = ChatToolMode.None`. Tool-calling tests set `UseTools=true`, use `ChatToolMode.Auto`, and carry a real timeout budget (`[Timeout]` plus cancellation token or bounded request timeout). Never rely on prompts like "do not call tools" as control flow.
 
 ```csharp
 // ChatClientAgent requires IChatClient - use a mock or test double

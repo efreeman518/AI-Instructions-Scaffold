@@ -252,6 +252,7 @@ The AppHost wiring snippet (Azure branch + local var-forward + existing-account)
 
 - If code-hosted agents or workflow agent nodes call tools, select a local model whose Foundry Local task list includes `tools`. `qwen2.5-0.5b` is a small pragmatic default; `phi-4` is chat-only.
 - Foundry Local is availability-driven (no opt-in): when Azure is absent the API host attempts it by default and falls back to a no-op `IChatClient` if the bootstrap fails. Set `AiServices:DisableFoundryLocal=true` to skip the attempt (offline / RID-free test tiers).
+- `Test.Aspire` is RID-free and must set `AiServices:DisableFoundryLocal=true`; Azure live smoke runs there only when Azure Foundry is configured. Foundry Local live proof belongs in `Test.FoundryLocal`, which starts the API host directly and requires `/api/v1/ai/status provider=local`.
 - Fully local run: `dotnet run --project src/Host/Aspire/AppHost` (local is attempted by default). Real Azure local run: set `AiServices:FoundryEndpoint` (or `$env:MYAPP_USE_AZURE_FOUNDRY = "true"`); `aspire publish` always takes the real Azure path.
 - Projects + server-hosted agents are an Axis-2 escalation (Azure-only): see [ai-integration.md](ai-integration.md) (Foundry Projects and Server-Hosted Agents).
 

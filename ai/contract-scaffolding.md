@@ -42,7 +42,7 @@ Follow `solution-structure.md` exactly:
 - `.slnx`, `Directory.Packages.props`, `global.json`, `nuget.config`
 - All project folders and `.csproj` files per the canonical layout
 - Project references wired per the dependency direction contract
-- Test projects: `Test.Support`, `Test.Unit`, `Test.Integration` (component), `Test.Aspire` (mesh), `Test.Endpoints`, `Test.E2E`, plus profile-specific projects (`Test.Architecture`, `Test.PlaywrightUI`, `Test.Load`, `Test.Benchmarks`, `Test.Mutation`) per `testingProfile`
+- Test projects: `Test.Support`, `Test.Unit`, `Test.Integration` (component), `Test.Aspire` (mesh), `Test.Endpoints`, `Test.E2E`, `Test.FoundryLocal` when `includeAiServices: true` and Foundry Local provider is in scope, plus profile-specific projects (`Test.Architecture`, `Test.PlaywrightUI`, `Test.Load`, `Test.Benchmarks`, `Test.Mutation`) per `testingProfile`
 
 ### 2. Contracts (Per Entity)
 
@@ -198,12 +198,15 @@ The shared base is the **single source of truth** for swapping the production Db
 - `Test/Test.Integration/Infrastructure/SqlContainerFixture.cs` + `AzuriteContainerFixture.cs` (+ `RedisContainerFixture.cs` when Redis is used) - standalone per-store Testcontainers fixtures for the **component** tier; `SqlContainerFixture` builds `{App}DbContextTrxn` / `{App}DbContextQuery` against its own container. No Aspire. Full file shapes: [test-templates-integration.md](../templates/test-templates-integration.md).
 - `Test/Test.Integration/Infrastructure/IntegrationTestSetup.cs` - `[AssemblyInitialize]` starts the store fixtures in parallel (each capturing `StartupError`); `[AssemblyCleanup]` disposes them.
 - `Test/Test.Aspire/AspireTestHost.cs` - lazy assembly-scoped fixture that starts the full Aspire AppHost graph (API + Functions + SQL + Azurite) via `EnsureStartedAsync`, plus `Test/Test.Aspire/AspireMeshLifecycle.cs` (`[AssemblyCleanup]`). Full file shapes: [test-templates-aspire.md](../templates/test-templates-aspire.md).
+- `Test/Test.FoundryLocal/FoundryLocalLiveSmokeTests.cs` - RID-bound live local AI lane when `includeAiServices: true` and Foundry Local provider is in scope. Starts API host directly, sets `AiServices:RequireFoundryLocal=true`, checks `/api/v1/ai/status`, and fails on no-op/stub/status drift. Canonical owner: [ai-integration.md](../skills/ai-integration.md).
+- `src/Test/Test.Mobile/run-mobile-tests.ps1` - generated when `Test.Mobile` exists; owns Android restore/build, emulator/Appium readiness, `{APP}_MOBILE_TESTS_ENABLED=true`, `dotnet test`, and TRX output. Explicit runner lane fails fast on broken mobile prerequisites.
 - `EndpointTestBase` (optional) - HTTP client helper used by endpoint test classes.
 
 **Empty test project shells:**
 - `Test.Unit/` - project file with MSTest + Moq references, no test classes yet (Phase 5a adds them)
 - `Test.Integration/` (component) - project file with MSTest + `Testcontainers.MsSql` + `Testcontainers.Azurite` + `Azure.Data.Tables` + `EF.IntegrationTesting`; references `Test.Support` and the Application/Infrastructure projects the tests use - **no `AppHost`, no `Aspire.Hosting.Testing`**. Contains the `Infrastructure/*ContainerFixture` + `IntegrationTestSetup` shells from above. Phase 5a populates `{Entity}RepositoryIntegrationTests`; Phase 5b populates `DomainEventPipelineTests`, `AuditLogRepositoryAzuriteTests`. See [test-templates-integration.md](../templates/test-templates-integration.md).
 - `Test.Aspire/` (mesh) - project file with MSTest + `Aspire.Hosting.Testing` + `Aspire.Hosting.Azure.Storage` + `Azure.Data.Tables` + `EF.IntegrationTesting`; references `AppHost`, the API host, `Test.Support`, and the Application contracts/models the HTTP payloads need. Contains the `AspireTestHost` + `AspireMeshLifecycle` shells. Phase 5b populates `ApiAuditPipelineTests`, `FunctionAuditPipelineTests`. See [test-templates-aspire.md](../templates/test-templates-aspire.md).
+- `Test.FoundryLocal/` (live AI) - RID-bound project file with MSTest + direct `Microsoft.AI.Foundry.Local` package reference; references the API host and `Test.Support`, never `AppHost`. Generate only when `includeAiServices: true` and Foundry Local provider is in scope.
 - `Test.Endpoints/` - project file with MSTest + `Microsoft.AspNetCore.Mvc.Testing`, derived `CustomApiFactory`, no test classes yet (Phase 5b adds endpoint contract tests via WAF)
 - `Test.E2E/` - project file with MSTest + `Microsoft.AspNetCore.Mvc.Testing` + Testcontainers, derived `SqlApiFactory`, no test classes yet (Phase 5b adds multi-endpoint workflow tests against Testcontainers SQL - see [test-templates-e2e.md](../templates/test-templates-e2e.md))
 - `Test.Mutation/` - comprehensive profile project file with MSTest, references to focused target projects, and `stryker-config.json`; no test classes yet (Phase 5d adds focused mutation samples via Stryker.NET - see [test-templates-quality.md](../templates/test-templates-quality.md))
@@ -325,6 +328,7 @@ Developer reviews the scaffolded shape against the verification checklist below.
 - [ ] Test.Support contains `UnitTestBase`, `InMemoryDbBuilder`, `DbSupport`, `Utility`, `TestConstants`, `JsonTestOptions`, `LocalSqlSettings`, `WebApplicationFactoryBase`
 - [ ] `Test.Endpoints/CustomApiFactory.cs` and `Test.E2E/SqlApiFactory.cs` derive from `WebApplicationFactoryBase<Program, {App}DbContextTrxn, {App}DbContextQuery>` (do not duplicate the swap-out logic)
 - [ ] `Test.Integration/Infrastructure/SqlContainerFixture.cs` + `AzuriteContainerFixture.cs` + `IntegrationTestSetup.cs` (component) and `Test.Aspire/AspireTestHost.cs` + `AspireMeshLifecycle.cs` (mesh) exist (even when no tests reference them yet - Phase 5 fills them)
+- [ ] If `includeAiServices: true` and Foundry Local provider is in scope, `Test.FoundryLocal` exists, is registered in `.slnx`, is RID-bound, and does not reference `AppHost`.
 - [ ] Test data `{Entity}DtoBuilder` returns valid DTOs
 - [ ] `RegisterServices.cs` wires all no-op stubs
 - [ ] No domain logic in entity shells (only `throw new NotImplementedException`)

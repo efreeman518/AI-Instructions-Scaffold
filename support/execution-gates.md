@@ -99,6 +99,8 @@ Commands:
 ```powershell
 dotnet build
 dotnet test --filter "TestCategory=Unit"
+dotnet test --filter "TestCategory=LiveAI" # only when a live provider is intentionally available
+dotnet test src/Test/Test.FoundryLocal/Test.FoundryLocal.csproj --filter "TestCategory=LiveAI" # local live lane
 ```
 
 Scaffold migration (remove old, create fresh baseline - see [../patterns/data-layer-wiring.md](../patterns/data-layer-wiring.md)):
@@ -229,7 +231,7 @@ If targeting Android (`<tfm>-android`):
 - [ ] `project.assets.json` contains `Uno.WinUI.Runtime.Skia.Android` for Skia Android targets before runtime debugging starts
 - [ ] `<EmbedAssembliesIntoApk>true</EmbedAssembliesIntoApk>`, `<AndroidEnableAssemblyCompression>false</AndroidEnableAssemblyCompression>`, and `.so` uncompressed file extension settings are set if manual ADB/Appium sideloading is used
 - [ ] Emulator host networking uses `10.0.2.2` for local backend calls (see `skills/ui-uno-platforms.md` section Emulator Host Networking)
-- [ ] MSTest/Appium mobile smoke passes when native Android UI testing is in scope: `dotnet test src/Test/Test.Mobile/Test.Mobile.csproj --filter TestCategory=MobileUI`
+- [ ] MSTest/Appium mobile smoke passes when native Android UI testing is in scope: `powershell -NoProfile -File src/Test/Test.Mobile/run-mobile-tests.ps1`
 
 > **Starter-library escape hatch:** If the repo currently contains only a single-TFM starter library or shell-contract scaffold instead of a real Uno multi-target app, Phase 5c for Uno must be recorded as **blocked**. `NETSDK1139` on `<tfm>-browserwasm` is expected in that scenario and is evidence that Uno scaffolding is still missing - not an environment glitch. Do not debug/workaround it; record the status as `blocked - Uno multi-target not yet created` and move on.
 
@@ -371,6 +373,8 @@ If live Entra setup is not yet performed, log it in `HANDOFF.md` as a deployment
 ### AI Integration (within 5e, when `includeAiServices: true`)
 
 **Scaffold mode is the default.** AI integration is complete when AI-backed interfaces compile, resolve from DI, and tests pass with stubs or no-op implementations. Live Foundry/AI Search endpoints are deployment-only dependencies and do not block scaffold completion.
+
+Provider contract: Azure Foundry when configured, else Foundry Local when available, else no-op. No-op is valid for non-live tests only. `Test.Aspire` sets `AiServices:DisableFoundryLocal=true` and proves Azure live smoke only when configured. `Test.FoundryLocal` sets `AiServices:RequireFoundryLocal=true`, starts the API host directly, checks `/api/v1/ai/status`, and is inconclusive only when Foundry Local runtime is missing/undiscoverable; no-op fallback, timeout, or wrong status is failure.
 
 | Mode | Required |
 |---|---|

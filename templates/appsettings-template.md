@@ -111,12 +111,32 @@ This is a complete reference of all configuration sections used across the solut
     }
   },
 
-  "CorsSettings": {
-    "AllowedOrigins": ["https://localhost:44318", "http://localhost:5173"]
-  },
+"CorsSettings": {
+"AllowedOrigins": ["https://localhost:44318", "http://localhost:5173"]
+},
 
-  "Logging": {
-    "LogLevel": {
+"AiServices": {
+"UseSearch": false,
+"UseAgents": false,
+"UseVectorSearch": false,
+"DisableFoundryLocal": false,
+"RequireFoundryLocal": false,
+"LocalModel": "qwen2.5-0.5b",
+"LocalWebUrl": "http://127.0.0.1:52415",
+"DevStubContent": false,
+"FoundryEndpoint": "",
+"AgentModelDeployment": "",
+"EmbeddingModelDeployment": "",
+"SearchEndpoint": "",
+"SearchIndexName": "",
+"FoundryResourceName": "",
+"FoundryResourceGroup": "",
+"FoundryProjectEndpoint": "",
+"FoundryAgentName": ""
+},
+
+"Logging": {
+"LogLevel": {
       "Default": "Information",
       "Microsoft.AspNetCore": "Warning",
       "Yarp": "Information"
@@ -153,4 +173,5 @@ This is a complete reference of all configuration sections used across the solut
 - `CacheSettings` is an array - each entry creates a named FusionCache instance
 - `FailSafeThrottleDurationSeconds` - note the unit is **seconds** (passed to `TimeSpan.FromSeconds()`)
 - `ServiceAuth` section in Gateway maps cluster IDs to OAuth2 client credential configs
+- `AiServices:RequireFoundryLocal` stays false in normal appsettings; set true only in `Test.FoundryLocal`
 - For production/Azure: use Key Vault references or App Configuration for secrets

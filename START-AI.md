@@ -35,6 +35,12 @@ This rule is the same regardless of the model's context window. Lost-in-the-midd
 
 Load-set sizing is derived from `scaffoldMode` (`api-only` -> required-only; `lite`/`full` -> required + on-demand). See [`ai/SKILL.md`](ai/SKILL.md) section Load-Set Sizing.
 
+## Compression Tool Rule
+
+Context tools (`rtk`, Headroom, graph summaries, MCP compression) may optimize logs, diffs, search, and broad repo orientation. They must not replace direct reads of required scaffold instruction files.
+
+When scaffold says load an instruction file, read source file text directly and preserve exact rules, tables, gates, templates, and conflict order. If context tight, reduce to current phase/sub-phase load set or stop with `HANDOFF.md`. Do not use lossy summary as active instruction context.
+
 ## Phase-1 Artifact Lifecycle Rule
 
 `.scaffold/domain-specification.yaml`, `.scaffold/UBIQUITOUS-LANGUAGE.md`, and `.scaffold/DESIGN-DECISIONS.md` are the **binding source of truth** for the project. Every phase consumes them; every session must keep them current.

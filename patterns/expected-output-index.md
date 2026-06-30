@@ -90,7 +90,7 @@ Default scaffold and TaskFlow reference app keep DTOs and mappers in `Applicatio
 | Aspire (mesh) - Function audit pipeline | `Test/Test.Aspire/FunctionAuditPipelineTests.cs` |
 | Architecture | `Test/Test.Architecture/*DependencyTests.cs`, `CqrsArchitectureTests.cs` *(when applicationStyle: cqrs or switch)* |
 | Playwright UI | `Test/Test.PlaywrightUI/Pages/{Entity}CrudTests.cs` (browser; runs against hosted stack) |
-| Mobile UI smoke | `Test/Test.Mobile/*` (MSTest + Appium; opt-in Android/iOS native launch checks) *(when Uno mobile native testing is enabled)* |
+| Mobile UI smoke | `src/Test/Test.Mobile/run-mobile-tests.ps1`, `Test/Test.Mobile/*` (MSTest + Appium; opt-in Android/iOS native launch checks) *(when Uno mobile native testing is enabled)* |
 | Load | `Test/Test.Load/{Entity}LoadTests.cs` |
 | Benchmark | `Test/Test.Benchmarks/{Entity}Benchmarks.cs` |
 | Mutation | `Test/Test.Mutation/Domain/{Entity}MutationSamples.cs`, `Test/Test.Mutation/stryker-config.json` |

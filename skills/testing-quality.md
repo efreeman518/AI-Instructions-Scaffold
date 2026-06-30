@@ -91,7 +91,7 @@ Playwright requires a real hosted stack. It cannot run on `WebApplicationFactory
 - Prefer stable selectors (`data-testid`).
 - Isolate test data with unique names/ids.
 - Assert structural UI strings, not data-dependent counts.
-- Cover the real workflow surface: shell/navigation, create/read/update/delete, and nested child collections when the UI exposes them.
+- Cover the real workflow surface: shell/navigation, create/read/update/delete, and nested child collections when DOM-capable UI exposes them. For Uno Skia canvas, use smoke plus app-owned bridge state transitions only; do not claim CRUD or nested-child correctness from pixels alone.
 
 ### Data-Dependent Assertion Anti-Pattern
 
@@ -123,7 +123,7 @@ test.describe("EntityCrud", () => {
 });
 ```
 
-Set Playwright timeout to `120000` for suites containing Uno WASM cold-start.
+Set Uno WASM browser startup timeout to at least `900000` ms / 900 s. Keep first restore/build budgets separate from browser/app startup: default `{APP}_WASM_RESTORE_TIMEOUT_SECONDS=600`, `{APP}_WASM_BUILD_TIMEOUT_SECONDS=1200`, and `{APP}_WASM_STARTUP_TIMEOUT_SECONDS=900`. Do not spend one shared startup timeout across restore, build, AppHost start, endpoint health, and browser boot.
 
 `test.use({ viewport })` does not apply to `beforeAll`-owned contexts. Pass viewport to `browser.newContext({ viewport })`.
 
@@ -156,7 +156,10 @@ await clickSaveNewTask(page);
 When `Test.PlaywrightUI` is a C# MSTest project that drives an existing TypeScript Playwright suite (so Aspire can select runnable hosts in C#, then hand off browser execution to TS), the child-process runner must be disciplined or failures vanish into test-host timeout noise:
 
 - **Use `TypeScriptPlaywrightRunner.cs` as the entry point.** It detects Playwright-managed Chromium vs. system Chrome, manages Node process lifecycle and cancellation, and returns `CommandResult` / `BrowserReadiness` records. Do not build a one-off per-test runner - a single shared runner class serves the whole project.
+- **Run one TypeScript project per child process.** Invoke `node .../cli.js test --project <name>` for each generated project; do not launch one giant Playwright run that can burn the whole MSTest budget.
+- **Use explicit timeout env vars.** Read per-project timeout from `{APP}_PLAYWRIGHT_PROJECT_TIMEOUT_SECONDS` and per-test/action timeout from `{APP}_PLAYWRIGHT_TEST_TIMEOUT_SECONDS`; defaults must fit inside the MSTest `[Timeout]` budget.
 - **Invoke `node` against the local CLI, not `npx`.** Resolve `node_modules/@playwright/test/cli.js` relative to the project directory and start `node.exe`/`node` with it via `ProcessStartInfo.ArgumentList`. `npx` can resolve through a broken local npm shim and silently run the wrong binary; a missing `node` on PATH should surface as a clear `Node.js is not available on PATH` error, not a generic Win32 failure.
+- **Fail fast with captured output.** On non-zero exit or timeout, fail the current MSTest immediately and include command, exit code, stdout, stderr, timeout value, and project name.
 - **Capture stdout and stderr even on cancellation.** Start the async reads (`ReadToEndAsync`) before awaiting exit, and return both streams in the result on the cancellation path too - a Playwright failure that arrives as the test host cancels must still reach the TRX, not disappear.
 - **Kill the entire process tree.** On `OperationCanceledException`, call `process.Kill(entireProcessTree: true)` (swallow `InvalidOperationException` if it already exited), then `await WaitForExitAsync(CancellationToken.None)` so orphaned browser/node children do not leak and hold locks.
 - **Gate on the CLI being installed.** Expose an `IsInstalled` check (`File.Exists(cliPath)`) and mark the test `Assert.Inconclusive` with the install step when the suite has not been provisioned, never red.
@@ -195,11 +198,27 @@ for (let attempt = 0; attempt < 20; attempt++) {
 
 If the app paints to a single Skia `<canvas>`, there are no per-control DOM nodes - DOM/text/role selectors and coordinate-clicking all fail structurally. Hard rule: a Skia-canvas Uno WASM test that uses `getByText`, role selectors, labels, or DOM text assertions is wrong. The browser DOM cannot expose text painted inside the canvas. Scaffold a browser-only test bridge that publishes app state to `globalThis.__{app}TestState` (query-string gated, default-off, real Gateway local auth) and have Playwright wait on state. The bridge state must include enough app-neutral fields for assertions: `page`, `section`, `hasToken`, `onboardingComplete`, `status`, and `error`. Tag these `[TestCategory("WasmUI")]`. Full pattern: [../templates/uno-wasm-test-bridge-template.md](../templates/uno-wasm-test-bridge-template.md). Detect the renderer with `document.querySelectorAll('[xamltype]').length` - `0` plus a lone `<canvas>` means Skia. Assert a rendered canvas larger than 100x100; never assert user-facing text with `getByText` against a Skia-canvas Uno app.
 
+Recommended Uno WASM generation rule:
+
+- Detect renderer first.
+- If Skia canvas: generate bridge plus canvas smoke only.
+- If managed DOM: coordinate-click and XAML attribute selectors acceptable.
+- Never generate DOM text selectors until renderer proves text exists in DOM.
+- C# wrapper starts AppHost and runs TypeScript; no browser-clicking C# page objects for Uno.
+
+Canvas-first fallback hierarchy:
+
+1. Prefer app-owned bridge state for functional assertions (`window.__AppTestState` / `globalThis.__{app}TestState`): page, section, auth/session, onboarding, status, error, and any app-specific state transition under test.
+2. If bridge does not exist yet, limit test to canvas paint, stable chrome click, and fingerprint/pixel delta from blank.
+3. Do not claim CRUD correctness, nested-child correctness, or persisted workflow correctness from pixel-only tests.
+
+TypeScript Uno tests that try list CRUD by text/role selectors are structurally invalid for Skia canvas, even when they sometimes pass in another renderer.
+
 When the WASM app needs API, Gateway, SQL, Redis, storage, auth, or other Aspire resources, the `WasmUI` harness must start the AppHost graph. Do not treat it as a standalone browser-only suite, and do not require an external `{APP}_WASM_BASE_URL` for the default path. The harness starts Aspire in testing mode with `DistributedApplicationTestingBuilder.CreateAsync<Projects.{App}_AppHost>()`, disables only optional hosts, waits for required resources to become healthy, warms up auth through the real Gateway, and resolves UI/Gateway URLs from named Aspire endpoints. Use `CreateHttpClient(resource, "http")` for endpoint discovery and probes; never assume fixed local ports during a test run.
 
 Build the WASM assets before browser navigation with `TargetFrameworkOverride=<tfm>-browserwasm` and `EnableUnoWasm=true`, then pass the dynamic Gateway endpoint to the browser through a test-only query parameter such as `{app}TestGatewayBaseUrl`. Without that override, a scaffolded app can accidentally call a fixed dev gateway port while Aspire assigned a dynamic port.
 
-Every startup step must have its own timeout and progress log: Docker preflight, host lock, WASM restore, clean rebuild, AppHost builder creation, graph build, graph start, resource health, Gateway auth warm-up, UI endpoint readiness, and browser state wait. Missing Docker marks `Assert.Inconclusive` with the exact fix. Docker present means start Aspire and real backing resources.
+Every startup step must have its own timeout and progress log: Docker preflight, host lock, WASM restore, clean rebuild, AppHost builder creation, graph build, graph start, resource health, Gateway auth warm-up, UI endpoint readiness, and browser state wait. First Uno WASM restore/build can exceed normal browser-test timeouts; budget restore and build independently from `{APP}_WASM_STARTUP_TIMEOUT_SECONDS`. Missing Docker marks `Assert.Inconclusive` with the exact fix. Docker present means start Aspire and real backing resources.
 
 Generated `WasmUI` assemblies must include `[assembly: DoNotParallelize]`. AppHost-backed browser classes fight over containers, ports, WASM output, and cold-start state when MSTest runs them in parallel.
 
@@ -232,10 +251,12 @@ Increase late-lifecycle assertions to `60000` when page loads occur after severa
 ### Uno Mobile: Test Split
 
 - Use Playwright mobile viewports against Uno WASM for fast responsive checks on Windows.
-- Use Android emulator UI smoke tests for native startup, shell navigation, platform config, and local-backend networking. Start with mocks (`/p:UseMocks=true`), then add a tiny live Aspire-backed suite for Gateway/API wiring.
-- When the repo uses MSTest, scaffold mobile native smoke tests as MSTest + Appium (`Test.Mobile`) instead of introducing NUnit. Keep them opt-in through runsettings/environment variables so normal `dotnet test` does not require an emulator.
-- For Android Appium runs, restore the Uno project with all platform targets before the Android build: `dotnet restore src/UI/{Project}.Uno/{Project}.Uno.csproj -p:BuildAllUnoTargets=true`, then build with `TargetFrameworkOverride=$(LatestStableTfm)-android --no-restore`.
-- In Android test setup, verify `appium`, `uiautomator2`, `adb`, `emulator`, `ANDROID_HOME`, and `JAVA_HOME` with `appium driver doctor uiautomator2` before blaming app code.
+- Use Android emulator UI smoke tests only for native startup, native surface, first-viewport accessibility, and one reliable text-entry smoke. Do not drive deep CRUD, search persistence, child collections, or long-scroll Skia forms with Appium/UiAutomator2; cover those in API, integration, unit, and Playwright lanes.
+- When the repo uses MSTest, scaffold mobile native smoke tests as MSTest + Appium (`Test.Mobile`) instead of introducing NUnit. Keep default `dotnet test` dependency-free: unset `{APP}_MOBILE_TESTS_ENABLED` makes methods `Assert.Inconclusive` without starting Appium, emulator, or building APKs.
+- Generate `src/Test/Test.Mobile/run-mobile-tests.ps1`. The runner owns Android restore/build with `-p:BuildAllUnoTargets=true`, emulator readiness, Appium readiness, `{APP}_MOBILE_TESTS_ENABLED=true`, `dotnet test`, and TRX output. Explicit enabled mobile runs fail fast red if APK, emulator/device, Appium, or UiAutomator2 is missing/broken.
+- Test methods must not start Appium, start an Android Emulator, or build APKs. They connect to the prepared device/server, use method-level `[Timeout]`, and capture screenshot + Appium page source on failure.
+- Use `MobileBy.AccessibilityId` for exact `AutomationProperties.Name` lookups. Avoid broad XPath except fallback probing after diagnostics show no accessibility id is exposed.
+- In runner setup, verify `appium`, `uiautomator2`, `adb`, `emulator`, `ANDROID_HOME`, and `JAVA_HOME` with `appium driver doctor uiautomator2` before blaming app code.
 - Treat iOS simulator/device UI tests as macOS-only. On Windows, record iOS compile status and mark simulator/device execution as blocked unless a Mac host or macOS CI runner is available.
 
 ### MudBlazor Timing Rules
@@ -256,9 +277,11 @@ Set `outputDir` under `Test/Test.PlaywrightUI`, not under app project directorie
 
 All test projects must be registered in the `.slnx` so both Test Explorers discover them. Generate a short test README (or top-of-class comments) stating the local workflow. **Only include the env vars, tasks, and stack steps for tiers this scaffold actually generated** - an `api-only` / no-UI scaffold has no Aspire/WASM/Mobile rows, so do not document their env vars or tasks (see [Capability-Gated Test Tiers](testing.md#capability-gated-test-tiers-the-early-decision-drives-the-rest)).
 
-- **Start the stack once per session.** When the scaffold has Aspire/WASM/mobile tiers, run `eng/test/start-local-test-stack.ps1` ([../templates/local-test-stack-template.md](../templates/local-test-stack-template.md)) before those tests - it starts the AppHost and provisions browsers/emulator/Appium.
+- **Document proof commands and pass rules.** README/test README must list exact commands for generated tiers and expected pass conditions, including which prerequisites yield `Assert.Inconclusive` and which status/provider mismatches are failures. Put durable rationale in `docs/tech-design.md`; keep README operational.
+
+- **Start the stack once per session.** When the scaffold has Aspire/WASM tiers, run `eng/test/start-local-test-stack.ps1` ([../templates/local-test-stack-template.md](../templates/local-test-stack-template.md)) before those tests. For mobile, run `src/Test/Test.Mobile/run-mobile-tests.ps1`; it owns Android build, emulator/Appium readiness, enable flag, `dotnet test`, and TRX output.
 - **Filter by category in Test Explorer:** among the tiers present, plus exclude `Load`. The canonical local run is `dotnet test --filter "TestCategory!=Load"`.
-- **Opt out with false-only env vars** for the default-on heavy tiers when you do not want one locally - only the vars for present tiers exist: `{APP}_RUN_ASPIRE_TESTS=false` (if Aspire), `{APP}_WASM_TESTS_ENABLED=false` (if Uno WASM). Default (unset) runs the tier; it self-marks `Inconclusive` if its prerequisite is missing. **`Test.Mobile` is the exception: opt-IN.** It defaults off (emulator/Appium/APK are too heavy for the canonical lane) - set `{APP}_MOBILE_TESTS_ENABLED=true` to activate it; unset/false self-marks `Assert.Inconclusive` per test (never a silent pass; serializes to TRX as not-executed) (see [Capability-Gated Test Tiers](testing.md#capability-gated-test-tiers-the-early-decision-drives-the-rest)).
+- **Opt out with false-only env vars** for the default-on heavy tiers when you do not want one locally - only the vars for present tiers exist: `{APP}_RUN_ASPIRE_TESTS=false` (if Aspire), `{APP}_WASM_TESTS_ENABLED=false` (if Uno WASM). Default (unset) runs the tier; it self-marks `Inconclusive` if its prerequisite is missing. **`Test.Mobile` is the exception: opt-IN.** It defaults off (emulator/Appium/APK are too heavy for the canonical lane) - unset/false self-marks `Assert.Inconclusive` per test. The generated mobile runner sets `{APP}_MOBILE_TESTS_ENABLED=true`; after that, broken mobile prerequisites are red.
 - **Generate `.vscode/tasks.json`** with tasks for the present tiers only (start stack, build WASM, install Playwright Chromium, build Android APK, run all non-load, run Aspire/WASM/Mobile). Task definitions are in the [local test stack template](../templates/local-test-stack-template.md).
 
 ## Verification Checklist
@@ -276,5 +299,5 @@ All test projects must be registered in the `.slnx` so both Test Explorers disco
 - [ ] WASM browser diagnostics capture console, errors, failed requests, response errors, URL, HTML, scripts, canvas count, body text, and bridge state.
 - [ ] Selector strategy is stable for the target UI tech.
 - [ ] UI assertions are structural, not seed/count-dependent.
-- [ ] Timeout profile matches UI runtime behavior (Uno WASM cold-start: 120s).
+- [ ] Timeout profile matches UI runtime behavior (Uno WASM first startup: startup >= 900 s, restore 600 s, build 1200 s, separate budgets).
 - [ ] Test output folder is inside the test project.

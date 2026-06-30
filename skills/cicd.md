@@ -116,7 +116,7 @@ on:
       includeMobile:
         type: boolean
         default: false
-        description: "Run Test.Mobile (MobileUI) Appium tests (separate job; requires Android SDK + emulator + Appium)"
+        description: "Run Test.Mobile (MobileUI) through run-mobile-tests.ps1 (separate job; requires Android SDK + emulator + Appium + UiAutomator2)"
       includeFoundryLocal:
         type: boolean
         default: false
@@ -234,7 +234,7 @@ category to its `inputs.*` switch.
 | `Aspire` | Manual (`includeAspireMesh`) | Docker (full AppHost mesh; disk reclaim) |
 | `E2E` | Manual (`includeE2E`) | Docker (multi-endpoint chains, Testcontainers SQL) |
 | `PlaywrightUI` | Manual (`includePlaywright`) | hosted stack + browser install (own job) |
-| `MobileUI` | Manual (`includeMobile`) | Android SDK + emulator + Appium; `{APP}_MOBILE_TESTS_ENABLED=true` (own job) |
+| `MobileUI` | Manual (`includeMobile`) | `src/Test/Test.Mobile/run-mobile-tests.ps1`; Android SDK + emulator + Appium + UiAutomator2; fail-fast prerequisites (own job) |
 | Foundry Local (`LiveAI`) | Manual (`includeFoundryLocal`) | native Foundry Local runtime, RID-bound (own job) |
 | `Load` | Manual (`includeLoad`) | heavy; NBomber via `dotnet test --filter TestCategory=Load` |
 | `Benchmark` | Manual (`includeBenchmarks`) | heavy; BenchmarkDotNet via `dotnet run` (NOT `dotnet test`) |
@@ -277,18 +277,14 @@ playwright:
 
 For PR-time runs, gate `Test.PlaywrightUI` to nightly to keep PR loops fast.
 
-If `Test.PlaywrightUI` is a Node Playwright suite for React/Vite, replace the browser install/run steps with `npm ci`, `npx playwright install --with-deps`, and `node node_modules/@playwright/test/cli.js test --project react`, while keeping the same hosted-stack startup/teardown contract.
+If `Test.PlaywrightUI` is a Node Playwright suite for React/Vite, replace the browser install/run steps with `npm ci`, `npx playwright install --with-deps`, and one `node node_modules/@playwright/test/cli.js test --project <name>` process per project. Keep the same hosted-stack startup/teardown contract, capture stdout/stderr, and bound each project with `{APP}_PLAYWRIGHT_PROJECT_TIMEOUT_SECONDS`.
 
 ### Special-Runtime Jobs (`Test.Mobile`, `Test.FoundryLocal`)
 
 These two tiers need a runtime the main job must not carry, so each is its own
 `workflow_dispatch`-gated job, emitted only when the tier was generated.
 
-**`Test.Mobile` (`MobileUI`, Appium).** Needs an Android SDK + a running emulator + an Appium
-server. `MobileUI` is opt-IN: set the enable flag (`{APP}_MOBILE_TESTS_ENABLED=true`), or the
-tests self-mark `Inconclusive` (testing.md -> *Capability-Gated Test Tiers*). Use the
-`reactivecircus/android-emulator-runner` action to provide the emulator rather than hand-rolling it.
-
+**`Test.Mobile` (`MobileUI`, Appium).** Needs Android SDK + running emulator + Appium + UiAutomator2. Default `dotnet test` with no enable flag self-marks `Inconclusive` without touching mobile dependencies. Explicit CI mobile lane must call `src/Test/Test.Mobile/run-mobile-tests.ps1`; that runner sets `{APP}_MOBILE_TESTS_ENABLED=true`, produces TRX, and fails fast red when APK, emulator/device, Appium, or UiAutomator2 is missing/broken. Use generated runner logic, or `reactivecircus/android-emulator-runner` as the emulator provider and still call the runner inside it.
 ```yaml
 mobile:
   runs-on: ubuntu-latest        # the emulator action provides KVM acceleration
@@ -297,21 +293,17 @@ mobile:
     - uses: actions/checkout@v4
     - uses: actions/setup-dotnet@v4
       with: { global-json-file: src/global.json }
-    - run: dotnet build src/Test/Test.Mobile/Test.Mobile.csproj --configuration Release
-    - run: npm install -g appium && appium &
-    - name: Run Mobile UI tests on emulator
-      uses: reactivecircus/android-emulator-runner@v2
-      env:
-        '{APP}_MOBILE_TESTS_ENABLED': 'true'   # opt-IN enable flag; else tests are Inconclusive
-      with:
-        api-level: 34
-        script: dotnet test src/Test/Test.Mobile/Test.Mobile.csproj --no-build --configuration Release --filter "TestCategory=MobileUI"
+ - name: Run Mobile UI tests on emulator
+   uses: reactivecircus/android-emulator-runner@v2
+   with:
+     api-level: 34
+     script: pwsh -NoProfile -File src/Test/Test.Mobile/run-mobile-tests.ps1
 ```
 
 **`Test.FoundryLocal` (live AI smoke).** RID-bound native tier - the runner must install and
 bootstrap the Foundry Local runtime before the test loads the native
 `Microsoft.AI.Foundry.Local` SDK. The live lane is `Inconclusive` (never green) when no real
-provider is active; the lane decides the provider via `GET /api/v1/ai/status`, not a CLI probe.
+provider is active because the runtime is missing/undiscoverable; installed/discovered runtime with no-op fallback, timeout, or wrong `/api/v1/ai/status` is failure. The lane decides the provider via `GET /api/v1/ai/status`, not a CLI probe.
 Owner doctrine: [ai-integration.md](ai-integration.md) -> *Provider Test Tiers* / *Deciding the
 Live Lane Without Probing the CLI*. Do not restate it here.
 

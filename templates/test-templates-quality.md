@@ -156,7 +156,7 @@ public sealed class AggregateBoundaryTests : BaseTest
 
 ## E2E Tests (Playwright)
 
-> **Uno WASM vs MudBlazor:** The template below uses standard HTML selectors (MudBlazor / server-rendered Blazor). For Uno WASM with the managed-DOM renderer, use the boot-once shared-page pattern and coordinate-click helpers in [../skills/testing-quality.md](../skills/testing-quality.md) section Hosted Browser UI. For Uno WASM that renders to a **Skia canvas** (no per-control DOM), never generate `getByText` / role / DOM-text assertions. Use the state bridge and AppHost-backed harness in [uno-wasm-test-bridge-template.md](uno-wasm-test-bridge-template.md), poll fields such as `page`, `section`, `hasToken`, `onboardingComplete`, `status`, and `error`, assert a rendered canvas larger than 100x100, tag tests `[TestCategory("WasmUI")]`, and add `[assembly: DoNotParallelize]`.
+> **DOM UI only - Blazor/MudBlazor/managed DOM:** The template below uses standard HTML selectors. Do not copy it into Uno Skia work. For Uno WASM, detect the renderer first. Managed-DOM renderer may use the boot-once shared-page pattern and coordinate-click helpers in [../skills/testing-quality.md](../skills/testing-quality.md) section Hosted Browser UI. Skia canvas renderer has no per-control DOM: never generate `getByText` / role / DOM-text assertions. For Skia, [uno-wasm-test-bridge-template.md](uno-wasm-test-bridge-template.md) is the only functional template: generate the bridge plus canvas smoke, poll fields such as `page`, `section`, `hasToken`, `onboardingComplete`, `status`, and `error`, assert a rendered canvas larger than 100x100, tag tests `[TestCategory("WasmUI")]`, and add `[assembly: DoNotParallelize]`.
 >
 > **Data-assertion rule:** Never assert specific row counts, page counts, or seeded titles (e.g. `"Showing 1 to 10 of 14"`, `"Build dashboard UI"`). These break against shared dev databases with accumulating test data. Assert structural UI strings only: headers, labels, empty-state text.
 >
@@ -315,13 +315,16 @@ public class {Entity}PageObject(IPage page)
 
 ## Mobile UI Tests (MSTest + Appium, optional)
 
-Generate `Test/Test.Mobile` only when Uno native mobile testing is in scope. Keep this suite opt-in so normal `dotnet test` does not require an emulator, device, or Appium server.
+Generate `Test/Test.Mobile` and `src/Test/Test.Mobile/run-mobile-tests.ps1` only when Uno native mobile testing is in scope. Keep test methods opt-in so normal `dotnet test` does not require an emulator, device, APK build, or Appium server.
 
 Rules:
 
 - Use MSTest if the scaffold's test stack is MSTest. Do not introduce NUnit only for mobile smoke tests.
+- Test methods must not start Appium, start an Android Emulator, or build APKs. They only connect to the prepared device/server.
+- Default `dotnet test src/Test/Test.Mobile/Test.Mobile.csproj --filter TestCategory=MobileUI` with `{APP}_MOBILE_TESTS_ENABLED` unset/false must return `Assert.Inconclusive` without touching Appium or emulator.
+- `run-mobile-tests.ps1` owns Android restore/build, emulator readiness, Appium readiness, `{APP}_MOBILE_TESTS_ENABLED=true`, `dotnet test`, and TRX output. Explicit runner lanes fail fast red if APK, emulator/device, Appium, or UiAutomator2 is missing/broken.
 - Android local runs require Appium CLI/server and the UiAutomator2 driver.
-- Build the Android package from a full Uno restore graph:
+- The runner builds the Android package from a full Uno restore graph:
 
 ```powershell
 dotnet restore src/UI/{Project}.Uno/{Project}.Uno.csproj -p:BuildAllUnoTargets=true
@@ -329,11 +332,23 @@ dotnet build src/UI/{Project}.Uno/{Project}.Uno.csproj -p:TargetFrameworkOverrid
 ```
 
 - Mark tests `[TestCategory("MobileUI")]`.
-- **Generated only when `includeUnoUI` was selected; then opt-IN, default off** (see [Capability-Gated Test Tiers](../skills/testing.md#capability-gated-test-tiers-the-early-decision-drives-the-rest)): mobile's emulator/Appium/APK preconditions are too heavy for the canonical lane, so it is the one tier that requires an enable flag. Treat `{APP}_MOBILE_TESTS_ENABLED` as an enable flag - only a case-insensitive `true`/`1`/`yes` activates the tier; unset/false makes each test a no-op skip. When activated but no emulator/device is online or Appium is not listening, mark `Assert.Inconclusive` with a precise setup message (run `eng/test/start-local-test-stack.ps1`) - never red.
-- Android smoke acceptance: App launches, native surface renders, screenshot is non-empty, and page source can be captured for triage.
-- Prefer screenshots and page-source artifacts for verification - canvas-rendered Uno controls may not expose rich accessibility nodes.
-- Put a class-header comment with the exact manual run command and prerequisites (start `eng/test/start-local-test-stack.ps1`; activate with `{APP}_MOBILE_TESTS_ENABLED=true`), per the [class-doc convention](../skills/testing.md#test-class-documentation-convention).
+- Add method-level `[Timeout]` to every mobile test so Appium hangs cannot consume the lane.
+- Native mobile scope stays small: app launch, native surface, first-viewport accessibility, one reliable text-entry smoke. Do not drive deep CRUD, search persistence, child collections, or long-scroll Skia forms with Appium/UiAutomator2.
+- Use `MobileBy.AccessibilityId` for exact `AutomationProperties.Name` lookups. Avoid broad XPath except fallback probing.
+- Capture screenshot and page source on failure.
+- Put a class-header comment with exact manual runner commands and prerequisites, per the [class-doc convention](../skills/testing.md#test-class-documentation-convention).
 - iOS simulator/device execution is macOS-only. Windows may compile shared test code and record iOS execution as blocked unless a Mac host or macOS CI runner exists.
+
+Runner commands to scaffold:
+
+```powershell
+powershell -NoProfile -File src/Test/Test.Mobile/run-mobile-tests.ps1
+powershell -NoProfile -File src/Test/Test.Mobile/run-mobile-tests.ps1 -SkipBuild
+powershell -NoProfile -File src/Test/Test.Mobile/run-mobile-tests.ps1 -VisibleEmulator
+powershell -NoProfile -File src/Test/Test.Mobile/run-mobile-tests.ps1 -VisibleEmulator -AvdName Android_Emulator_35
+powershell -NoProfile -File src/Test/Test.Mobile/run-mobile-tests.ps1 -SkipBuild -Filter "FullyQualifiedName~{Project}Mobile_AppLaunches_AndRendersNativeSurface"
+powershell -NoProfile -File src/Test/Test.Mobile/run-mobile-tests.ps1 -AndroidSdk "C:\Program Files (x86)\Android\android-sdk" -AppiumServerUrl "http://127.0.0.1:4723/"
+```
 
 ---
 

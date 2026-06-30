@@ -23,6 +23,7 @@ See [../skills/ai-integration.md](../skills/ai-integration.md) -> *Foundry Proje
 ## Default Shape
 
 - One interface
+- One request DTO with `UseTools` explicit control
 - One service
 - A small tool set that delegates to existing application services
 - Prompt files in `Prompts/`
@@ -38,11 +39,27 @@ using Microsoft.Agents.AI;
 
 public interface I{Agent}Agent
 {
-    Task<AgentResponse> RunAsync(string userMessage, AgentSession? session = null, CancellationToken ct = default);
+    Task<AgentChatResponse> RunAsync(AgentChatRequest request, AgentSession? session = null, CancellationToken ct = default);
 
     Task<AgentSession> CreateSessionAsync(CancellationToken ct = default);
 }
+
+public sealed class AgentChatRequest
+{
+    public string Message { get; set; } = null!;
+    public string? ConversationId { get; set; }
+    public bool UseTools { get; set; } = true;
+}
+
+public sealed class AgentChatResponse
+{
+    public string Message { get; set; } = null!;
+    public string ConversationId { get; set; } = null!;
+    public bool IsConfigured { get; set; }
+}
 ```
+
+`UseTools=false` is the only supported no-tool smoke control. It maps to `ChatToolMode.None`; do not rely on prompt text such as "do not call tools".
 
 ## Expected Application-Service Contract
 
@@ -91,12 +108,28 @@ internal sealed class {Agent}AgentService : I{Agent}Agent
             ]);
     }
 
-    public async Task<AgentResponse> RunAsync(
-        string userMessage, AgentSession? session = null, CancellationToken ct = default)
-    {
-        session ??= await _agent.CreateSessionAsync();
-        return await _agent.RunAsync(userMessage, session, cancellationToken: ct);
-    }
+public async Task<AgentChatResponse> RunAsync(
+AgentChatRequest request, AgentSession? session = null, CancellationToken ct = default)
+{
+session ??= await _agent.CreateSessionAsync();
+var response = await _agent.RunAsync(
+request.Message,
+session,
+new ChatClientAgentRunOptions(new ChatOptions
+{
+ToolMode = request.UseTools ? ChatToolMode.Auto : ChatToolMode.None,
+Temperature = 0,
+MaxOutputTokens = 512
+}),
+cancellationToken: ct);
+
+return new AgentChatResponse
+{
+Message = response.ToString(),
+ConversationId = request.ConversationId ?? Guid.NewGuid().ToString("N"),
+IsConfigured = true
+};
+}
 
     public async Task<AgentSession> CreateSessionAsync(CancellationToken ct = default)
     {
@@ -186,15 +219,13 @@ group.MapPost("/agent/{agent-route}/chat", async (
     I{Agent}Agent agent,
     CancellationToken ct) =>
 {
-    var session = await agent.CreateSessionAsync(ct);
-    var response = await agent.RunAsync(request.Message, session, ct);
+var session = await agent.CreateSessionAsync(ct);
+var response = await agent.RunAsync(request, session, ct);
 
-    return TypedResults.Ok(new AgentChatResponse
-    {
-        Messages = response.Messages.Select(m => m.Text).ToList(),
-        SessionId = session.ToString()
-    });
+return TypedResults.Ok(response);
 })
 .WithName("Chat{Agent}")
 .WithSummary("Send a message to the {Agent} agent");
 ```
+
+Smoke tests that should not call tools send `{ "useTools": false }` and assert the no-tool response contract. Tool-calling tests must opt in with `{ "useTools": true }`, use a real timeout budget (`[Timeout]` plus cancellation token / HTTP timeout), and assert a tool-visible effect or DTO field. Prompt text is not control flow.

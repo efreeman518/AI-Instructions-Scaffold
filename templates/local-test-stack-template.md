@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Generates** | `eng/test/start-local-test-stack.ps1`, `.vscode/tasks.json` entries (optional) |
+| **Generates** | `eng/test/start-local-test-stack.ps1`, `src/Test/Test.Mobile/run-mobile-tests.ps1` when mobile exists, `.vscode/tasks.json` entries (optional) |
 | **Requires** | Aspire AppHost; Uno WASM and/or Android targets when those test tiers are generated |
 | **Phase** | 5c/5d - generate once the host(s) and the `WasmUI` / `Test.Mobile` / `Test.Aspire` tiers exist |
 | **Protocol** | Operator tooling. The script mutates **process** environment only - it never edits machine/user PATH. |
@@ -15,7 +15,7 @@ This script and its `.vscode/tasks.json` entries are **derived from the early Ph
 
 ## Why one script
 
-WASM, mobile, and Aspire tests each need a running local stack (built artifacts, a started AppHost, browsers, an emulator, Appium). Scattering those steps across class comments means every developer re-derives them. Generate a single re-runnable bootstrap that brings the stack up, verifies prerequisites, and prints the exact endpoints and rerun commands. Run it once per session; the heavy test tiers then self-skip (`Inconclusive`) only if something it could not provide is still missing.
+WASM and Aspire tests need a running local stack (built artifacts, a started AppHost, browsers). Mobile needs a dedicated runner because Android build, emulator readiness, Appium readiness, enable flag, `dotnet test`, and TRX output must stay in one fail-fast lane. Generate `eng/test/start-local-test-stack.ps1` for Aspire/WASM and `src/Test/Test.Mobile/run-mobile-tests.ps1` for mobile. Print exact endpoints and rerun commands. Default heavy tiers self-skip (`Inconclusive`) only when prerequisites are missing; explicit mobile runner lanes fail fast when mobile prerequisites are broken.
 
 **Hard rule:** process-env only. The script sets `$env:PATH`, `ANDROID_HOME`, endpoint vars for the current process tree (and child test runs it launches). It must not call `setx` or edit machine/user PATH. A developer who never runs the script must still be able to build and run the app.
 
@@ -36,8 +36,7 @@ param(
     [switch]$SkipWasm,
     [switch]$SkipMobile,
     [int]$GatewayPort = 8080,
-    [string]$WasmUrl = $env:{APP}_WASM_BASE_URL,
-    [string]$Avd = $env:{APP}_ANDROID_AVD,
+ [string]$WasmUrl = $env:{APP}_WASM_BASE_URL,
     [int]$AspireStartupTimeoutSeconds = 900
 )
 $ErrorActionPreference = 'Stop'
@@ -153,50 +152,11 @@ if (-not $SkipWasm) {
     }
 }
 
-# 5-9. Android: discover SDK, mutate PROCESS PATH, verify Appium, start emulator, wait for boot.
+# 5. Mobile is owned by src/Test/Test.Mobile/run-mobile-tests.ps1.
 if (-not $SkipMobile) {
-    Step 'Resolving Android SDK'
-    $sdk = @($env:ANDROID_HOME, $env:ANDROID_SDK_ROOT,
-             'C:\Program Files (x86)\Android\android-sdk',
-             (Join-Path $env:LOCALAPPDATA 'Android\Sdk')) |
-           Where-Object { $_ -and (Test-Path (Join-Path $_ 'platform-tools\adb.exe')) } |
-           Select-Object -First 1
-    if (-not $sdk) { Warn 'Android SDK not found - Mobile tests will mark Inconclusive'; }
-    else {
-        $env:ANDROID_HOME = $sdk; $env:ANDROID_SDK_ROOT = $sdk
-        # PROCESS PATH ONLY - never setx.
-        $env:PATH = "$sdk\platform-tools;$sdk\emulator;$env:PATH"
-
-        Step 'Verifying Appium uiautomator2'
-        if (-not ((appium driver list --installed 2>$null) -match 'uiautomator2')) { appium driver install uiautomator2 }
-
-        Step 'Ensuring Appium server (127.0.0.1:4723)'
-        try { $null = Invoke-WebRequest 'http://127.0.0.1:4723/status' -TimeoutSec 3 }
-        # Appium 3: --relaxed-security is gone; scope the adb_shell feature uiautomator2 needs.
-        catch { Start-Process pwsh -ArgumentList '-NoProfile','-Command','appium --address 127.0.0.1 --port 4723 --allow-insecure=uiautomator2:adb_shell' | Out-Null }
-
-        Step 'Ensuring an online emulator'
-        if (-not ((adb devices) -match 'device$')) {
-            $avd = if ($Avd) { $Avd } else { (emulator -list-avds | Select-Object -First 1) }
-            if ($avd) {
-                Start-Process emulator -ArgumentList "-avd",$avd | Out-Null
-                Step "Booting $avd - waiting for sys.boot_completed"
-                adb wait-for-device
-                $deadline = (Get-Date).AddMinutes(5)
-                while ((Get-Date) -lt $deadline) {
-                    if ((adb shell getprop sys.boot_completed 2>$null).Trim() -eq '1') { break }
-                    Start-Sleep -Seconds 3
-                }
-                # sys.boot_completed=1 can precede package-manager readiness; poll `pm` before installing.
-                Step 'Waiting for package manager'
-                $deadline = (Get-Date).AddMinutes(2)
-                while ((Get-Date) -lt $deadline) {
-                    if ((adb shell cmd package list packages 2>$null) -match 'package:') { break }
-                    Start-Sleep -Seconds 2
-                }
-            } else { Warn 'no AVD found - create one in Android Studio' }
-        }
-    }
+    Step 'Mobile runner'
+    Write-Host 'Run: powershell -NoProfile -File src/Test/Test.Mobile/run-mobile-tests.ps1'
+    Write-Host 'Use -SkipBuild after the APK has already been built by that runner.'
 }
 
 # 10. Print endpoints and manual rerun commands.
@@ -204,34 +164,34 @@ Step 'Stack ready'
 Write-Host @"
   Gateway:  https://localhost:$GatewayPort
   WASM UI:  $(if ($WasmUrl) { $WasmUrl } else { 'resolved by WasmUI fixture from Aspire named endpoint' })
-  Appium:   http://127.0.0.1:4723  (Android gateway from emulator: http://10.0.2.2:$GatewayPort/)
+  Mobile:   use src/Test/Test.Mobile/run-mobile-tests.ps1 (Android gateway from emulator: http://10.0.2.2:$GatewayPort/)
 
   Rerun individual tiers:
     dotnet test .\{SolutionName}.slnx --filter "TestCategory!=Load"
     dotnet test src/Test/Test.Aspire/Test.Aspire.csproj           --filter TestCategory=Aspire
     dotnet test src/Test/Test.PlaywrightUI/Test.PlaywrightUI.csproj --filter TestCategory=WasmUI
-    dotnet test src/Test/Test.Mobile/Test.Mobile.csproj           --filter TestCategory=MobileUI
+    powershell -NoProfile -File src/Test/Test.Mobile/run-mobile-tests.ps1 -SkipBuild
 "@ -ForegroundColor Green
 ```
 
-> For standalone manual browser runs, set `{APP}_WASM_BASE_URL` to the wrapper host URL from `launchSettings.json` (the Uno default in this scaffold is `https://localhost:7069`; see [../skills/ui-uno-platforms.md](../skills/ui-uno-platforms.md) Port Exclusion). AppHost-backed `WasmUI` tests do not use this fixed port; they resolve the UI resource URL from Aspire named endpoints. Pin the gateway port only for Android emulator `10.0.2.2:<port>` usage.
+> For standalone manual browser runs, set `{APP}_WASM_BASE_URL` to the actual wrapper host URL from `launchSettings.json` or process output. AppHost-backed `WasmUI` tests do not use fixed localhost fallbacks; they resolve the UI resource URL from Aspire named endpoints. Pin the gateway port only for Android emulator `10.0.2.2:<port>` usage.
 
 ## VS Code tasks
 
-Generate these into `.vscode/tasks.json` so Test Explorer users have one-click stack control. Each task is a thin wrapper over the script or a single `dotnet test`/build command:
+Generate into `.vscode/tasks.json` so Test Explorer users have one-click stack control. WASM tasks call the C# MSTest wrapper, which starts AppHost and runs bounded TypeScript one project per child process; never call `npm`, `npx`, or unbounded `playwright test` directly from VS Code tasks. Each mobile task calls the generated runner, not raw `dotnet test`:
 
 ```jsonc
 {
   "version": "2.0.0",
   "tasks": [
     { "label": "Start local test stack", "type": "shell", "command": "pwsh -File eng/test/start-local-test-stack.ps1" },
-    { "label": "Build WASM",            "type": "shell", "command": "pwsh -File eng/test/start-local-test-stack.ps1 -SkipAspire -SkipMobile" },
+    { "label": "Build WASM", "type": "shell", "command": "pwsh -File eng/test/start-local-test-stack.ps1 -SkipAspire -SkipMobile" },
     { "label": "Install Playwright Chromium", "type": "shell", "command": "pwsh src/Test/Test.PlaywrightUI/bin/Debug/net{X}.0/playwright.ps1 install chromium" },
-    { "label": "Build Android APK",     "type": "shell", "command": "dotnet restore src/UI/{Project}.Uno/{Project}.Uno.csproj -p:BuildAllUnoTargets=true; dotnet build src/UI/{Project}.Uno/{Project}.Uno.csproj -p:TargetFrameworkOverride=net{X}.0-android -p:EnableUnoMobileTargets=true --no-restore -m:1" },
-    { "label": "Test: all non-load",    "type": "shell", "command": "dotnet test .\\{SolutionName}.slnx --filter \"TestCategory!=Load\"", "group": { "kind": "test", "isDefault": true } },
-    { "label": "Test: Aspire",          "type": "shell", "command": "dotnet test src/Test/Test.Aspire/Test.Aspire.csproj --filter TestCategory=Aspire" },
-    { "label": "Test: WASM",            "type": "shell", "command": "dotnet test src/Test/Test.PlaywrightUI/Test.PlaywrightUI.csproj --filter TestCategory=WasmUI" },
-    { "label": "Test: Mobile",          "type": "shell", "command": "dotnet test src/Test/Test.Mobile/Test.Mobile.csproj --filter TestCategory=MobileUI" }
+    { "label": "Test: Mobile with build", "type": "shell", "command": "powershell -NoProfile -File src/Test/Test.Mobile/run-mobile-tests.ps1" },
+    { "label": "Test: all non-load", "type": "shell", "command": "dotnet test .\\{SolutionName}.slnx --filter \"TestCategory!=Load\"", "group": { "kind": "test", "isDefault": true } },
+    { "label": "Test: Aspire", "type": "shell", "command": "dotnet test src/Test/Test.Aspire/Test.Aspire.csproj --filter TestCategory=Aspire" },
+    { "label": "Test: WASM", "type": "shell", "command": "dotnet test src/Test/Test.PlaywrightUI/Test.PlaywrightUI.csproj --filter TestCategory=WasmUI" },
+    { "label": "Test: Mobile", "type": "shell", "command": "powershell -NoProfile -File src/Test/Test.Mobile/run-mobile-tests.ps1 -SkipBuild" }
   ]
 }
 ```
@@ -239,9 +199,8 @@ Generate these into `.vscode/tasks.json` so Test Explorer users have one-click s
 ## Verification
 
 - [ ] `eng/test/start-local-test-stack.ps1` exists and runs end-to-end on a clean session.
-- [ ] The script mutates **process** env only (no `setx`, no machine/user PATH edits).
-- [ ] Android SDK is resolved from `ANDROID_HOME` / `ANDROID_SDK_ROOT` / Program Files / `%LOCALAPPDATA%\Android\Sdk`, and `platform-tools` + `emulator` are added to the process PATH.
-- [ ] Appium `uiautomator2` is verified/installed and the server is started if not already listening on `127.0.0.1:4723`.
-- [ ] After first boot, the script waits for package-manager readiness, not just `sys.boot_completed=1`.
-- [ ] The script prints exact endpoints and per-tier rerun commands.
-- [ ] `.vscode/tasks.json` entries exist for: start stack, build WASM, install Playwright, build APK, run non-load, run Aspire/WASM/Mobile.
+- [ ] script mutates **process** env only (no `setx`, no machine/user PATH edits).
+- [ ] `src/Test/Test.Mobile/run-mobile-tests.ps1` exists when mobile tier exists.
+- [ ] Mobile runner resolves Android SDK, prepares process PATH, restores/builds Android with `-p:BuildAllUnoTargets=true`, verifies UiAutomator2/Appium, waits emulator + package manager readiness, sets `{APP}_MOBILE_TESTS_ENABLED=true`, runs `dotnet test`, and writes TRX.
+- [ ] script prints exact endpoints per-tier rerun commands, including mobile runner command.
+- [ ] `.vscode/tasks.json` entries exist for: start stack, build WASM, install Playwright, run non-load, run Aspire/WASM, run Mobile via `run-mobile-tests.ps1`.

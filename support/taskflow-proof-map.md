@@ -51,9 +51,9 @@ Load this file on demand. Keep it out of the default phase context.
 | Mapper parity (consolidated) | `src/Test/Test.Unit/Mappers/MapperProjectionParityTests.cs` | Single class pinning compile-projection / `ToDto` agreement for every mapper + inlined-child parity for aggregate roots + owned-type flattening parity. |
 | Phase 5d quality (.NET test projects) | `src/Test/Test.Unit`, `src/Test/Test.Integration`, `src/Test/Test.Aspire`, `src/Test/Test.Endpoints`, `src/Test/Test.E2E`, `src/Test/Test.Architecture`, `src/Test/Test.Load`, `src/Test/Test.Benchmarks`, `src/Test/Test.Mutation`, `src/Test/Test.Support` | `dotnet test`-runnable test project layout, Stryker.NET mutation samples, and quality-gate coverage. |
 | Phase 5d browser UI tests | `src/Test/Test.PlaywrightUI` | TaskFlow uses a Node.js Playwright suite (`npm test`, **not** a `dotnet test` target), including a dedicated React project with env-driven base URL for Aspire's dynamic Vite port. **Scaffold output may diverge:** C# MSTest + `Microsoft.Playwright.MSTest` remains valid; consult TaskFlow for hosted-stack orchestration shape, test data isolation, dynamic base URL, and CRUD/shell coverage. |
-| Phase 5d mobile UI tests | `src/Test/Test.Mobile`, `src/UI/TaskFlow.Uno/TaskFlow.Uno.csproj` | MSTest + Appium Android smoke tests are opt-in, use a Debug Uno Android package with mocks first, and require `dotnet restore src/UI/TaskFlow.Uno/TaskFlow.Uno.csproj -p:BuildAllUnoTargets=true` before the `TargetFrameworkOverride=net10.0-android --no-restore` build so Android Skia runtime packages are in the asset graph. |
+| Phase 5d mobile UI tests | `src/Test/Test.Mobile`, `src/Test/Test.Mobile/run-mobile-tests.ps1`, `src/UI/TaskFlow.Uno/TaskFlow.Uno.csproj` | MSTest + Appium Android smoke tests are opt-in. The runner owns Android restore/build with `-p:BuildAllUnoTargets=true`, emulator readiness, Appium readiness, `TASKFLOW_MOBILE_TESTS_ENABLED=true`, `dotnet test`, and TRX output. Default `dotnet test` remains dependency-free inconclusive. Explicit runner lane fails fast on missing/broken APK, emulator, Appium, or UiAutomator2. |
 | Phase 5e auth | `AuthConfiguration`, `ScaffoldAuthHandler`, gateway claims forwarding flow | Scaffold auth, Entra-ready wiring, and API claim enrichment path. |
-| Phase 5e AI | `src/Infrastructure/TaskFlow.Infrastructure.AI`, commented AI resources in AppHost | AI service placement, deployment-only stance, and config-driven activation. |
+| Phase 5e AI | `src/Infrastructure/TaskFlow.Infrastructure.AI`, `src/Host/TaskFlow.Bootstrapper/Registration/RegisterServices.AiChatClient.cs`, `src/Test/Test.Aspire/AiFoundryLiveSmokeTests.cs`, `src/Test/Test.FoundryLocal/FoundryLocalLiveSmokeTests.cs` | Azure Foundry -> Foundry Local -> no-op provider order, `/api/v1/ai/status`, split Azure HTTP mesh smoke vs RID-bound Foundry Local live lane, no-op fallback contract. |
 
 ### Uno MVUX Presentation Handoff
 
@@ -111,6 +111,8 @@ Use these links first. If a branch or path has moved, search inside the same rep
 ---
 
 ## High-Value Proof Checks
+
+- **Current reference proof snapshot:** `src\Test\Test.Mobile\run-mobile-tests.ps1 -SkipBuild` reported 3/3 mobile tests passed on this machine; default `dotnet test src\Test\Test.Mobile\Test.Mobile.csproj --no-build -m:1 --filter TestCategory=MobileUI` stayed dependency-free inconclusive; `dotnet test src\TaskFlow.slnx --no-build -m:1` reported 410 passed, 0 warnings; Foundry Local live lane passed runtime installed; Playwright UI lane passed Uno canvas-first coverage.
 
 - **Multi-tenant proof:** TaskFlow demonstrates full multi-tenancy - `ITenantEntity<TenantId>` (typed domain ID), `ITenantBoundaryValidator`, `ValidationHelper`, `TenantBoundaryLoggingExtensions`, tenant query filters, tenant stamping, and global-admin bypass. Not all scaffolds require multi-tenancy.
 - **Service pattern proof:** TaskFlow services use `BuildResponse` helper, `ErrorConstants.ERROR_ITEM_NOTFOUND`, `nameof(Entity)`, `[LoggerMessage]` source-gen logging, and `DefaultRequest<T>`/`DefaultResponse<T>` as `record` types.
