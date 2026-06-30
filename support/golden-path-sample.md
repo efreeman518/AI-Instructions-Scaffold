@@ -10,7 +10,7 @@ The goal is not demo breadth. The goal is repeatable proof that the instructions
 
 ```text
 Scaffold a WorkBoard app for managing work projects and work items.
-Projects have a name, description, status, and due date.
+Projects have a name, description, status, start date, and due date.
 Work items belong to one project and have title, details, priority, status, due date, and completion date.
 Users need CRUD and search for both entities.
 Use row-level multi-tenancy.
@@ -31,6 +31,22 @@ multiTenant: true
 tenantIsolation: row-level
 authProvider: EntraID
 authScenario: enterprise
+valueObjects:
+  - name: ProjectSchedule
+    description: Project start and due dates
+    fields:
+      - name: StartDate
+        kind: date
+        required: false
+      - name: DueDate
+        kind: date
+        required: false
+    rules:
+      - name: DueDateAfterStartDate
+        condition: DueDate is absent or after StartDate
+    usedBy:
+      - entity: Project
+        property: Schedule
 entities:
   - name: Project
     description: Work container owned by one tenant
@@ -45,8 +61,9 @@ entities:
         kind: enum
         required: true
         values: [Draft, Active, Completed, Archived]
-      - name: DueDate
-        kind: date
+      - name: Schedule
+        kind: value_object
+        valueObject: ProjectSchedule
     children:
       - name: WorkItems
         entity: WorkItem
@@ -104,6 +121,7 @@ workflows: []
 |---|---|---|---|
 | `Project` | aggregate | Tenant-owned work container. | Use `Project` in source names. |
 | `WorkItem` | entity | Trackable item of work under a project. | Use `WorkItem`; avoid `Task`. |
+| `ProjectSchedule` | value-object | Project start and due date window. | Use as domain value object; flatten fields in DTOs. |
 | `Draft` | state | Project has not started. | Use as project status. |
 | `Active` | state | Project is in active use. | Use as project status. |
 | `Completed` | state | Project work is complete. | Use as project status. |
@@ -118,6 +136,12 @@ workflows: []
 | Rejected Term | Use Instead | Reason |
 |---|---|---|
 | `Task` | `WorkItem` | Avoid .NET type collision. |
+
+## Value Objects
+
+| Value Object | Meaning | Fields | Used By | Equality Boundary | Validation/Behavior |
+|---|---|---|---|---|---|
+| `ProjectSchedule` | Project start and due date window. | `StartDate`, `DueDate` | `Project.Schedule` | both fields | `DueDateAfterStartDate` |
 ```
 
 ### `.scaffold/DESIGN-DECISIONS.md`
@@ -182,6 +206,8 @@ entities:
       - name: Status
         type: ProjectStatus
         required: true
+      - name: StartDate
+        type: DateTimeOffset?
       - name: DueDate
         type: DateTimeOffset?
     children:

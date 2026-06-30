@@ -47,9 +47,9 @@ For a vocabulary gap that is not yet ready to become a row above, drop an inline
 
 ## Value Objects
 
-| Value Object | Meaning | Used By | Equality Boundary |
-|---|---|---|---|
-| `{{ValueObject}}` | _Business concept._ | `{{Entity}}` | _Fields that define identity._ |
+| Value Object | Meaning | Fields | Used By | Equality Boundary | Validation/Behavior |
+|---|---|---|---|---|---|
+| `{{ValueObject}}` | _Business concept._ | `_Field list._` | `{{Entity}}.{{Property}}` | _Fields that define equality._ | _Rules or behavior justifying non-primitive model._ |
 
 ## Roles And Actors
 

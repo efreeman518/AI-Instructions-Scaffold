@@ -38,9 +38,9 @@ Companion files:
 
 Use central package management in `Directory.Packages.props`.
 
-### Testable Core Library Packages
+### Testable UI Library Packages
 
-The `{Project}.Uno.Core` project is a plain `Microsoft.NET.Sdk` library, not an `Uno.Sdk` head. It must reference the packages needed to compile MVUX presentation records and navigation contracts directly through central package management:
+The `{Project}.Uno.Presentation` project is a plain `Microsoft.NET.Sdk` library, not an `Uno.Sdk` head. It must reference the packages needed to compile MVUX presentation records and navigation contracts directly through central package management:
 
 ```xml
 <PackageReference Include="Uno.WinUI" />
@@ -137,27 +137,28 @@ public class Program
 #endif
 ```
 
-5. **Global using for ImmutableList**: MVUX `IListFeed<T>` requires `IImmutableList<T>`. Add `<Using Include="System.Collections.Immutable" />` to the `{Project}.Uno.Core` csproj where the MVUX records live.
+5. **Global using for ImmutableList**: MVUX `IListFeed<T>` requires `IImmutableList<T>`. Add `<Using Include="System.Collections.Immutable" />` to the `{Project}.Uno.Presentation` csproj where the MVUX records live.
 6. **Aspire AppHost reference**: Do not add a direct Aspire `AddProject` reference to the Uno SDK project. Host browserwasm through a small ASP.NET Core wrapper project under `src/Host/{Project}.Uno.WasmHost/`, then register that wrapper in AppHost.
 
 ### Testable Core Library
 
-Extract `Presentation/` (MVUX records), `Business/` (Models, Services), and `Client/` into a separate `{Project}.Uno.Core` class library targeting plain single-TFM (the same TFM the rest of the solution targets). This allows unit testing without the Uno SDK.
+Extract `Business/` (Models, Services) and `Client/` into `{Project}.Uno.Core`; extract `Presentation/` (MVUX records, UI state/feed logic) into `{Project}.Uno.Presentation`. Both projects target plain single-TFM `Microsoft.NET.Sdk` (the same TFM the rest of the solution targets). This allows `Test.UI` coverage without the Uno SDK.
 
 ```text
 src/UI/{Project}.Uno.Core/          <- single-TFM class lib (testable)
-  Presentation/                     <- MVUX models, all in one assembly
   Business/Models/
   Business/Services/
   Client/
+src/UI/{Project}.Uno.Presentation/  <- single-TFM class lib (testable)
+  Presentation/                     <- MVUX models, all in one assembly
 src/UI/{Project}.Uno/               <- Uno.Sdk (browserwasm, android, ios)
   App.xaml, App.xaml.cs, App.xaml.host.cs
   Views/                     <- XAML pages
-  references {Project}.Uno.Core
+  references {Project}.Uno.Presentation
 src/Host/{Project}.Uno.WasmHost/    <- ASP.NET Core wrapper for Aspire browserwasm hosting
 ```
 
-After extracting, **delete** the original files from the Uno project - do not leave duplicates. All MVUX partial records for one app must live in `{Project}.Uno.Core`; splitting them across the core library and the app head can make the MVUX generators emit duplicate `BindableXxx` wrapper types.
+After extracting, **delete** the original files from the Uno project - do not leave duplicates. All MVUX partial records for one app must live in `{Project}.Uno.Presentation`; splitting them across presentation/core/app-head projects can make the MVUX generators emit duplicate `BindableXxx` wrapper types.
 
 ## App.xaml Rules
 
@@ -273,7 +274,7 @@ public sealed partial class Shell : UserControl, IContentControlProvider
 ```csharp
 using Uno.Extensions.Navigation;
 
-namespace {Project}.Uno.Core.Presentation;
+namespace {Project}.Uno.Presentation.Presentation;
 
 public partial record ShellModel
 {

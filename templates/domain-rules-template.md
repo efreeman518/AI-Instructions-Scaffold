@@ -247,6 +247,7 @@ public async Task<Result> DeactivateAsync(Guid id, CancellationToken ct = defaul
 ## Notes
 
 - Rules should be **pure functions** - no I/O, no database access, no service calls.
+- Rules return `DomainResult` or boolean rule outcomes for expected business failures. Do not throw custom domain exceptions or use catch-and-convert flow for normal validation.
 - Keep rules co-located in `Domain.Model/Rules/` - they depend only on `Domain.Model` and `Domain.Shared`.
 - Rules that require external data (e.g., uniqueness checks) belong in the **Application.Services** layer, not in domain rules.
 - Keep generated rule files in `src/Domain/{Project}.Domain.Model/Rules/` for consistency with solution structure.

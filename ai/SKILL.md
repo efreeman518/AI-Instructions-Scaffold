@@ -109,7 +109,7 @@ Use templates for generated artifacts and keep naming aligned with [placeholder-
 
 - Backend templates: entity/config/repository/dto/mapper/service/endpoint/rules/message-handler/structure-validator/exception-handler
 - UI templates: MVUX model/XAML page/UI model/UI service; React UI uses [../skills/ui-react.md](../skills/ui-react.md) until dedicated React templates exist
-- Tests: load only the phase-specific split test template for the current sub-phase; use `templates/test-templates.md` only as an on-demand reference. Uno MVUX presentation tests use `test-templates-presentation` in Phase 5c.
+- Tests: load only the phase-specific split test template for the current sub-phase; use `templates/test-templates.md` only as an on-demand reference. Uno MVUX presentation tests use `test-templates-presentation` in Phase 5c and generate into `Test.UI`, not `Test.Unit`.
 
 ## Vertical Slice Shortcut
 
@@ -149,7 +149,7 @@ A scaffolded solution is **not complete** until all of the following hold. Treat
 
 1. **`dotnet build` is green on the full solution** (every project under `src/`, including all test projects). No warnings as errors that the scaffold introduces; warnings inherited from the package strategy are acceptable but flagged in `HANDOFF.md`.
 2. **`dotnet test` is green for every test category the scaffold produces.** Specifically:
-   - `Unit`, `Endpoint`, `Architecture`, `Mapper` - all pass.
+   - `Unit`, `UI`, `Presentation`, `Endpoint`, `Architecture`, `Mapper` - all pass.
    - `Integration`, `E2E`, `PlaywrightUI`, `Load`, `Benchmark`, `Mutation` - pass when their backing infrastructure/tooling is available; otherwise the affected test methods (not whole assemblies) must mark themselves `Assert.Inconclusive` with a reason, or carry `[Ignore("Reason: <external dep not yet wired>")]`. A test assembly that aborts in `[AssemblyInitialize]` because infrastructure failed to start is **not** acceptable - apply the assembly-initializer safety pattern from [../skills/testing.md](../skills/testing.md) section Assembly Initializer Safety.
    - No flaky-pass: a green run must be reproducible. If a test passes intermittently, treat it as failed.
 3. **The Aspire AppHost starts cleanly.** `dotnet run --project Host/Aspire/AppHost` reaches the dashboard with every registered resource in the **Running** state and no exceptions in resource logs. Health probes (`/healthz`, `/readyz`) return 200 on every API/host project once each declares itself ready. External dependencies in `emulator`, `lazy-optional`, `no-op stub`, or `deployment-only` mode count as healthy when their stub/emulator path responds - live cloud credentials are not required.

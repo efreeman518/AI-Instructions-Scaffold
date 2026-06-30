@@ -95,6 +95,7 @@ public interface ITenantEntityDto
 - Audit fields (CreatedDate, etc.) may be included as read-only properties on response DTOs via `IEntityBaseDto` -- the `AuditInterceptor` on the DbContext manages write-side audit data
 - Child collections default to empty list -- never null
 - Use `{Entity}Flags` (flags enum) instead of a separate Status enum
+- Value objects are flattened into primitive DTO fields by default. Do not expose domain-owned value types or generate separate value-object DTO contracts unless an explicit boundary decision requires it.
 
 ## Mappers
 
@@ -141,6 +142,7 @@ public static class {Entity}Mapper
     // ===== DTO -> Entity (factory, returns DomainResult) =====
     public static DomainResult<{Entity}> ToEntity(this {Entity}Dto dto, Guid tenantId)
     {
+        // Create value objects from flattened DTO fields here, then pass successful values into the factory.
         return {Entity}.Create(tenantId, dto.Name);
     }
 

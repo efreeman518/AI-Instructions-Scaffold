@@ -21,7 +21,8 @@ Use [../templates/ubiquitous-language-template.md](../templates/ubiquitous-langu
 - Ask questions in small batches. Prefer 3-7 related questions per branch.
 - After each branch, summarize the current understanding and ask the developer to correct it.
 - Track every non-obvious choice in `.scaffold/DESIGN-DECISIONS.md`.
-- Track every accepted domain term, rejected synonym, state, event, action, role, and policy term in `.scaffold/UBIQUITOUS-LANGUAGE.md`.
+- Track every accepted domain term, rejected synonym, state, event, action, role, policy term, and value object in `.scaffold/UBIQUITOUS-LANGUAGE.md`.
+- Model the domain before persistence, API DTOs, or UI screens. Ask what business action is allowed under what conditions before asking how it is stored or transported.
 - Resolve dependent decisions in order. Do not finalize a child decision when its parent decision is open.
 - Use canonical defaults only where the instruction set defines them. State the default and record it.
 - If a decision is not needed for current scaffold correctness, mark it `deferred` with the phase that must revisit it.
@@ -45,7 +46,7 @@ Use these categories when deciding what to clarify:
 |---|---|---|
 | Vocabulary | synonym conflict, overloaded term, abbreviation | record accepted term and rejected synonym |
 | Actor and permission | unclear role, cross-tenant privilege, admin exception | ask before resource or endpoint planning |
-| Entity boundary | aggregate root, owned child, reference, value object | ask before Phase 2 resource mapping |
+| Entity boundary | aggregate root, owned child, reference, value object | ask before Phase 2 resource mapping and before Phase 4 contracts |
 | Lifecycle | state names, allowed transitions, terminal state | ask before rules/tests |
 | Business rule | invariant, quota, conflict resolution, validation | ask before domain test planning |
 | Workflow | async reaction, compensation, scheduled process | defer only with `Needed Before` phase |
@@ -63,6 +64,7 @@ Walk these branches in order. Revisit earlier branches when a later answer chang
 | Actors and roles | human roles, system actors, permissions vocabulary | purpose |
 | Ubiquitous language | accepted terms, rejected synonyms, naming conflicts | purpose, actors |
 | Entities and aggregates | entities, ownership, aggregate roots, tenant scope | language |
+| Value objects | meaningful values, validation, equality, primitive-confusion risks | entities |
 | Relationships | ownership, reference, self-reference, many-to-many, polymorphic ownership | entities |
 | Lifecycle | states, transitions, commands/actions, terminal states | entities, relationships |
 | Rules and policies | invariants, policy matrices, quotas, conflict handling | lifecycle |
@@ -124,6 +126,7 @@ Before writing Phase 1 outputs, confirm:
 - [ ] Each branch is `confirmed`, `defaulted`, or `deferred`.
 - [ ] `applicationStyle` and `projectNamePrefix` are confirmed (or explicitly defaulted) and recorded in `.scaffold/DESIGN-DECISIONS.md`.
 - [ ] Every entity, state, event, command/action, role, policy, and value object has a language entry.
+- [ ] Each value object is justified by business meaning, validation, behavior, equality, or dangerous primitive confusion; otherwise keep primitive property.
 - [ ] Every rejected synonym or ambiguous term is recorded.
 - [ ] Every non-obvious design choice has a decision record with dependencies.
 - [ ] No open decision blocks Phase 2 resource mapping.

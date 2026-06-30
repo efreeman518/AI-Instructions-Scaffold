@@ -156,7 +156,7 @@ dotnet ef migrations add Add{Entity} --project src/Infrastructure/{Project}.Infr
 | `src/Test/Test.Unit/Repositories/{Entity}RepositoryQueryTests.cs` | [test-templates-repository.md](../templates/test-templates-repository.md) | all |
 | `src/Test/Test.Unit/Mappers/{Entity}MapperTests.cs` | [test-templates-service.md](../templates/test-templates-service.md) | all |
 | `src/Test/Test.Unit/Mappers/MapperProjectionParityTests.cs` (add a method per entity) | [test-templates-service.md](../templates/test-templates-service.md) | all |
-| `src/Test/Test.Unit/Presentation/{Entity}PresentationModelTests.cs` | [test-templates-presentation.md](../templates/test-templates-presentation.md) | if Uno UI enabled |
+| `src/Test/Test.UI/Presentation/{Entity}PresentationModelTests.cs` | [test-templates-presentation.md](../templates/test-templates-presentation.md) | if UI model/presentation coverage exists |
 | `src/Test/Test.Endpoints/Endpoints/{Entity}EndpointsTests.cs` | [test-templates-endpoint.md](../templates/test-templates-endpoint.md) | all |
 | `src/Test/Test.Unit/Cqrs/{Entity}CqrsValidationTests.cs` | [test-templates-cqrs.md](../templates/test-templates-cqrs.md) | if cqrs or switch |
 | `src/Test/Test.Integration/{Entity}RepositoryIntegrationTests.cs` | [test-templates-integration.md](../templates/test-templates-integration.md) | balanced+ |
@@ -180,11 +180,11 @@ Required UI artifacts:
 - `src/UI/{Project}.Uno.Core/Business/Models/{Entity}.cs`
 - `src/UI/{Project}.Uno.Core/Business/Services/{Feature}/I{Entity}Service.cs`
 - `src/UI/{Project}.Uno.Core/Business/Services/{Feature}/{Entity}Service.cs`
-- `src/UI/{Project}.Uno.Core/Presentation/{Entity}ListModel.cs`
-- `src/UI/{Project}.Uno.Core/Presentation/{Entity}PageModel.cs`
+- `src/UI/{Project}.Uno.Presentation/Presentation/{Entity}ListModel.cs`
+- `src/UI/{Project}.Uno.Presentation/Presentation/{Entity}PageModel.cs`
 - `src/UI/{Project}.Uno/Views/{Entity}ListPage.xaml` + `.xaml.cs`
 - `src/UI/{Project}.Uno/Views/{Entity}Page.xaml` + `.xaml.cs`
-- `src/Test/Test.Unit/Presentation/{Entity}PresentationModelTests.cs`
+- `src/Test/Test.UI/Presentation/{Entity}PresentationModelTests.cs`
 
 Also update `App.xaml.host.cs`:
 

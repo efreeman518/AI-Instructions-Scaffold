@@ -16,13 +16,15 @@ Uno renders WASM two ways:
 - **Managed/native DOM renderer** - each control maps to a DOM element carrying `xamltype` / `xamlautomationid`. The coordinate-click + `querySelectorAll` strategy in [../skills/ui-uno-platforms.md](../skills/ui-uno-platforms.md) (Playwright Testing Against Uno WASM) works here.
 - **Skia canvas renderer** - the whole app paints into one `<canvas>`. There are **no per-control DOM nodes**. `querySelectorAll("p")`, `getBoundingClientRect()` on text, and DOM/role selectors all return nothing. Coordinate-clicking by scanning DOM text is impossible.
 
-Skia tests must not use `getByText`, role selectors, labels, or body text for app text. Functional assertions must prefer app-owned bridge state such as `window.__AppTestState` / `globalThis.__{app}TestState`. If the bridge does not exist yet, limit proof to canvas paint: visible size, nonblank fingerprint/pixel hash, stable chrome click, and fingerprint delta. Pixel-only tests are smoke only; they do not prove CRUD, nested children, or persistence correctness. Full CRUD stays in DOM-capable UIs unless Uno exposes reliable bridge state for every asserted transition.
+Skia tests must not use `getByText`, role selectors, labels, or body text for app text. Functional assertions must prefer app-owned bridge state such as `window.__AppTestState` / `globalThis.__{app}TestState`. If the bridge does not exist yet, limit proof to canvas paint: visible size, nonblank fingerprint/pixel hash, stable chrome click, and fingerprint delta. Pixel-only tests are smoke only; name specs/classes as smoke and do not claim CRUD, nested children, or persistence correctness. Full CRUD stays in DOM-capable UIs unless Uno exposes reliable bridge state for every asserted transition.
 
 If the app paints to a Skia canvas, DOM selectors are not "flaky" - they are structurally absent. Use the bridge below: the app publishes its own state to `globalThis`, and Playwright waits on **state**, not DOM.
 
 Hard rule: a Skia-canvas Uno WASM test that uses `getByText`, role selectors, labels, or DOM text assertions is wrong. The browser DOM cannot expose text painted inside the canvas.
 
 Detect the renderer once: open the WASM app, run `document.querySelectorAll('[xamltype]').length` in the console. `0` with a single `<canvas>` present means Skia - use the bridge. Also assert at least one rendered canvas larger than 100x100; that proves the app painted something even though text is not in the DOM.
+
+Name pixel-only specs/classes as smoke. They must not use CRUD, regression, workflow, or persistence wording unless bridge state proves each asserted transition.
 
 ## Bridge contract
 
@@ -218,7 +220,7 @@ Browser diagnostics captured by the harness:
 
 Node/TypeScript runner rules:
 
-- Use `@playwright/test` version `1.61.1` or newer. Older versions can emit Node 26 `DEP0205 module.register()` deprecation noise that hides useful failure output.
+- Use latest stable `@playwright/test`. Older versions can emit Node 26 `DEP0205 module.register()` deprecation noise that hides useful failure output.
 - Run one TypeScript project per child process (`node .../cli.js test --project <name>`). Do not run every Playwright project in one process.
 - Read `{APP}_PLAYWRIGHT_PROJECT_TIMEOUT_SECONDS` and `{APP}_PLAYWRIGHT_TEST_TIMEOUT_SECONDS`; fail fast with command, exit code, stdout, stderr, and timeout value.
 - On timeout/cancellation, kill the child process tree (`Kill(entireProcessTree: true)`) before returning failure.
@@ -300,5 +302,5 @@ For Node/TS Playwright, the same shape applies: `await page.waitForFunction(() =
 - [ ] Assembly-level `[DoNotParallelize]` exists for AppHost-backed `WasmUI`.
 - [ ] Each canvas test saves a screenshot artifact.
 - [ ] Canvas tests carry `[TestCategory("WasmUI")]` and a class `<summary>` with a manual-run command.
-- [ ] Node runner uses `@playwright/test` `1.61.1` or newer, one project per process, bounded timeout env vars, process-tree kill, captured stdout/stderr, and no `--reporter=line`.
+- [ ] Node runner uses latest stable `@playwright/test`, one project per process, bounded timeout env vars, process-tree kill, captured stdout/stderr, and no `--reporter=line`.
 - [ ] Generated `Test.PlaywrightUI` compiles in the solution before handoff.

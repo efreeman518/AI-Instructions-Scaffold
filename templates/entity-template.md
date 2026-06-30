@@ -75,6 +75,7 @@ public class {Entity} : EntityBase<{Entity}Id>, ITenantEntity<TenantId>  // [MUL
     // ===== Properties - private setters enforce immutability outside domain methods =====
     public TenantId TenantId { get; init; }  // init for tenant (set once)
     public string Name { get; private set; } = null!;
+    public {ValueObject}? {ValueObjectProperty} { get; private set; } // [VALUE-OBJECT] optional owned value object from domain spec
     public {Entity}Flags Flags { get; private set; } = {Entity}Flags.None;
 
     // ===== Navigation Properties - ICollection<T>, never List<T> =====
@@ -127,6 +128,36 @@ public class {Entity} : EntityBase<{Entity}Id>, ITenantEntity<TenantId>  // [MUL
             ? DomainResult<{Entity}>.Failure(errors)
             : DomainResult<{Entity}>.Success(this);
     }
+}
+```
+
+## File: Domain/Model/ValueObjects/{ValueObject}.cs
+
+Generate value objects only when `.scaffold/domain-specification.yaml` declares `valueObjects`. Keep them immutable, domain-side, and free of EF/DTO concerns. Use factories returning `DomainResult<T>` for validation instead of throwing expected domain failures.
+
+```csharp
+using EF.Domain;
+
+namespace Domain.Model.ValueObjects;
+
+public sealed record {ValueObject}
+{
+    public string Value { get; }
+
+    private {ValueObject}(string value)
+    {
+        Value = value;
+    }
+
+    public static DomainResult<{ValueObject}> Create(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return DomainResult<{ValueObject}>.Failure("{ValueObject} is required.");
+
+        return DomainResult<{ValueObject}>.Success(new {ValueObject}(value.Trim()));
+    }
+
+    public override string ToString() => Value;
 }
 ```
 

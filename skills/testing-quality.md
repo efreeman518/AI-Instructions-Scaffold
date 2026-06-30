@@ -164,7 +164,7 @@ When `Test.PlaywrightUI` is a C# MSTest project that drives an existing TypeScri
 - **Kill the entire process tree.** On `OperationCanceledException`, call `process.Kill(entireProcessTree: true)` (swallow `InvalidOperationException` if it already exited), then `await WaitForExitAsync(CancellationToken.None)` so orphaned browser/node children do not leak and hold locks.
 - **Gate on the CLI being installed.** Expose an `IsInstalled` check (`File.Exists(cliPath)`) and mark the test `Assert.Inconclusive` with the install step when the suite has not been provisioned, never red.
 - **Do not use `--reporter=line` in captured child-process runs.** Its carriage-return progress output can hide the real failure in TRX/stdout capture. Use the default reporter, `list`, or `dot`.
-- **Pin `@playwright/test` to `1.61.1` or newer** for generated Node suites. Older versions can add Node 26 `DEP0205 module.register()` deprecation noise to already-noisy browser output.
+- **Use latest stable `@playwright/test`** for generated Node suites. Older versions can add Node 26 `DEP0205 module.register()` deprecation noise to already-noisy browser output.
 - **Build the wrapper project as a gate.** Namespace mismatches between wrapper tests and `TypeScriptPlaywrightRunner.cs` are scaffold defects. `dotnet build` or `dotnet test` on `Test.PlaywrightUI` must catch them before handoff.
 - **Register the C# wrapper in the `.slnx`.** A `Test.PlaywrightUI` project with a .NET wrapper must be in the solution file or `dotnet test` over the solution silently skips it - the suite passes by being invisible. The TypeScript-only projects (React/Uno) are still run by their own Playwright config; only the .NET wrapper needs `.slnx` registration.
 
@@ -198,10 +198,12 @@ for (let attempt = 0; attempt < 20; attempt++) {
 
 If the app paints to a single Skia `<canvas>`, there are no per-control DOM nodes - DOM/text/role selectors and coordinate-clicking all fail structurally. Hard rule: a Skia-canvas Uno WASM test that uses `getByText`, role selectors, labels, or DOM text assertions is wrong. The browser DOM cannot expose text painted inside the canvas. Scaffold a browser-only test bridge that publishes app state to `globalThis.__{app}TestState` (query-string gated, default-off, real Gateway local auth) and have Playwright wait on state. The bridge state must include enough app-neutral fields for assertions: `page`, `section`, `hasToken`, `onboardingComplete`, `status`, and `error`. Tag these `[TestCategory("WasmUI")]`. Full pattern: [../templates/uno-wasm-test-bridge-template.md](../templates/uno-wasm-test-bridge-template.md). Detect the renderer with `document.querySelectorAll('[xamltype]').length` - `0` plus a lone `<canvas>` means Skia. Assert a rendered canvas larger than 100x100; never assert user-facing text with `getByText` against a Skia-canvas Uno app.
 
+Canvas-only fingerprint or visual-delta tests are valid only as `WasmUI` smoke and must be named as smoke, not CRUD/workflow coverage.
+
 Recommended Uno WASM generation rule:
 
 - Detect renderer first.
-- If Skia canvas: generate bridge plus canvas smoke only.
+- If Skia canvas: generate bridge-backed functional tests plus canvas smoke. If bridge state does not exist yet, generate only smoke-named canvas checks.
 - If managed DOM: coordinate-click and XAML attribute selectors acceptable.
 - Never generate DOM text selectors until renderer proves text exists in DOM.
 - C# wrapper starts AppHost and runs TypeScript; no browser-clicking C# page objects for Uno.
@@ -209,7 +211,7 @@ Recommended Uno WASM generation rule:
 Canvas-first fallback hierarchy:
 
 1. Prefer app-owned bridge state for functional assertions (`window.__AppTestState` / `globalThis.__{app}TestState`): page, section, auth/session, onboarding, status, error, and any app-specific state transition under test.
-2. If bridge does not exist yet, limit test to canvas paint, stable chrome click, and fingerprint/pixel delta from blank.
+2. If bridge does not exist yet, limit test to canvas paint, stable chrome click, and fingerprint/pixel delta from blank; name specs/classes as smoke.
 3. Do not claim CRUD correctness, nested-child correctness, or persisted workflow correctness from pixel-only tests.
 
 TypeScript Uno tests that try list CRUD by text/role selectors are structurally invalid for Skia canvas, even when they sometimes pass in another renderer.

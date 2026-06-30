@@ -7,6 +7,8 @@
 
 Domain entities use a **rich domain model** pattern with factory creation, private setters, encapsulated validation, and `DomainResult<T>` for railway-oriented error handling. No public constructors - all creation goes through static `Create()` methods.
 
+Model business language and invariants first. Entity methods should answer what business actions are allowed under what conditions; controllers, services, DTOs, EF configuration, and UI code should not be the only place the rule exists.
+
 ## Entity Base Class
 
 All entities inherit from `EntityBase<TId>` (from EF.Domain - see [../support/ef-packages-reference.md](../support/ef-packages-reference.md)) where `TId : IDomainId<TId>`. Provides:
@@ -85,12 +87,28 @@ Standard enums for fixed classifications.
 
 ## Value Objects / Shared Entities
 
+Use value objects only when a value has business meaning beyond the primitive: validation, behavior, equality, repeated use, or dangerous confusion with another value of the same primitive type. Do not wrap every string, number, or Guid by default. Typed IDs already handle entity identity; DTO/API contracts stay raw `Guid`/primitive unless a boundary contract explicitly needs a richer shape.
+
 **Owned type pattern** - stored as columns in the parent table:
 ```csharp
-public class DateRange  // Value object, no EntityBase
+public sealed record DateRange  // Value object, no EntityBase
 {
-    public DateTimeOffset StartDate { get; init; }
-    public DateTimeOffset? EndDate { get; init; }
+    public DateTimeOffset StartDate { get; }
+    public DateTimeOffset? EndDate { get; }
+
+    private DateRange(DateTimeOffset startDate, DateTimeOffset? endDate)
+    {
+        StartDate = startDate;
+        EndDate = endDate;
+    }
+
+    public static DomainResult<DateRange> Create(DateTimeOffset startDate, DateTimeOffset? endDate)
+    {
+        if (endDate is not null && endDate <= startDate)
+            return DomainResult<DateRange>.Failure("End date must be after start date.");
+
+        return DomainResult<DateRange>.Success(new DateRange(startDate, endDate));
+    }
 }
 ```
 
@@ -189,6 +207,10 @@ if (Name.Length < DomainConstants.RULE_DEFAULT_NAME_LENGTH_MIN)
 
 Use the specification pattern for reusable business validation. Canonical placement: `src/Domain/{Project}.Domain.Model/Rules/`. Co-locate with the domain model. See [domain-rules-template.md](../templates/domain-rules-template.md) for full implementation.
 
+## Domain Services
+
+Use a domain service only when a business rule spans multiple aggregates and does not belong naturally to one entity. Domain services stay pure domain logic: no database calls, no HTTP clients, no email, no queues, no clock reads unless passed in as values. Application services load aggregates, call entity/domain-service methods, save changes, and trigger infrastructure side effects.
+
 ## DomainResult Pattern
 
 `DomainResult<T>` provides:
@@ -215,6 +237,7 @@ After generating domain entities, confirm:
 - [ ] `Add*()` checks for duplicates and returns `Success(existing)` if already present (idempotent)
 - [ ] `RowVersion` property exists for concurrency (configured in EF, not in entity)
 - [ ] No infrastructure concerns (no EF attributes, no `DbContext`, no DTOs)
+- [ ] Value objects are immutable, validate through factory methods returning `DomainResult<T>`, and stay domain-side while DTOs flatten their fields
 - [ ] `Valid()` uses `DomainConstants` for length/range limits, not magic numbers
 - [ ] `DomainConstants.cs` exists in `Domain.Shared/Constants/` with all validation limits
 - [ ] `InvalidEntityException` exists in `Domain.Shared/Exceptions/`
@@ -227,6 +250,7 @@ After generating domain entities, confirm:
 - Public constructors on entities - bypasses validation and the `DomainResult<T>` failure path. All creation goes through static `Create()`.
 - Public setters - the entity loses control over which transitions are valid. Use `private set` and a named mutation method per state change.
 - Using an enum where a closed value-object set is the right model (e.g., shipping address, money amount, schedule expression) - enums collapse business meaning to a label; value objects keep behavior and equality with the data.
+- Exposing value objects directly through DTOs by default - couples API contracts to domain internals. Flatten fields at the boundary and reconstruct value objects in mappers/application code.
 - Magic numbers for length/range limits - drift across `Valid()`, EF configuration, and DTO validation is inevitable. Use `DomainConstants` so every layer reads the same source.
 - EF attributes or `DbContext` references inside the domain layer - reverses the dependency direction (`GR-12` authority map). Configuration belongs in `Infrastructure.Data` configurations.
 - Letting a child-collection mutation surface bypass the entity's `Add*()` / `Remove*()` methods - silently violates invariants. The repository's updater should call entity methods, not mutate collections directly.

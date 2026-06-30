@@ -36,7 +36,7 @@ Verify the Aspire dashboard shows all enabled resources healthy before exercisin
 
 - The sub-phase did not modify `Host/Aspire/AppHost` or the Aspire resource graph (record this fact explicitly, e.g., "AppHost / resource graph not modified this sub-phase").
 - A prior sub-phase recorded a green Aspire live boot in `HANDOFF.md` section Validation since the last AppHost change.
-- This session's `TestCategory=Unit`, `TestCategory=Endpoint`, and (where applicable) `TestCategory=Integration` runs were all green.
+- This session's `TestCategory=Unit`, `TestCategory=UI`/`Presentation` (when generated), `TestCategory=Endpoint`, and (where applicable) `TestCategory=Integration` runs were all green.
 
 If any condition is missing, run the live boot. When deferred, copy the prior green boot's discovery evidence into this session's `HANDOFF.md` section Validation and mark the row `deferred - see <prior-sub-phase>`.
 

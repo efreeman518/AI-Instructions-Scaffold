@@ -42,7 +42,7 @@ Follow `solution-structure.md` exactly:
 - `.slnx`, `Directory.Packages.props`, `global.json`, `nuget.config`
 - All project folders and `.csproj` files per the canonical layout
 - Project references wired per the dependency direction contract
-- Test projects: `Test.Support`, `Test.Unit`, `Test.Integration` (component), `Test.Aspire` (mesh), `Test.Endpoints`, `Test.E2E`, `Test.FoundryLocal` when `includeAiServices: true` and Foundry Local provider is in scope, plus profile-specific projects (`Test.Architecture`, `Test.PlaywrightUI`, `Test.Load`, `Test.Benchmarks`, `Test.Mutation`) per `testingProfile`
+- Test projects: `Test.Support`, `Test.Unit`, `Test.UI` when UI model/presentation coverage exists, `Test.Integration` (component), `Test.Aspire` (mesh), `Test.Endpoints`, `Test.E2E`, `Test.FoundryLocal` when `includeAiServices: true` and Foundry Local provider is in scope, plus profile-specific projects (`Test.Architecture`, `Test.PlaywrightUI`, `Test.Load`, `Test.Benchmarks`, `Test.Mutation`) per `testingProfile`
 
 ### 2. Contracts (Per Entity)
 
@@ -203,7 +203,8 @@ The shared base is the **single source of truth** for swapping the production Db
 - `EndpointTestBase` (optional) - HTTP client helper used by endpoint test classes.
 
 **Empty test project shells:**
-- `Test.Unit/` - project file with MSTest + Moq references, no test classes yet (Phase 5a adds them)
+- `Test.Unit/` - project file with MSTest + Moq references for pure domain/application tests, no test classes yet (Phase 5a adds them)
+- `Test.UI/` - generated only when UI model/presentation coverage exists; references `{Project}.Uno.Core` and `{Project}.Uno.Presentation`, never `{Project}.Uno`; Phase 5c adds headless UI services, theme/catalog logic, presentation model, and MVUX state/feed tests
 - `Test.Integration/` (component) - project file with MSTest + `Testcontainers.MsSql` + `Testcontainers.Azurite` + `Azure.Data.Tables` + `EF.IntegrationTesting`; references `Test.Support` and the Application/Infrastructure projects the tests use - **no `AppHost`, no `Aspire.Hosting.Testing`**. Contains the `Infrastructure/*ContainerFixture` + `IntegrationTestSetup` shells from above. Phase 5a populates `{Entity}RepositoryIntegrationTests`; Phase 5b populates `DomainEventPipelineTests`, `AuditLogRepositoryAzuriteTests`. See [test-templates-integration.md](../templates/test-templates-integration.md).
 - `Test.Aspire/` (mesh) - project file with MSTest + `Aspire.Hosting.Testing` + `Aspire.Hosting.Azure.Storage` + `Azure.Data.Tables` + `EF.IntegrationTesting`; references `AppHost`, the API host, `Test.Support`, and the Application contracts/models the HTTP payloads need. Contains the `AspireTestHost` + `AspireMeshLifecycle` shells. Phase 5b populates `ApiAuditPipelineTests`, `FunctionAuditPipelineTests`. See [test-templates-aspire.md](../templates/test-templates-aspire.md).
 - `Test.FoundryLocal/` (live AI) - RID-bound project file with MSTest + direct `Microsoft.AI.Foundry.Local` package reference; references the API host and `Test.Support`, never `AppHost`. Generate only when `includeAiServices: true` and Foundry Local provider is in scope.

@@ -2,13 +2,13 @@
 
 | | |
 |---|---|
-| **Files** | `src/UI/{Project}.Uno.Core/Client/{Project}ApiClient.cs`, `Business/Models/{Entity}.cs`, `Business/Models/IEntityBase.cs`, `Presentation/Messages/EntityMessage.cs`, `Business/Services/{Feature}/I{Entity}Service.cs`, `Business/Services/{Feature}/{Entity}Service.cs` |
+| **Files** | `src/UI/{Project}.Uno.Core/Client/{Project}ApiClient.cs`, `Business/Models/{Entity}.cs`, `Business/Models/IEntityBase.cs`, `Business/Messages/EntityMessage.cs`, `Business/Services/{Feature}/I{Entity}Service.cs`, `Business/Services/{Feature}/{Entity}Service.cs` |
 | **Depends on** | [data-mapping-template](data-mapping-template.md) (API DTO structure) |
 | **Referenced by** | [uno-mvux-model-template](uno-mvux-model-template.md), [ui-uno.md](../skills/ui-uno.md) |
 
 ## Models
 
-All client models, DTO wrappers, API clients, business services, messages, and MVUX presentation models live in `src/UI/{Project}.Uno.Core`. The `src/UI/{Project}.Uno` app head references this library and owns only app startup, routes, XAML views, styles, converters, strings, and platform assets.
+Client models, DTO wrappers, API clients, business services, and platform-agnostic UI messages live in `src/UI/{Project}.Uno.Core`. MVUX presentation models live in `src/UI/{Project}.Uno.Presentation`. The `src/UI/{Project}.Uno` app head references the presentation library and owns only app startup, routes, XAML views, styles, converters, strings, and platform assets.
 
 ### Client-Side Record Model
 
@@ -107,7 +107,7 @@ public interface I{Entity}Service
 ```csharp
 using {Project}.Uno.Core.Business.Models;
 using {Project}.Uno.Core.Client;
-using {Project}.Uno.Core.Presentation.Messages;
+using {Project}.Uno.Core.Business.Messages;
 
 namespace {Project}.Uno.Core.Business.Services.{Feature};
 
@@ -202,7 +202,7 @@ public interface IEntityBase
 ### EntityMessage and EntityChange
 
 ```csharp
-namespace {Project}.Uno.Core.Presentation.Messages;
+namespace {Project}.Uno.Core.Business.Messages;
 
 public enum EntityChange { Created, Updated, Deleted }
 

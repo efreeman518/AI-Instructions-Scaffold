@@ -53,11 +53,13 @@ src/
 |       `-- ServiceDefaults/
 |-- UI/
 |   |-- {Host}.Uno/                     # optional Uno.Sdk app head: XAML, styles, platform assets
-|   |-- {Host}.Uno.Core/                # optional Microsoft.NET.Sdk library: MVUX, client, services
+|   |-- {Host}.Uno.Core/                # optional Microsoft.NET.Sdk library: business models, services, client
+|   |-- {Host}.Uno.Presentation/        # optional Microsoft.NET.Sdk library: MVUX models, UI state/feed logic
 |   |-- {Host}.Blazor/                  # optional
 |   `-- {Host}.React/                   # optional
 |-- Test/
-|   |-- Test.Unit/                    # mocked unit tests
+|   |-- Test.Unit/                    # pure domain/application unit tests
+|   |-- Test.UI/                      # fast headless UI model/presentation tests; no app head reference
 |   |-- Test.Integration/             # component: one class vs one real store (standalone Testcontainers SQL/Azurite/Redis)
 |   |-- Test.Aspire/                  # mesh: full AppHost graph over HTTP (lazy-started; Docker-gated)
 |   |-- Test.Endpoints/               # WebApplicationFactory in-memory; per-endpoint contract tests
@@ -201,7 +203,7 @@ Application + Infrastructure -> {Host}.Bootstrapper
 - API/Scheduler/FunctionApp reference Bootstrapper and add host-only config.
 - Gateway and UI follow their own skills but must not violate core dependency direction.
 - Optional hosts should be removable without breaking core layer compilation.
-- Uno MVUX presentation records live in `{Host}.Uno.Core`, not in the `{Host}.Uno` `Uno.Sdk` app head. `{Host}.Uno.Core` is a plain `Microsoft.NET.Sdk` library that references MVUX/navigation packages directly so `Test.Unit` can exercise presentation logic without building platform targets.
+- Uno MVUX presentation records live in `{Host}.Uno.Presentation`, not in the `{Host}.Uno` `Uno.Sdk` app head. `{Host}.Uno.Presentation` and `{Host}.Uno.Core` are plain `Microsoft.NET.Sdk` libraries so `Test.UI` can exercise UI/presentation logic without building platform targets. `{Host}.Uno` references `{Host}.Uno.Presentation`; `Test.UI` references `{Host}.Uno.Core` and `{Host}.Uno.Presentation`.
 
 ---
 

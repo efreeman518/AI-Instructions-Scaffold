@@ -75,6 +75,7 @@ Default scaffold and TaskFlow reference app keep DTOs and mappers in `Applicatio
 | Unit (services) | `Test/Test.Unit/Services/{Entity}ServiceTests.cs` |
 | Unit (CQRS) | `Test/Test.Unit/Cqrs/{Entity}CqrsValidationTests.cs` *(when applicationStyle: cqrs or switch)* |
 | Unit (repositories) | `Test/Test.Unit/Repositories/{Entity}RepositoryTrxnTests.cs`, `{Entity}RepositoryQueryTests.cs` |
+| UI (headless presentation) | `Test/Test.UI/Presentation/{Entity}PresentationModelTests.cs` *(when UI model/presentation coverage exists)* |
 | Endpoint contract tests | `Test/Test.Endpoints/Endpoints/{Entity}EndpointsTests.cs` |
 | CQRS endpoint switch tests | `Test/Test.Endpoints/CqrsEndpointModeTests.cs` *(when applicationStyle: switch)* |
 | Endpoint factory | `Test/Test.Endpoints/CustomApiFactory.cs` (derives from `Test.Support/WebApplicationFactoryBase`) |
@@ -129,21 +130,22 @@ Source: [../skills/ui-blazor.md](../skills/ui-blazor.md). Project root: `Host/{P
 
 ## Uno UI (Phase 5c, optional, dedicated session - `includeUnoUI: true`)
 
-Source: [../skills/ui-uno.md](../skills/ui-uno.md), [../skills/ui-uno-shell.md](../skills/ui-uno-shell.md), [../skills/ui-uno-mvux.md](../skills/ui-uno-mvux.md), [../skills/ui-uno-navigation.md](../skills/ui-uno-navigation.md), [../skills/ui-uno-platforms.md](../skills/ui-uno-platforms.md). Project roots: `src/UI/{Project}.Uno/`, `src/UI/{Project}.Uno.Core/`, and `src/Host/{Project}.Uno.WasmHost/`.
+Source: [../skills/ui-uno.md](../skills/ui-uno.md), [../skills/ui-uno-shell.md](../skills/ui-uno-shell.md), [../skills/ui-uno-mvux.md](../skills/ui-uno-mvux.md), [../skills/ui-uno-navigation.md](../skills/ui-uno-navigation.md), [../skills/ui-uno-platforms.md](../skills/ui-uno-platforms.md). Project roots: `src/UI/{Project}.Uno/`, `src/UI/{Project}.Uno.Core/`, `src/UI/{Project}.Uno.Presentation/`, and `src/Host/{Project}.Uno.WasmHost/`.
 
 | Artifact | Path |
 |---|---|
 | Uno project | `src/UI/{Project}.Uno/{Project}.Uno.csproj` |
 | Testable core project | `src/UI/{Project}.Uno.Core/{Project}.Uno.Core.csproj` |
+| Testable presentation project | `src/UI/{Project}.Uno.Presentation/{Project}.Uno.Presentation.csproj` |
 | WASM wrapper host | `src/Host/{Project}.Uno.WasmHost/{Project}.Uno.WasmHost.csproj` |
 | App entry | `src/UI/{Project}.Uno/App.xaml`, `App.xaml.cs`, `App.xaml.host.cs`, `Program.cs` |
 | App config | `src/UI/{Project}.Uno/appsettings.json` (+ environment variants) |
-| Shell | `src/UI/{Project}.Uno/Views/Shell.xaml`, `Shell.xaml.cs`; `src/UI/{Project}.Uno.Core/Presentation/ShellModel.cs` |
+| Shell | `src/UI/{Project}.Uno/Views/Shell.xaml`, `Shell.xaml.cs`; `src/UI/{Project}.Uno.Presentation/Presentation/ShellModel.cs` |
 | Business model (per entity) | `src/UI/{Project}.Uno.Core/Business/Models/{Entity}.cs` |
 | Business service (per feature) | `src/UI/{Project}.Uno.Core/Business/Services/{Feature}/I{Entity}Service.cs`, `{Entity}Service.cs` |
 | Kiota client (generated) | `src/UI/{Project}.Uno.Core/Client/` |
-| MVUX model list (per entity) | `src/UI/{Project}.Uno.Core/Presentation/{Entity}ListModel.cs` |
-| MVUX model new/edit (per entity) | `src/UI/{Project}.Uno.Core/Presentation/{Entity}PageModel.cs` |
+| MVUX model list (per entity) | `src/UI/{Project}.Uno.Presentation/Presentation/{Entity}ListModel.cs` |
+| MVUX model new/edit (per entity) | `src/UI/{Project}.Uno.Presentation/Presentation/{Entity}PageModel.cs` |
 | Page list (per entity) | `src/UI/{Project}.Uno/Views/{Entity}ListPage.xaml` + `.xaml.cs` |
 | Page new/edit (per entity) | `src/UI/{Project}.Uno/Views/{Entity}Page.xaml` + `.xaml.cs` |
 | Styles / strings / converters | `src/UI/{Project}.Uno/Styles/`, `Strings/`, `Converters/` |

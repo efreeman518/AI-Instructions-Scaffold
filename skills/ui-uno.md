@@ -74,8 +74,10 @@ Detailed structure rules live in [ui-uno-shell.md](ui-uno-shell.md) section Proj
 - [ ] `includeUnoUI: true` set in domain inputs
 - [ ] `GatewayBaseUrl` present in `appsettings*.json`
 - [ ] Auth + HTTP + navigation configured in `App.xaml.host.cs` (see [ui-uno-shell.md](ui-uno-shell.md))
-- [ ] `src/UI/{Project}.Uno.Core` contains `Presentation`, `Business/Models`, `Business/Services`, and `Client`
+- [ ] `src/UI/{Project}.Uno.Core` contains `Business/Models`, `Business/Services`, and `Client`
+- [ ] `src/UI/{Project}.Uno.Presentation` contains `Presentation` MVUX records and references `{Project}.Uno.Core`
 - [ ] `src/UI/{Project}.Uno` contains only app startup, XAML views, styles, converters, strings, and platform assets
+- [ ] `src/Test/Test.UI` covers headless UI services, presentation models, and MVUX state/feed behavior while referencing only `{Project}.Uno.Core` and `{Project}.Uno.Presentation`, never `{Project}.Uno`
 - [ ] `Features:UseMocks` implemented (mock + live path)
 - [ ] Core pages scaffolded: Home, {Entity}List, {Entity}Page (unified add/edit + children), Settings (+ Login when auth enabled)
 - [ ] Each entity uses single page pattern: `{Entity}Page` with form fields + children sections

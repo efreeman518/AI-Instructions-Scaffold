@@ -22,7 +22,7 @@ Use GitHub Actions for:
 2. Promotion path is explicit (`dev -> staging -> prod`) with environment protections.
 3. Deploy artifacts are immutable by commit SHA tag.
 4. Scheduler schema/dependency steps run before scheduler rollout.
-5. PR CI runs only the fast tiers (`Unit`/`Endpoint`/`Architecture`, no Docker). Every heavy or special-runtime tier (`Integration`/`Aspire`/`E2E`/`PlaywrightUI`/`MobileUI`/Foundry Local/`Load`/`Benchmark`/`Mutation`) is a default-off `workflow_dispatch` toggle, never run automatically.
+5. PR CI runs only the fast tiers (`Unit`/`UI`/`Presentation`/`Endpoint`/`Architecture`, no Docker). Every heavy or special-runtime tier (`Integration`/`Aspire`/`E2E`/`PlaywrightUI`/`MobileUI`/Foundry Local/`Load`/`Benchmark`/`Mutation`) is a default-off `workflow_dispatch` toggle, never run automatically.
 6. **Private NuGet feed auth:** If the solution references packages from authenticated feeds (e.g., GitHub Packages), the workflow must authenticate before `dotnet restore`. Store a PAT as a repo secret (e.g., `NUGET_PAT`) and add an auth step. Without this, restore fails with `NU1301 / 401 Unauthorized`. See the NuGet auth step below.
 7. **ACA managed identity can pull ACR but NOT GHCR.** When images live in a **private** GHCR package, the ACA managed identity cannot authenticate to `ghcr.io`. Set an explicit registry credential on each app with a PAT that has `read:packages`: `az containerapp registry set --name <app> --server ghcr.io --username <gh-user> --password <PAT>`. `GITHUB_TOKEN` does NOT work as the ACA pull password - it is job-scoped and expires when the job ends. **Public** GHCR packages need no pull secret. State this tradeoff when offering GHCR as the registry.
 8. **Production DB migrations run as an explicit pipeline step, never on startup in Production.** Startup migration is gated `IsDevelopment()` and is a no-op in ACA. Apply schema with an EF migration bundle BEFORE the image swap so schema leads code (see the migration bundle step below).
@@ -68,7 +68,7 @@ Action majors drift. **Verify current majors at scaffold time** (check each acti
 ## `ci.yml` (PR Validation)
 
 **Trigger policy: fast tiers auto, everything heavy is a manual toggle.** The fast tiers
-(`Unit`, `Endpoint`, `Architecture`) take no Docker and run automatically on every PR. Every
+(`Unit`, `UI`, `Presentation`, `Endpoint`, `Architecture`) take no Docker and run automatically on every PR. Every
 heavy or special-runtime tier - `Integration`, `Aspire`, `E2E` (Docker), `PlaywrightUI`
 (hosted stack), `MobileUI` (emulator + Appium), Foundry Local live AI (native runtime),
 `Load`, `Benchmark`, `Mutation` - is a default-off `workflow_dispatch` boolean a maintainer

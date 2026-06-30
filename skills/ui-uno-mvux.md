@@ -12,14 +12,16 @@ Companion files:
 
 ## MVUX Model Rules
 
-Use partial records in `src/UI/{Project}.Uno.Core/Presentation` with namespace `{Project}.Uno.Core.Presentation`:
+Use partial records in `src/UI/{Project}.Uno.Presentation/Presentation` with namespace `{Project}.Uno.Presentation.Presentation`:
 - Read: `IFeed<T>` / `IListFeed<T>`
 - Mutable UI state: `IState<T>` / `IListState<T>`
 - Commands: public `ValueTask` methods
 - Navigation: `INavigator`
 - Cross-model refresh: `IMessenger` + `.Observe(...)`
 
-The `{Project}.Uno.Core` project is a plain `Microsoft.NET.Sdk` library that references MVUX, navigation, messenger, and generated-client packages directly. Presentation models never live in the `{Project}.Uno` `Uno.Sdk` app head. Keep every MVUX partial record for one app in this one assembly; splitting models across assemblies can make the MVUX generators emit duplicate `BindableXxx` wrappers for shared DTO/state types.
+The `{Project}.Uno.Presentation` project is a plain `Microsoft.NET.Sdk` library that references `{Project}.Uno.Core`, MVUX, navigation, and messenger packages directly. Client wrappers stay in `{Project}.Uno.Core`. Presentation models never live in the `{Project}.Uno` `Uno.Sdk` app head. Keep every MVUX partial record for one app in this one assembly; splitting models across assemblies can make the MVUX generators emit duplicate `BindableXxx` wrappers for shared DTO/state types.
+
+Fast MVUX/presentation coverage belongs in `Test.UI` with `UI` / `Presentation` categories. `Test.UI` references `{Project}.Uno.Core` and `{Project}.Uno.Presentation` only; it never references `{Project}.Uno`.
 
 Presentation models use injected dependencies for all shell behavior. Inject `INavigator`, `IThemeService` or an app-owned theme abstraction, `IMessenger`, form guards, and shell action abstractions as needed. Do not call static `App.*` members or static app services from MVUX records; that couples the model to the app head and removes the fast unit-test seam.
 
@@ -229,7 +231,7 @@ To make ListView items navigable (e.g., clicking a task row opens its detail pag
 Example pattern:
 
 ```csharp
-namespace {Project}.Uno.Core.Presentation;
+namespace {Project}.Uno.Presentation.Presentation;
 
 public partial record TodoItemListModel(
     INavigator Navigator,
@@ -277,7 +279,7 @@ Shell and MainPage serve **distinct roles** in the navigation hierarchy. Mixing 
 ```csharp
 private static void RegisterRoutes(IViewRegistry views, IRouteRegistry routes)
 {
-    // App.xaml.host.cs in the Uno app head imports {Project}.Uno.Core.Presentation.
+    // App.xaml.host.cs in the Uno app head imports {Project}.Uno.Presentation.Presentation.
     views.Register(
         // Viewless root - Shell resolves via NavigateAsync<Shell>()
         new ViewMap(ViewModel: typeof(ShellModel)),

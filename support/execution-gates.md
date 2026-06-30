@@ -285,6 +285,8 @@ dotnet build src/Host/Aspire/AppHost
 
 Uno UI startup (post-build, in addition to the platform-target checks above):
 
+- [ ] Fast headless UI tests pass when UI model/presentation coverage exists: `dotnet test src/Test/Test.UI/Test.UI.csproj --filter "TestCategory=UI|TestCategory=Presentation"`
+
 - [ ] **Standalone clean start:** the selected Uno target (`<tfm>-browserwasm` / `<tfm>-android` / `<tfm>-ios`) launches or builds to the available local gate and renders the shell with no WASM load errors / no Android startup crashes / no compile failures
 - [ ] **Aspire-registered clean start (when an Uno host is added to AppHost):** AppHost registers the ASP.NET Core WASM wrapper host, not the Uno SDK project; the resource reaches Running and serves its entry point without exception
 - [ ] At least one entity list page loads against the Gateway/API (empty or seeded data - both valid), proving the Kiota/Refit client resolves the configured backend URL
@@ -316,7 +318,7 @@ Unit, service, endpoint, and integration tests already exist from Phases 5a/5b/5
 
 Required profile gate (full regression):
 - `minimal`: Unit + Endpoint
-- `balanced`: Unit + Endpoint + Integration + Architecture
+- `balanced`: Unit + UI/Presentation (when generated) + Endpoint + Integration + Architecture
 - `comprehensive`: Balanced + E2E/Load/Benchmark/Mutation (when enabled)
 
 Commands:

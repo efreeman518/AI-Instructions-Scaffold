@@ -1,26 +1,25 @@
 # Presentation Test Templates
 
-MVUX presentation model tests for Uno UI. Use in Phase 5c when `includeUnoUI: true`.
+Fast headless UI tests for Uno MVUX presentation models and UI services. Use in Phase 5c when `includeUnoUI: true`.
 
 | | |
 |---|---|
-| **Files** | `src/Test/Test.Unit/Presentation/{Entity}PresentationModelTests.cs` |
-| **Production target** | `src/UI/{Project}.Uno.Core/Presentation/*.cs` |
-| **References** | `Test.Unit` references `{Project}.Uno.Core`, never `{Project}.Uno` |
+| **Files** | `src/Test/Test.UI/Presentation/{Entity}PresentationModelTests.cs` |
+| **Production target** | `src/UI/{Project}.Uno.Presentation/Presentation/*.cs` |
+| **References** | `Test.UI` references `{Project}.Uno.Core` and `{Project}.Uno.Presentation`, never `{Project}.Uno` |
 | **Required packages** | Main `Uno.Extensions.Reactive` only when `SourceContext` is not available transitively; do not add `Uno.Extensions.Reactive.Testing` |
 
 ## Purpose
 
-Presentation models are app logic. They must be testable in the fast lane without building the `Uno.Sdk` app head or installing platform workloads.
+Presentation models and UI services are app logic, not pure domain/application unit tests. They must be testable in the fast `Test.UI` lane without building the `Uno.Sdk` app head or installing platform workloads.
 
 `{Project}.Uno.Core` owns:
 
-- `Presentation/` MVUX partial records
 - `Business/Models`
 - `Business/Services`
 - `Client/` API client wrappers
 
-`{Project}.Uno` owns XAML views, app startup, route registration, styles, converters, strings, and platform assets only.
+`{Project}.Uno.Presentation` owns `Presentation/` MVUX partial records and UI state/feed logic. `{Project}.Uno` owns XAML views, app startup, route registration, styles, converters, strings, and platform assets only.
 
 ## Package Rule
 
@@ -36,6 +35,7 @@ Use `SourceContext.GetOrCreate(model).AsCurrent()` from namespace `Uno.Extension
 ```xml
 <ItemGroup>
   <ProjectReference Include="..\..\UI\{Project}.Uno.Core\{Project}.Uno.Core.csproj" />
+  <ProjectReference Include="..\..\UI\{Project}.Uno.Presentation\{Project}.Uno.Presentation.csproj" />
 </ItemGroup>
 ```
 
@@ -99,6 +99,7 @@ Stub search responses with the shared paged shape:
 using Uno.Extensions.Reactive.Core;
 
 [TestClass]
+[TestCategory("UI")]
 public sealed class {Entity}PresentationModelTests
 {
     private StubHttpMessageHandler _handler = null!;
@@ -119,6 +120,7 @@ public sealed class {Entity}PresentationModelTests
     }
 
     [TestMethod]
+    [TestCategory("Presentation")]
     public async Task Given_SearchResponse_When_ListFeedRead_Then_ItemsLoaded()
     {
         _handler.EnqueueJson("""
@@ -196,9 +198,18 @@ For each entity with MVUX presentation models, add focused tests for:
 - navigation route and route-data calls,
 - injected shell/theme/form-guard behavior.
 
+## Categories
+
+- Class-level category: `[TestCategory("UI")]`.
+- Method-level category when useful for filtering: `[TestCategory("Presentation")]`.
+- Do not use `[TestCategory("Unit")]` for MVUX, UI service, theme/catalog, shell, or presentation-model tests.
+- Keep browser-hosted UI in `Test.PlaywrightUI` with `PlaywrightUI` or `WasmUI`; keep native Appium in `Test.Mobile` with `MobileUI`.
+
 ## Rules
 
-- `Test.Unit` references `{Project}.Uno.Core` only.
+- `Test.Unit` stays pure domain/application service tests.
+- `Test.UI` references `{Project}.Uno.Core` and `{Project}.Uno.Presentation` only.
+- `Test.UI` never references `{Project}.Uno` or any `Uno.Sdk` app head.
 - Presentation tests use `SourceContext.GetOrCreate(model).AsCurrent()`.
 - Stub HTTP uses the same envelope contracts as the running API.
 - Tests assert observable state, route calls, requests, and messenger effects.

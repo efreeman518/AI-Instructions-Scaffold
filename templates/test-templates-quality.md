@@ -156,6 +156,8 @@ public sealed class AggregateBoundaryTests : BaseTest
 
 ## E2E Tests (Playwright)
 
+> **Uno Skia smoke rule:** Canvas-only fingerprint/pixel-delta checks are smoke only. Name them as smoke, tag them `[TestCategory("WasmUI")]`, and do not claim CRUD, nested-child, or persistence correctness unless bridge state proves each transition.
+
 > **DOM UI only - Blazor/MudBlazor/managed DOM:** The template below uses standard HTML selectors. Do not copy it into Uno Skia work. For Uno WASM, detect the renderer first. Managed-DOM renderer may use the boot-once shared-page pattern and coordinate-click helpers in [../skills/testing-quality.md](../skills/testing-quality.md) section Hosted Browser UI. Skia canvas renderer has no per-control DOM: never generate `getByText` / role / DOM-text assertions. For Skia, [uno-wasm-test-bridge-template.md](uno-wasm-test-bridge-template.md) is the only functional template: generate the bridge plus canvas smoke, poll fields such as `page`, `section`, `hasToken`, `onboardingComplete`, `status`, and `error`, assert a rendered canvas larger than 100x100, tag tests `[TestCategory("WasmUI")]`, and add `[assembly: DoNotParallelize]`.
 >
 > **Data-assertion rule:** Never assert specific row counts, page counts, or seeded titles (e.g. `"Showing 1 to 10 of 14"`, `"Build dashboard UI"`). These break against shared dev databases with accumulating test data. Assert structural UI strings only: headers, labels, empty-state text.

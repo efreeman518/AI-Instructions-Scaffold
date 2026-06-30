@@ -65,12 +65,38 @@ entities:
 
 ### Property Rules
 
-- `kind`: `string` (default) | `enum` | `flags_enum` | `number` | `date` | `boolean` | `identifier` | `money` | `text`
+- `kind`: `string` (default) | `enum` | `flags_enum` | `number` | `date` | `boolean` | `identifier` | `money` | `text` | `value_object`
 - No `type`, `maxLength`, `precision` here - those are Phase 2 concerns
 - `required`: business requirement, not database nullability
+- For `kind: value_object`, set `valueObject: {ValueObjectName}` and define it under top-level `valueObjects`
 - For operational reason fields (`ReasonCode` style), prefer:
   - fixed, stable set -> `enum`
   - evolving/managed set -> dedicated catalog entity (for localization/versioning)
+
+## Value Objects
+
+Use `valueObjects` for concepts where a primitive would hide business meaning, validation, behavior, or equality. Do not wrap every string or number by default. Good candidates: money, date range, call window, email address, phone number, percentage, or values easy to confuse with the same primitive.
+
+Value objects are domain-side types. DTO/API contracts stay primitive/Guid-friendly by default; mappers flatten fields into DTOs and create value objects through domain factories.
+
+```yaml
+valueObjects:
+ - name: DateRange
+   description: Start and optional end date for scheduled work
+   fields:
+    - { name: StartDate, kind: date, required: true }
+    - { name: EndDate, kind: date, required: false }
+   rules:
+    - name: EndAfterStart
+      condition: EndDate absent or after StartDate
+   usedBy:
+    - { entity: Project, property: Schedule }
+
+entities:
+ - name: Project
+   properties:
+    - { name: Schedule, kind: value_object, valueObject: DateRange, required: false }
+```
 
 ### Modeling a Named-Value / Status / Classification Field
 
@@ -376,13 +402,14 @@ Auth provider options:
 Work through these in order during Phase 1 after loading [shared-understanding-interview.md](shared-understanding-interview.md):
 
 1. **Core entities** - what does the business call things?
-2. **Relationships** - who owns what? What references what?
-3. **Lifecycle** - what states does each entity go through?
-4. **Rules** - what must be true? What constraints exist?
-5. **Events** - what happens that other parts of the system care about?
-6. **Workflows** - what multi-step processes exist beyond CRUD?
-7. **AI capabilities** - what searches should be "smart"? What decisions could an agent help with? What content should be generated or summarized?
-8. **Tenancy/auth** - who can see/do what?
+2. **Relationships and ownership** - who owns what? What references what? Which entities are aggregate roots?
+3. **Value objects** - which values carry business meaning, validation, behavior, or equality beyond their primitive fields?
+4. **Lifecycle** - what states does each entity go through?
+5. **Rules and invariants** - what must be true? What constraints belong inside the domain model?
+6. **Events** - what happened that other parts of the system care about?
+7. **Workflows** - what multi-step processes exist beyond CRUD?
+8. **AI capabilities** - what searches should be "smart"? What decisions could an agent help with? What content should be generated or summarized?
+9. **Tenancy/auth** - who can see/do what?
 
 After each branch, recap the current understanding, confirmed language, design decisions, open conflicts, and deferred items. Do not write final YAML until every branch is confirmed, defaulted, or deferred.
 
@@ -395,6 +422,7 @@ Before moving to Phase 2 (Resource Definition), verify all of the following:
 - [ ] Every entity has `name`, at least one `property`, and `isTenantEntity` set
 - [ ] Every relationship references an entity defined in this file
 - [ ] Each entity is classified aggregate **root** or **owned child** (derived from `children`/`navigation`, or pinned via `aggregateRole`); any non-default `aggregateRole` override is recorded in `.scaffold/DESIGN-DECISIONS.md` (drives GR-15 write-surface generation)
+- [ ] Every `kind: value_object` property references a `valueObjects[].name`; each value object has fields, rules if any, and `usedBy` references existing entity properties
 - [ ] No entity names collide with C# reserved types (`Task`, `Thread`, `Timer`, `Type`, `String`, `Object`, `Action`, `Attribute`, `File`, `Path`)
 - [ ] State machine `states` list matches `transitions` from/to values (no orphaned states or transitions)
 - [ ] Every event `raisedBy` references a defined entity

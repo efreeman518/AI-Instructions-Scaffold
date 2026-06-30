@@ -54,12 +54,12 @@ public class {Entity}WorkflowTests { ... }
 | Profile | Include by default |
 |---|---|
 | `minimal` | Unit + Endpoint |
-| `balanced` | Minimal + Integration (component) + Architecture + Test.Support |
+| `balanced` | Minimal + Integration (component) + Architecture + Test.Support + `Test.UI` when UI model/presentation coverage exists |
 | `comprehensive` | Balanced + Aspire mesh + PlaywrightUI + Load + Benchmarks + Mutation |
 
 Rule: start balanced, then add hosted UI and performance suites when slices stabilize. Separate two switches that are easy to conflate (see [Capability-Gated Test Tiers](#capability-gated-test-tiers-the-early-decision-drives-the-rest)): **generation** (does the test project exist?) is driven by the early Phase 2 capability pick + `testingProfile`; **runtime gating** (does a generated tier run, or self-skip?) is default-on for a selected tier with a local false-only opt-out - except `Test.Mobile`, which is opt-IN (default off) because its emulator/Appium/APK preconditions are too heavy for the canonical lane.
 
-The `resource-implementation.yaml` test booleans drive **generation**: `comprehensive` implies `includeAspireTests` + `includePlaywrightUITests` (plus Load/Benchmarks/Mutation) when those flags are omitted. Setting a flag explicitly overrides the profile default. `includeMobileTests` (`Test.Mobile`, Uno native Appium) and the Skia-canvas `WasmUI` bridge tier require `includeUnoUI`; generate them in balanced+ when Uno is in scope. Do not confuse `includeE2ETests` (`Test.E2E`, WebApplicationFactory + Testcontainers SQL) with `includePlaywrightUITests` (`Test.PlaywrightUI`, browser-driven) - they are distinct tiers.
+The `resource-implementation.yaml` test booleans drive **generation**: `comprehensive` implies `includeAspireTests` + `includePlaywrightUITests` (plus Load/Benchmarks/Mutation) when those flags are omitted. Setting a flag explicitly overrides the profile default. `includeMobileTests` (`Test.Mobile`, Uno native Appium) and the Skia-canvas `WasmUI` bridge tier require `includeUnoUI`; generate them in balanced+ when Uno is in scope. Generate `Test.UI` when UI model/presentation coverage exists; it is the fast headless UI lane for UI services, theme/catalog logic, presentation models, and MVUX state/feed tests. Do not confuse `includeE2ETests` (`Test.E2E`, WebApplicationFactory + Testcontainers SQL) with `includePlaywrightUITests` (`Test.PlaywrightUI`, browser-driven) - they are distinct tiers.
 
 EF query-translation correctness requires a real relational provider. `minimal` (Unit + Endpoint) does not cover translated predicates, projections, owned-type filters, or value-converted columns because endpoint tests use the in-memory WAF path. In `balanced` and higher, add at least one real-SQL search/list path per searchable aggregate: `Test.E2E` for HTTP workflow coverage or `Test.Integration` for repository/component coverage.
 
@@ -69,7 +69,8 @@ The early Phase 2 capability pick - `scaffoldMode` plus the `include*UI` / `useA
 
 | Early Phase 2 pick | Tier (project / category) | Local gating var | Stack-script branch + VS Code tasks |
 |---|---|---|---|
-| `api-only` / no UI | none of PlaywrightUI / WasmUI / Mobile | - | - |
+| `api-only` / no UI | none of Test.UI / PlaywrightUI / WasmUI / Mobile | - | - |
+| UI model/presentation coverage exists | `Test.UI` / `UI` or `Presentation` (headless) | none | none |
 | `includeBlazorUI` / `includeReactUI` (+ comprehensive or `includePlaywrightUITests`) | `Test.PlaywrightUI` / `PlaywrightUI` (DOM) | none (generation-gated) | Playwright install |
 | `includeUnoUI`, Skia renderer (+ comprehensive or `includePlaywrightUITests`) | `Test.PlaywrightUI` / `WasmUI` (canvas bridge) | `{APP}_WASM_TESTS_ENABLED` (opt-out; default on) | Build WASM, Playwright install; tasks: Build WASM, Test: WASM |
 | `includeUnoUI` (+ balanced or `includeMobileTests`) | `Test.Mobile` / `MobileUI` (Appium) | `{APP}_MOBILE_TESTS_ENABLED` (opt-IN; default off) | `src/Test/Test.Mobile/run-mobile-tests.ps1`; tasks: Test: Mobile |
@@ -105,6 +106,7 @@ Suspect container resource pressure before editing test logic when health checks
 Test/
   Test.Support/
   Test.Unit/
+  Test.UI/
   Test.Integration/      # component: one class vs one real store (standalone Testcontainers)
   Test.Aspire/           # mesh: full AppHost graph over HTTP (lazy-started)
   Test.Endpoints/
@@ -124,7 +126,8 @@ When any of `Test.Aspire`, the `WasmUI` bridge tier, or `Test.Mobile` is in scop
 
 | Project | Harness | Test scope | Template |
 |---|---|---|---|
-| `Test.Unit` | Pure CLR + Moq | Domain rules, mappers, services with mocks, Uno MVUX presentation models in `{Project}.Uno.Core` | [test-templates-domain.md](../templates/test-templates-domain.md), [test-templates-repository.md](../templates/test-templates-repository.md), [test-templates-service.md](../templates/test-templates-service.md), [test-templates-presentation.md](../templates/test-templates-presentation.md) |
+| `Test.Unit` | Pure CLR + Moq | Domain rules, mappers, application services with mocks | [test-templates-domain.md](../templates/test-templates-domain.md), [test-templates-repository.md](../templates/test-templates-repository.md), [test-templates-service.md](../templates/test-templates-service.md) |
+| `Test.UI` | Pure CLR + Moq, no app head | Headless UI services, theme/catalog logic, presentation models, MVUX state/feed tests. References `{Project}.Uno.Core` and `{Project}.Uno.Presentation`, never `{Project}.Uno`. | [test-templates-presentation.md](../templates/test-templates-presentation.md) |
 | `Test.Endpoints` | `WebApplicationFactory<TProgram>` + EF InMemory | Single endpoint contract: status code, response shape, validation, auth | [test-templates-endpoint.md](../templates/test-templates-endpoint.md) |
 | `Test.E2E` | `WebApplicationFactory<TProgram>` + Testcontainers SQL | Multi-endpoint workflows against real SQL: paged search distinct-page, projection round-trip, FK constraints, child aggregate lifecycle | [test-templates-e2e.md](../templates/test-templates-e2e.md) |
 | `Test.Integration` | Standalone Testcontainers (SQL / Azurite / Redis) | Component: one class vs one real store - repo CRUD/migrations, tenant filter, M:N, audit-repo round-trip, projection pipeline | [test-templates-integration.md](../templates/test-templates-integration.md) |
@@ -147,7 +150,8 @@ Real-SQL tiers are the only tiers that prove EF translation. Use them for predic
 
 ```
 Pure unit (Test.Unit)
-  -> CustomApiFactory (Test.Endpoints, WAF + InMemory)
+ -> Headless UI (Test.UI)
+ -> CustomApiFactory (Test.Endpoints, WAF + InMemory)
     -> SqlApiFactory (Test.E2E, WAF + Testcontainers SQL)
       -> Standalone store fixtures (Test.Integration, component - one class vs one Testcontainer)
         -> AspireTestHost (Test.Aspire, mesh - full distributed app over HTTP)
@@ -197,10 +201,11 @@ Prefer specific MSTest asserts over generic `Assert.IsTrue`.
 
 ## Categories and Command Split
 
-Use these categories: `Unit`, `Endpoint`, `Integration`, `Aspire`, `E2E`, `PlaywrightUI`, `WasmUI`, `MobileUI`, `Architecture`, `Load`, `Benchmark`, `Mutation`. When AI is scaffolded, the live model smoke lane adds `LiveAI` (plus `FoundryLocal` / `AzureFoundry` to scope a smoke to a single provider).
+Use these categories: `Unit`, `UI`, `Presentation`, `Endpoint`, `Integration`, `Aspire`, `E2E`, `PlaywrightUI`, `WasmUI`, `MobileUI`, `Architecture`, `Load`, `Benchmark`, `Mutation`. When AI is scaffolded, the live model smoke lane adds `LiveAI` (plus `FoundryLocal` / `AzureFoundry` to scope a smoke to a single provider).
 
 Category boundaries that matter:
 
+- **`UI` / `Presentation`** fast headless UI tier (`Test.UI`) for UI services, theme/catalog logic, presentation models, MVUX state/feed tests. Never tag these `Unit`, and never reference a Uno.Sdk app head.
 - **`Aspire`** is the mesh tier (`Test.Aspire`), distinct from **`Integration`** (component, `Test.Integration`). Never tag mesh tests `Integration` - that would boot the full graph on a `--filter TestCategory=Integration` run.
 - **`PlaywrightUI`** is DOM-based browser UI (MudBlazor/React/managed-DOM Uno). **`WasmUI`** is the Skia-canvas Uno bridge tier. **`MobileUI`** is Appium. None of these is `E2E` (`E2E` is WAF + Testcontainers SQL).
 - **`LiveAI`** is the model-backed AI smoke lane in `Test.Aspire` - one active-provider lane (Azure if configured, else Foundry Local if it bootstraps), `Inconclusive` (never green) when no real provider is active. Fast AI coverage (contract, parse guard, no-write, write, no-op fallback) uses a fake `IChatClient` in `Test.Unit` / `Test.Endpoints` and carries no AI category. `AzureFoundry` is for Azure-specific selection/provisioning only, not a second copy of a provider-neutral contract. Doctrine: [ai-integration.md](ai-integration.md) -> Provider Test Tiers.
@@ -211,6 +216,9 @@ Category boundaries that matter:
 dotnet test .\{SolutionName}.slnx --filter "TestCategory!=Load"
 
 # Scoped runs
+dotnet test --filter "TestCategory=Unit"
+dotnet test --filter "TestCategory=UI"
+dotnet test --filter "TestCategory=Presentation"
 dotnet test --filter "TestCategory=Endpoint"
 dotnet test --filter "TestCategory=Integration"
 dotnet test --filter "TestCategory=Aspire"
@@ -305,9 +313,9 @@ public void Projection_And_ToDto_Agree()
 
 **Tenant-admin bypass.** When `enableMultiTenant: true`, pin both paths: `X-{App}-Admin: true` flips `DbContext.BypassTenantFilter` end-to-end (admin sees cross-tenant rows); non-admin cross-tenant access returns 404. The negative path must be a separate test so a regression in either direction surfaces independently.
 
-### Uno MVUX Presentation Unit Tests
+### Uno MVUX Presentation UI Tests
 
-When `includeUnoUI: true`, test MVUX presentation records from `src/UI/{Project}.Uno.Core/Presentation` in `Test.Unit/Presentation`. The test project references `{Project}.Uno.Core` only, never the `{Project}.Uno` `Uno.Sdk` app head. Use [../templates/test-templates-presentation.md](../templates/test-templates-presentation.md) for the `SourceContext` harness, stub `HttpMessageHandler`, and local nullable-warning suppressions.
+When `includeUnoUI: true`, test MVUX presentation records from `src/UI/{Project}.Uno.Presentation/Presentation` in `Test.UI/Presentation`. The test project references `{Project}.Uno.Core` and `{Project}.Uno.Presentation` only, never the `{Project}.Uno` `Uno.Sdk` app head. Use [../templates/test-templates-presentation.md](../templates/test-templates-presentation.md) for the `SourceContext` harness, stub `HttpMessageHandler`, and local nullable-warning suppressions. Tag classes `UI`; tag presentation-specific methods `Presentation`.
 
 ### Endpoint (Test.Endpoints)
 

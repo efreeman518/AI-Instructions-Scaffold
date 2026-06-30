@@ -68,6 +68,7 @@ Run this check before writing Phase 4 tasks. Fix source artifacts first, not gen
 - [ ] Uno UI (if enabled; dedicated session preferred)
 - [ ] Blazor UI (if enabled)
 - [ ] React UI (if enabled)
+- [ ] Fast headless UI model/presentation tests (if UI model/presentation coverage exists) - `Test.UI`, categories `UI` / `Presentation`
 - [ ] Notifications (if enabled)
 - [ ] Write per-host smoke tests
 - [ ] **Checkpoint:** `dotnet build`, each enabled host responds, `dotnet test` passes; per-host gate status recorded in `HANDOFF.md`

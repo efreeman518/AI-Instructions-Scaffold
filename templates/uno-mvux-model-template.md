@@ -2,11 +2,11 @@
 
 | | |
 |---|---|
-| **Files** | `src/UI/{Project}.Uno.Core/Presentation/{Entity}ListModel.cs`, `src/UI/{Project}.Uno.Core/Presentation/{Entity}PageModel.cs` |
+| **Files** | `src/UI/{Project}.Uno.Presentation/Presentation/{Entity}ListModel.cs`, `src/UI/{Project}.Uno.Presentation/Presentation/{Entity}PageModel.cs` |
 | **Depends on** | [uno-ui-client-layer](uno-ui-client-layer.md) |
 | **Referenced by** | [uno-xaml-page-template](uno-xaml-page-template.md), [ui-uno.md](../skills/ui-uno.md) |
 
-This file belongs in the `{Project}.Uno.Core` library (`Microsoft.NET.Sdk`), not in the `{Project}.Uno` `Uno.Sdk` app head.
+This file belongs in the `{Project}.Uno.Presentation` library (`Microsoft.NET.Sdk`), not in the `{Project}.Uno` `Uno.Sdk` app head.
 
 ## Design Standard: Single Entity Page
 
@@ -27,7 +27,7 @@ This replaces the old 3-model pattern (List + Detail + Create). Benefits:
 using {Project}.Uno.Core.Business.Models;
 using {Project}.Uno.Core.Business.Services.{Feature};
 
-namespace {Project}.Uno.Core.Presentation;
+namespace {Project}.Uno.Presentation.Presentation;
 
 public partial record {Entity}ListModel(
     INavigator Navigator,
@@ -59,7 +59,7 @@ using CommunityToolkit.Mvvm.Messaging;
 using {Project}.Uno.Core.Business.Models;
 using {Project}.Uno.Core.Business.Services;
 
-namespace {Project}.Uno.Core.Presentation;
+namespace {Project}.Uno.Presentation.Presentation;
 
 public partial record {Entity}PageModel(
     {Entity}Model? Entity,
@@ -149,7 +149,7 @@ public partial record {Entity}PageModel(
 ## Rules
 
 - Always use `partial record` - the MVUX source generator needs it
-- Keep every MVUX presentation record for one app in `{Project}.Uno.Core`; do not split records across the app head and core library
+- Keep every MVUX presentation record for one app in `{Project}.Uno.Presentation`; do not split records across the app head, core library, and presentation library
 - Constructor-injected parameters: services via DI, `Entity?` via navigation data (`null` = create, non-null = edit)
 - Inject navigation, theme, shell, and app-behavior dependencies; never call static `App.*` members from presentation models
 - Use `IFeed`/`IListFeed` for read-only data, `IState`/`IListState` for mutable data
