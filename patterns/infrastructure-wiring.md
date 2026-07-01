@@ -8,74 +8,7 @@ For base types used here, see [../support/ef-packages-reference.md](../support/e
 
 ## Multi-Cache Configuration
 
-**Source:** `Host/{App}.Bootstrapper/Registration/RegisterServices.Caching.cs`
-
-FusionCache config loop: bind `CacheSettings[]` from configuration, register each as a named FusionCache with exact entry option defaults (fail-safe, jitter, eager refresh threshold), conditional Redis backplane per cache instance.
-
-```csharp
-private static void AddCachingServices(IServiceCollection services, IConfiguration config)
-{
-    List<CacheSettings> cacheSettings = [];
-    config.GetSection("CacheSettings").Bind(cacheSettings);
-    foreach (var cacheSettingsInstance in cacheSettings)
-    {
-        ConfigureFusionCacheInstance(services, config, cacheSettingsInstance);
-    }
-}
-
-private static void ConfigureFusionCacheInstance(IServiceCollection services,
-    IConfiguration config, CacheSettings cacheSettingsInstance)
-{
-    var jsonOptions = new JsonSerializerOptions
-    {
-        ReferenceHandler = ReferenceHandler.Preserve,
-    };
-
-    var fcBuilder = services.AddFusionCache(cacheSettingsInstance.Name)
-        .WithSystemTextJsonSerializer(jsonOptions)
-        .WithCacheKeyPrefix($"{cacheSettingsInstance.Name}:")
-        .WithDefaultEntryOptions(new FusionCacheEntryOptions()
-        {
-            Duration = TimeSpan.FromMinutes(cacheSettingsInstance.DurationMinutes),
-            DistributedCacheDuration = TimeSpan.FromMinutes(
-                cacheSettingsInstance.DistributedCacheDurationMinutes),
-            IsFailSafeEnabled = true,
-            FailSafeMaxDuration = TimeSpan.FromMinutes(
-                cacheSettingsInstance.FailSafeMaxDurationMinutes),
-            FailSafeThrottleDuration = TimeSpan.FromSeconds(
-                cacheSettingsInstance.FailSafeThrottleDurationMinutes),
-            JitterMaxDuration = TimeSpan.FromSeconds(10),
-            FactorySoftTimeout = TimeSpan.FromSeconds(1),
-            FactoryHardTimeout = TimeSpan.FromSeconds(30),
-            EagerRefreshThreshold = 0.9f
-        });
-
-    ConfigureFusionCacheRedis(fcBuilder, config, cacheSettingsInstance);
-}
-```
-
-**Conditional Redis backplane** -- only wired when `RedisConnectionStringName` is set in that cache's config:
-
-```csharp
-private static void ConfigureFusionCacheRedis(IFusionCacheBuilder fcBuilder,
-    IConfiguration config, CacheSettings cacheSettingsInstance)
-{
-    if (!string.IsNullOrEmpty(cacheSettingsInstance.RedisConnectionStringName))
-    {
-        var redisConnectionString = config.GetConnectionString(
-            cacheSettingsInstance.RedisConnectionStringName);
-        fcBuilder
-            .WithDistributedCache(new RedisCache(new RedisCacheOptions()
-            {
-                Configuration = redisConnectionString
-            }))
-            .WithBackplane(new RedisBackplane(new RedisBackplaneOptions
-            {
-                Configuration = redisConnectionString
-            }));
-    }
-}
-```
+**Owner:** [../skills/caching.md](../skills/caching.md) section Registration Pattern (Bootstrapper) owns the FusionCache multi-cache registration - named caches, entry-option defaults bound from `CacheSettings`, and the conditional Redis L2 + backplane - loaded in the same Phase 5b session. It is a Bootstrapper DI concern co-located with the `CacheSettings` model it binds; do not restate the loop here.
 
 ---
 
@@ -108,59 +41,80 @@ public static IHostApplicationBuilder AddServiceDefaults(
 - Do not duplicate OpenTelemetry or health check setup in individual hosts - ServiceDefaults owns it.
 - Add domain-specific readiness checks (SQL, Redis) in host registration, not in ServiceDefaults.
 
+`MapDefaultEndpoints` maps two probes with distinct semantics - keep both:
+
+```csharp
+app.MapHealthChecks("/healthz", new HealthCheckOptions { Predicate = _ => true }).AllowAnonymous();        // liveness: all checks
+app.MapHealthChecks("/readyz",  new HealthCheckOptions { Predicate = r => r.Tags.Contains("ready") }).AllowAnonymous(); // readiness: only "ready"-tagged
+```
+
+`/healthz` (liveness) reports every registered check; `/readyz` (readiness) reports only checks tagged `ready` (e.g. DB reachable, migrations applied). Gate "is this host ready to serve?" on `/readyz`, not `/healthz` - a host can be live before its dependencies are ready. Tests and orchestration gate on `WaitForResourceHealthyAsync` + `/readyz`, never on a resource merely reaching `Running`.
+
+**Non-negotiable:** do NOT add `http.AddHeaderPropagation()` in `AddServiceDefaults` unless a host also registers the `UseHeaderPropagation` middleware AND configures which headers to propagate. The handler alone throws `InvalidOperationException: HeaderPropagationValues.Headers not initialized` the moment an `HttpClient` is used outside an inbound HTTP request scope - a Blazor Server circuit, a background service, or any startup task. Forward cross-cutting context (tenant, correlation) explicitly with a per-client `DelegatingHandler` instead (see [../skills/ui-blazor.md](../skills/ui-blazor.md) section Dev Tenant Header).
+
 ---
 
 ## Aspire Resource Wiring
 
 **Source:** `Host/Aspire/AppHost/AppHost.cs`
 
-SQL with password parameter + data volume, Redis with data volume, per-service endpoints/references/WaitFor, Gateway wired to API only, Scheduler pinned to 1 replica.
+Canonical tokens (see [../ai/placeholder-tokens.md](../ai/placeholder-tokens.md)): `{Host}` = host project prefix, `{Project}` = DB/connection-name prefix, `{Gateway}` = `{Host}`. Aspire maps `.csproj` dots/hyphens to `_` in `Projects.*` (derivation rule 7).
+
+Wire a secret SQL password parameter (persistent volume + fixed port in dev; non-persistent + random port under test so each run is clean), then Redis, then each host keyed by `connectionName`. **Give each pooled DbContext its own `WithReference(db, connectionName: ...)`** even when they map to one database - the runtime binds by connection name (`{Project}DbContextTrxn`, `{Project}DbContextQuery`, plus any extra contexts). Reference Redis as `Redis1`.
 
 ```csharp
 var builder = DistributedApplication.CreateBuilder(args);
+var isTesting = builder.Environment.EnvironmentName == "Testing";
 
-// -- Shared infrastructure
+// -- Shared infrastructure (persistent in dev, fresh per test run)
 var sqlPassword = builder.AddParameter("sql-password", secret: true);
-var sql = builder.AddSqlServer("sql", sqlPassword)
-    .WithImageTag("2025-latest")
-    .WithDataVolume("{app}-sql-data")
-    .AddDatabase("{App}Db");
+var sql = builder.AddSqlServer("sql", sqlPassword, port: isTesting ? null : 38433)
+    .WithImageTag("2025-latest");
+if (!isTesting)
+    sql = sql.WithLifetime(ContainerLifetime.Persistent).WithDataVolume("{project}-sql-data");
+var db = sql.AddDatabase("{project}db");
 
-var redis = builder.AddRedis("redis")
-    .WithDataVolume("{app}-redis-data");
+var redis = builder.AddRedis("redis").WithImageTag("latest");
+if (!isTesting)
+    redis = redis.WithLifetime(ContainerLifetime.Persistent).WithDataVolume("{project}-redis-data");
 
-// -- API: references both SQL + Redis
-var {app}Api = builder.AddProject<Projects.{App}_Api>("{app}api")
-    .WithReference(sql)
-    .WithReference(redis)
-    .WithHttpEndpoint(port: 5065, name: "http-api")
-    .WithHttpsEndpoint(port: 7065, name: "https-api")
+// -- API: one WithReference per pooled DbContext connection name, plus Redis
+var api = builder.AddProject<Projects.{Host}_Api>("{host}api")
+    .WithReference(db, connectionName: "{Project}DbContextTrxn")
+    .WithReference(db, connectionName: "{Project}DbContextQuery")
+    .WithReference(redis, connectionName: "Redis1")
     .WaitFor(sql)
-    .WaitFor(redis);
+    .WaitFor(redis)
+    .WithExternalHttpEndpoints();
 
-// -- Scheduler: same infra refs, single replica
-var {app}Scheduler = builder.AddProject<Projects.{App}_Scheduler>("{app}scheduler")
-    .WithReference(sql)
-    .WithReference(redis)
-    .WithHttpEndpoint(port: 5100, name: "http-scheduler")
-    .WithHttpsEndpoint(port: 7100, name: "https-scheduler")
+// -- Scheduler: same DB refs, pinned to one replica (dev/prod only)
+var scheduler = builder.AddProject<Projects.{Host}_Scheduler>("{host}scheduler")
+    .WithReference(db, connectionName: "{Project}DbContextTrxn")
+    .WithReference(db, connectionName: "{Project}DbContextQuery")
     .WithReplicas(1)
-    .WaitFor(sql)
-    .WaitFor(redis);
-
-// -- Gateway (YARP): references API only, not infra directly
-var {app}Gateway = builder.AddProject<Projects.{App}_Gateway>("{app}gateway")
-    .WithReference({app}Api)
-    .WithHttpEndpoint(port: 5028, name: "http-gateway")
-    .WithHttpsEndpoint(port: 7028, name: "https-gateway")
-    .WaitFor({app}Api);
-
-// -- Function App: SQL only
-var functionApp = builder.AddProject<Projects.FunctionApp>("functionapp")
     .WaitFor(sql);
 
-builder.Build().Run();
+// -- Gateway (YARP): references API only. Destinations are injected here from resolved
+//    endpoints, never read from the Gateway's own config (see aspire.md Gateway Reverse-Proxy).
+var gateway = builder.AddProject<Projects.{Gateway}_Gateway>("{gateway}")
+    .WithReference(api)
+    .WaitFor(api);
+
+// -- React SPA: only when includeReactUI: true
+builder.AddViteApp("{host}react", "../../../UI/{Project}.React")
+    .WithReference(gateway)
+    .WithEnvironment("VITE_API_BASE_URL", gateway.GetEndpoint("http"))
+    .WaitFor(gateway)
+    .WithExternalHttpEndpoints();
+
+await builder.Build().RunAsync();
 ```
+
+**Rules:**
+- **`.WithExternalHttpEndpoints()` on every host a developer must reach in a browser** (`api`, `gateway`, and UI hosts registered via `AddProject`). Without it the Aspire dashboard shows no URL and does not proxy browser traffic. `AddViteApp` applies it automatically; `AddProject` hosts do not.
+- Only include `AddViteApp(...)` when `includeReactUI: true`; if Gateway is disabled, reference the API project and pass its endpoint to `VITE_API_BASE_URL`.
+- Gateway (YARP) destinations must be injected from the AppHost as resolved `api.GetEndpoint("http")` values - never read from the Gateway's own `appsettings.json` (DCP starts children with `--no-launch-profile` on dynamic ports). Depth: [../skills/aspire.md](../skills/aspire.md) -> *Gateway Reverse-Proxy Destinations Under Aspire (DCP)*.
+- This graph wires only local emulators/containers - **no** deployable Azure resources. When `deployTarget: ContainerApps` you MUST add the publish-mode branch: [../skills/aspire.md](../skills/aspire.md) -> *Publish-Mode Branch (deployTarget: ContainerApps)*.
 
 ### Azure AI Foundry (when `includeAiServices: true`)
 
@@ -185,9 +139,9 @@ if (azureConfigured)
 // on its own when Azure is absent (that bootstrap + the AiServices:DisableFoundryLocal opt-out +
 // future RunAsFoundryLocal() branch + migration are owned by ../skills/ai-integration.md).
 // A TESTING AppHost forces no-op so the RID-free mesh never starts a model:
-//   {app}Api = {app}Api.WithEnvironment("AiServices__DisableFoundryLocal", "true");
+//   api = api.WithEnvironment("AiServices__DisableFoundryLocal", "true");
 if (chat is not null)
-    {app}Api = {app}Api.WithReference(chat);
+    api = api.WithReference(chat);
 ```
 
 To consume an **existing** Foundry account instead of provisioning a new one (the `chat` deployment must already exist), replace the `azureConfigured` branch with `RunAsExisting`:

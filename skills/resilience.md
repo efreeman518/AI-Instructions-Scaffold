@@ -7,7 +7,7 @@ Resilience policy for outbound calls: what the scaffold applies by default, when
 
 ## Standard Resilience Handler (default path)
 
-Every `HttpClient` registered through `AddServiceDefaults()` gets `AddStandardResilienceHandler()` automatically - see [aspire.md](aspire.md) section ServiceDefaults Pattern. The standard pipeline bundles, in order: rate limiter, total-request timeout, retry (exponential + jitter), circuit breaker, and per-attempt timeout. Service-discovery internal calls (API -> API, Gateway -> API) therefore need **no additional wiring** - the default is the policy.
+Every `HttpClient` registered through `AddServiceDefaults()` gets `AddStandardResilienceHandler()` automatically - see [../patterns/infrastructure-wiring.md](../patterns/infrastructure-wiring.md) section ServiceDefaults Configuration. The standard pipeline bundles, in order: rate limiter, total-request timeout, retry (exponential + jitter), circuit breaker, and per-attempt timeout. Service-discovery internal calls (API -> API, Gateway -> API) therefore need **no additional wiring** - the default is the policy.
 
 ## Custom Per-Client Pipelines
 

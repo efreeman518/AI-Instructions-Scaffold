@@ -23,7 +23,7 @@ Load this file on demand. Keep it out of the default phase context.
 
 | Phase / Concern | TaskFlow area to inspect | What it proves |
 |---|---|---|
-| Phase 1 shared language | `.scaffold/UBIQUITOUS-LANGUAGE.md`, `.scaffold/DESIGN-DECISIONS.md`, `.scaffold/domain-specification.yaml`, `.scaffold/implementation-plan.md` (TaskFlow itself currently keeps these at project root - new scaffolds put them under `.scaffold/`) | Shared terminology, rejected synonyms, decision dependencies, and vertical slice order are explicit before code generation. |
+| Phase 1 shared language | `.scaffold/UBIQUITOUS-LANGUAGE.md`, `.scaffold/DESIGN-DECISIONS.md`, `.scaffold/domain-specification.yaml`, `.scaffold/implementation-plan.md` | Shared terminology, rejected synonyms, decision dependencies, and vertical slice order are explicit before code generation. |
 | Phase 4 contract scaffolding | `src/Domain/TaskFlow.Domain.Model`, `src/Application/TaskFlow.Application.Contracts`, `src/Application/TaskFlow.Application.Models`, `src/Test/Test.Support` | Entity shells, contracts, DTOs, builders, and test infrastructure exist before TDD starts. |
 | Phase 5a domain model | `src/Domain/TaskFlow.Domain.Model` | `Create()` / `Update()` patterns, value objects, domain rules, and aggregate shape. |
 | Phase 5a domain shared | `src/Domain/TaskFlow.Domain.Shared` | Shared enums, value-object base types, cross-aggregate primitives. |
@@ -55,17 +55,13 @@ Load this file on demand. Keep it out of the default phase context.
 | Phase 5e auth | `AuthConfiguration`, `ScaffoldAuthHandler`, gateway claims forwarding flow | Scaffold auth, Entra-ready wiring, and API claim enrichment path. |
 | Phase 5e AI | `src/Infrastructure/TaskFlow.Infrastructure.AI`, `src/Host/TaskFlow.Bootstrapper/Registration/RegisterServices.AiChatClient.cs`, `src/Test/Test.Aspire/AiFoundryLiveSmokeTests.cs`, `src/Test/Test.FoundryLocal/FoundryLocalLiveSmokeTests.cs` | Azure Foundry -> Foundry Local -> no-op provider order, `/api/v1/ai/status`, split Azure HTTP mesh smoke vs RID-bound Foundry Local live lane, no-op fallback contract. |
 
-### Uno MVUX Presentation Handoff
+### Uno MVUX Presentation (proven)
 
-TaskFlow currently remains the proof app for Uno patterns, but the scaffold source now expects MVUX presentation records to live in a testable presentation library. A proof-app agent aligning TaskFlow should:
+MVUX presentation records live in the testable `src/UI/TaskFlow.Uno.Presentation/Presentation` library, separate from the `Uno.Sdk` head. Inspect that library to verify the shape:
 
-1. Move all `src/UI/TaskFlow.Uno/Presentation/*.cs` files into `src/UI/TaskFlow.Uno.Presentation/Presentation` in one migration.
-2. Change namespaces and route imports to `TaskFlow.Uno.Presentation.Presentation`.
-3. Keep every MVUX record in that one assembly to avoid duplicate generated `BindableXxx` wrapper types.
-4. Add `TaskFlow.Uno.Presentation` package references for MVUX, navigation, and messenger; keep Kiota/client code in `TaskFlow.Uno.Core`; keep `Uno.Sdk` only on `TaskFlow.Uno`.
-5. Replace any static `App.*` model calls with injected abstractions such as `IAppShellActions` and `IThemePreferenceService`.
-6. Add `Test.UI/Presentation` tests from [../templates/test-templates-presentation.md](../templates/test-templates-presentation.md).
-7. Verify with `rtk dotnet build src\TaskFlow.slnx -m:1 -v minimal` and `rtk dotnet test src\Test\Test.UI\Test.UI.csproj --no-build --no-restore -v minimal`.
+- Every MVUX record sits in the one `TaskFlow.Uno.Presentation` assembly (avoids duplicate generated `BindableXxx` wrapper types); Kiota/client code stays in `TaskFlow.Uno.Core`; `Uno.Sdk` is only on `TaskFlow.Uno`.
+- Static `App.*` model calls are replaced by injected abstractions such as `IAppShellActions` and `IThemePreferenceService`.
+- Presentation tests live in `Test.UI/Presentation` (see [../templates/test-templates-presentation.md](../templates/test-templates-presentation.md)).
 
 ---
 
@@ -75,8 +71,8 @@ Use these links first. If a branch or path has moved, search inside the same rep
 
 | Concern | Direct link |
 |---|---|
-| Ubiquitous language | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/blob/main/UBIQUITOUS-LANGUAGE.md> |
-| Design decisions | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/blob/main/DESIGN-DECISIONS.md> |
+| Ubiquitous language | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/blob/main/.scaffold/UBIQUITOUS-LANGUAGE.md> |
+| Design decisions | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/blob/main/.scaffold/DESIGN-DECISIONS.md> |
 | Domain model | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/src/Domain/TaskFlow.Domain.Model> |
 | Domain shared | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/src/Domain/TaskFlow.Domain.Shared> |
 | Application contracts | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/src/Application/TaskFlow.Application.Contracts> |
@@ -112,7 +108,7 @@ Use these links first. If a branch or path has moved, search inside the same rep
 
 ## High-Value Proof Checks
 
-- **Current reference proof snapshot:** `src\Test\Test.Mobile\run-mobile-tests.ps1 -SkipBuild` reported 3/3 mobile tests passed on this machine; default `dotnet test src\Test\Test.Mobile\Test.Mobile.csproj --no-build -m:1 --filter TestCategory=MobileUI` stayed dependency-free inconclusive; `dotnet test src\TaskFlow.slnx --no-build -m:1` reported 410 passed, 0 warnings; Foundry Local live lane passed runtime installed; Playwright UI lane passed Uno canvas-first coverage.
+- **Current reference proof snapshot:** on this machine `src\Test\Test.Mobile\run-mobile-tests.ps1 -SkipBuild` ran the mobile smoke tests green; the default `dotnet test src\Test\Test.Mobile\Test.Mobile.csproj --no-build -m:1 --filter TestCategory=MobileUI` stayed dependency-free inconclusive; the full automated gate `dotnet test src\TaskFlow.slnx --no-build -m:1` ran green with 0 warnings; Foundry Local live lane passed with the runtime installed; Playwright UI lane passed Uno canvas-first coverage. Authoritative build/test counts live only in the reference app's `.scaffold/REFERENCE-STATUS.md` (<https://github.com/efreeman518/AI-Instructions-ReferenceApp/blob/main/.scaffold/REFERENCE-STATUS.md>) - not restated here.
 
 - **Multi-tenant proof:** TaskFlow demonstrates full multi-tenancy - `ITenantEntity<TenantId>` (typed domain ID), `ITenantBoundaryValidator`, `ValidationHelper`, `TenantBoundaryLoggingExtensions`, tenant query filters, tenant stamping, and global-admin bypass. Not all scaffolds require multi-tenancy.
 - **Service pattern proof:** TaskFlow services use `BuildResponse` helper, `ErrorConstants.ERROR_ITEM_NOTFOUND`, `nameof(Entity)`, `[LoggerMessage]` source-gen logging, and `DefaultRequest<T>`/`DefaultResponse<T>` as `record` types.

@@ -37,7 +37,7 @@ public readonly record struct {Entity}Id(Guid Value) : IDomainId<{Entity}Id>
 ## File: Domain/Model/Entities/{Entity}.cs
 
 > **EntityBase properties (inherited, do NOT redefine):**
-> - `{Entity}Id Id { get; init; }` - typed domain ID, auto-generated via `Guid.CreateVersion7()`, init-only
+> - `{Entity}Id Id { get; init; }` - typed domain ID, client-generated via `Guid.CreateVersion7()` (set by the app, not the store; EF `ValueGeneratedNever()`), init-only
 > - `byte[]? RowVersion { get; set; }` - nullable, configured via `.IsRowVersion()` in EF config
 >
 > `EntityBase<TId>` is the generic base where `TId : IDomainId<TId>`. The typed `Id` property replaces the raw `Guid Id`.

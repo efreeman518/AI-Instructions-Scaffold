@@ -84,51 +84,7 @@ The AppHost project's entry file is **`AppHost.cs`**, not `Program.cs`:
 
 ## AppHost Baseline Pattern
 
-```csharp
-var builder = DistributedApplication.CreateBuilder(args);
-
-var sqlServer = builder.AddSqlServer("sql", password, port: 38433)
-    .WithLifetime(ContainerLifetime.Persistent)
-    .WithDataVolume("{project}-sql-data")
-    .WithImageTag("2025-latest");
-var projectDb = sqlServer.AddDatabase("{project}db");
-
-var redis = builder.AddRedis("redis");
-
-var api = builder.AddProject<Projects.{Host}_Api>("{host}api")
-    .WithReference(projectDb, connectionName: "{Project}DbContextTrxn")
-    .WithReference(projectDb, connectionName: "{Project}DbContextQuery")
-    .WithReference(redis, connectionName: "Redis1")
-    .WaitFor(sqlServer)
-    .WaitFor(redis)
-    .WithExternalHttpEndpoints();
-
-var scheduler = builder.AddProject<Projects.{Host}_Scheduler>("{host}scheduler")
-    .WithReference(projectDb, connectionName: "{Project}DbContextTrxn")
-    .WithReference(projectDb, connectionName: "{Project}DbContextQuery")
-    .WithReference(projectDb, connectionName: "SchedulerDbContext")
-    .WithReplicas(1)
-    .WaitFor(sqlServer);
-
-var gateway = builder.AddProject<Projects.{Gateway}_Gateway>("{gateway}")
-    .WithReference(api)
-    .WithReference(scheduler)
-    .WaitFor(api);
-
-builder.AddViteApp("{host}react", "../../../UI/{Project}.React")
-    .WithReference(gateway)
-    .WithEnvironment("VITE_API_BASE_URL", gateway.GetEndpoint("http"))
-    .WaitFor(gateway)
-    .WithExternalHttpEndpoints();
-
-await builder.Build().RunAsync();
-```
-
-**Non-negotiable:** every project that serves HTTP traffic a developer needs to reach must have `.WithExternalHttpEndpoints()`. Without it, the Aspire dashboard shows no URL for that resource and Aspire does not proxy browser traffic to it. This applies to `api`, `gateway`, and any UI host registered via `AddProject`. `AddViteApp` already applies it; `AddProject`-based hosts do not get it automatically.
-
-Only include `AddViteApp(...)` when `includeReactUI: true`. If Gateway is disabled, reference the API project and pass the API endpoint to `VITE_API_BASE_URL` instead. Aspire may assign a dynamic Vite port; read the resource URL from the current dashboard/console output for browser tests.
-
-> The baseline above wires only local emulators/containers (`AddSqlServer`, `AddRedis`, emulated storage). That graph runs locally but produces **no deployable Azure resources**. When `deployTarget: ContainerApps`, you MUST add the publish-mode branch below or `azd`/`aspire publish` emits a SQL *container* in ACA instead of Azure SQL, no ACA environment, and no managed identities.
+The canonical AppHost resource graph - SQL/Redis with per-host `connectionName` DbContext references, `WithExternalHttpEndpoints()`, and the optional Vite app - is owned by [../patterns/infrastructure-wiring.md](../patterns/infrastructure-wiring.md) section Aspire Resource Wiring, loaded in the same Phase 5b session. Do not restate it here. The Aspire-specific concerns below layer on top of that graph: reverse-proxy destination injection, publish-mode resources, and run-mode parameters.
 
 ---
 
@@ -260,40 +216,7 @@ The AppHost wiring snippet (Azure branch + local var-forward + existing-account)
 
 ## ServiceDefaults Pattern
 
-```csharp
-public static IHostApplicationBuilder AddServiceDefaults(
-    this IHostApplicationBuilder builder,
-    IConfiguration config,
-    string appName)
-{
-    builder.ConfigureOpenTelemetry();
-    builder.AddDefaultHealthChecks();
-    builder.Services.AddServiceDiscovery();
-    builder.Services.ConfigureHttpClientDefaults(http =>
-    {
-        http.AddStandardResilienceHandler();
-        http.AddServiceDiscovery();
-    });
-    return builder;
-}
-```
-
-`MapDefaultEndpoints` maps two probes with distinct semantics - keep both:
-
-```csharp
-app.MapHealthChecks("/healthz", new HealthCheckOptions { Predicate = _ => true }).AllowAnonymous();        // liveness: all checks
-app.MapHealthChecks("/readyz",  new HealthCheckOptions { Predicate = r => r.Tags.Contains("ready") }).AllowAnonymous(); // readiness: only "ready"-tagged
-```
-
-`/healthz` (liveness) reports every registered check; `/readyz` (readiness) reports only checks tagged `ready` (e.g. DB reachable, migrations applied). Gate "is this host ready to serve?" on `/readyz`, not `/healthz` - a host can be live before its dependencies are ready. Tests and orchestration gate on `WaitForResourceHealthyAsync` + `/readyz`, never on a resource merely reaching `Running`.
-
-**Non-negotiable:** do NOT add `http.AddHeaderPropagation()` here unless a host also registers the
-`UseHeaderPropagation` middleware AND configures which headers to propagate. The handler alone (no
-middleware, no configured headers) throws `InvalidOperationException: HeaderPropagationValues.Headers
-not initialized` the moment an `HttpClient` is used outside an inbound HTTP request scope - e.g. a
-Blazor Server circuit, a background service, or any startup task. Forward cross-cutting context
-(tenant, correlation) explicitly with a per-client `DelegatingHandler` instead (see the
-`TenantHeaderHandler` pattern in [ui-blazor.md](ui-blazor.md) section Dev Tenant Header).
+`AddServiceDefaults` (OpenTelemetry, health checks, service discovery, HTTP resilience) and the `/healthz` + `/readyz` probes are owned by [../patterns/infrastructure-wiring.md](../patterns/infrastructure-wiring.md) section ServiceDefaults Configuration, loaded in the same Phase 5b session. Do not restate the method body here.
 
 ---
 

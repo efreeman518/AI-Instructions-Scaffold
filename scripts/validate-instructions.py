@@ -327,6 +327,31 @@ def check_section_anchors(path: Path, findings: Findings, headings_cache: dict[P
                 )
 
 
+REFAPP_COUNT_PATTERNS = [
+    re.compile(r"reported\s+\d+\s+passed", re.IGNORECASE),
+    re.compile(r"\d+\s+passed,\s*\d+\s+warning", re.IGNORECASE),
+    re.compile(r"\b\d+\s+tests?\s+(?:passed|passing|green)\b", re.IGNORECASE),
+]
+
+
+def check_refapp_count_claims(path: Path, findings: Findings) -> None:
+    """Reference-app build/test counts drift the moment the app changes. They
+    belong only in the reference app's .scaffold/REFERENCE-STATUS.md (the SSOT);
+    the instruction set must link to it, not restate a number. Flag the drift
+    signatures (e.g. 'reported 410 passed, 0 warnings')."""
+    text = path.read_text(encoding="utf-8")
+    for line_no, line in enumerate(text.splitlines(), start=1):
+        for pat in REFAPP_COUNT_PATTERNS:
+            match = pat.search(line)
+            if match:
+                findings.err(
+                    path,
+                    f"line {line_no}: hard-coded reference-app count ({match.group(0)!r}); "
+                    "state build/test counts only in the reference app's "
+                    ".scaffold/REFERENCE-STATUS.md and link to it",
+                )
+
+
 def check_command_shape(findings: Findings) -> None:
     for rel, required_headings in REQUIRED_COMMAND_HEADINGS.items():
         path = APP_ROOT / rel
@@ -804,6 +829,7 @@ def main() -> int:
         check_links(path, findings)
         check_phase_labels(path, findings)
         check_section_anchors(path, findings, headings_cache)
+        check_refapp_count_claims(path, findings)
 
     check_command_shape(findings)
     check_maintenance_guards(findings)

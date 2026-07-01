@@ -51,48 +51,48 @@ For local Redis inspection under Aspire, use the **Aspire-managed RedisInsight b
 
 ## Registration Pattern (Bootstrapper)
 
+**Source:** `Host/{App}.Bootstrapper/Registration/RegisterServices.Caching.cs`. Bind `CacheSettings[]` from config and register each as a named FusionCache. Every entry-option value comes from `CacheSettings` (see model below) - do not hard-code durations/timeouts. When no `CacheSettings` are configured, register one default cache so `IFusionCacheProvider.GetCache(DEFAULT_CACHE)` always resolves. Wire the Redis L2 + backplane only when that cache sets `RedisConnectionStringName`.
+
 ```csharp
 private static void AddCachingServices(IServiceCollection services, IConfiguration config)
 {
     List<CacheSettings> cacheSettings = [];
     config.GetSection("CacheSettings").Bind(cacheSettings);
 
+    if (cacheSettings.Count == 0)
+        cacheSettings.Add(new CacheSettings { Name = AppConstants.DEFAULT_CACHE });
+
     foreach (var settings in cacheSettings)
     {
-        ConfigureFusionCacheInstance(services, config, settings);
-    }
-}
+        var fcBuilder = services.AddFusionCache(settings.Name)
+            .WithSystemTextJsonSerializer(new JsonSerializerOptions
+            {
+                ReferenceHandler = ReferenceHandler.Preserve
+            })
+            .WithCacheKeyPrefix($"{settings.Name}:")
+            .WithDefaultEntryOptions(new FusionCacheEntryOptions
+            {
+                Duration = TimeSpan.FromMinutes(settings.DurationMinutes),
+                DistributedCacheDuration = TimeSpan.FromMinutes(settings.DistributedCacheDurationMinutes),
+                IsFailSafeEnabled = true,
+                FailSafeMaxDuration = TimeSpan.FromMinutes(settings.FailSafeMaxDurationMinutes),
+                FailSafeThrottleDuration = TimeSpan.FromSeconds(settings.FailSafeThrottleDurationSeconds),
+                JitterMaxDuration = TimeSpan.FromSeconds(settings.JitterMaxDurationSeconds),
+                FactorySoftTimeout = TimeSpan.FromSeconds(settings.FactorySoftTimeoutSeconds),
+                FactoryHardTimeout = TimeSpan.FromSeconds(settings.FactoryHardTimeoutSeconds),
+                EagerRefreshThreshold = settings.EagerRefreshThreshold
+            });
 
-private static void ConfigureFusionCacheInstance(
-    IServiceCollection services,
-    IConfiguration config,
-    CacheSettings settings)
-{
-    var builder = services.AddFusionCache(settings.Name)
-        .WithSystemTextJsonSerializer(new JsonSerializerOptions
-        {
-            ReferenceHandler = ReferenceHandler.Preserve
-        })
-        .WithCacheKeyPrefix($"{settings.Name}:")
-        .WithDefaultEntryOptions(new FusionCacheEntryOptions
-        {
-            Duration = TimeSpan.FromMinutes(settings.DurationMinutes),
-            DistributedCacheDuration = TimeSpan.FromMinutes(settings.DistributedCacheDurationMinutes),
-            IsFailSafeEnabled = true,
-            FailSafeMaxDuration = TimeSpan.FromMinutes(settings.FailSafeMaxDurationMinutes),
-            FailSafeThrottleDuration = TimeSpan.FromSeconds(settings.FailSafeThrottleDurationSeconds),
-            JitterMaxDuration = TimeSpan.FromSeconds(10),
-            FactorySoftTimeout = TimeSpan.FromSeconds(1),
-            FactoryHardTimeout = TimeSpan.FromSeconds(30),
-            EagerRefreshThreshold = 0.9f
-        });
+        var redisConnStr = !string.IsNullOrEmpty(settings.RedisConnectionStringName)
+            ? config.GetConnectionString(settings.RedisConnectionStringName)
+            : null;
 
-    var redisConnStr = config.GetConnectionString(settings.RedisConnectionStringName);
-    if (!string.IsNullOrEmpty(redisConnStr))
-    {
-        builder
-            .WithRegisteredDistributedCache(throwIfMissing: false)
-            .WithStackExchangeRedisBackplane(o => o.Configuration = redisConnStr);
+        if (!string.IsNullOrEmpty(redisConnStr))
+        {
+            fcBuilder
+                .WithDistributedCache(new RedisCache(new RedisCacheOptions { Configuration = redisConnStr }))
+                .WithBackplane(new RedisBackplane(new RedisBackplaneOptions { Configuration = redisConnStr }));
+        }
     }
 }
 ```
@@ -162,8 +162,11 @@ public class CacheSettings
     public int DistributedCacheDurationMinutes { get; set; } = 60;
     public int FailSafeMaxDurationMinutes { get; set; } = 120;
     public int FailSafeThrottleDurationSeconds { get; set; } = 1;
+    public int JitterMaxDurationSeconds { get; set; } = 10;
+    public int FactorySoftTimeoutSeconds { get; set; } = 1;
+    public int FactoryHardTimeoutSeconds { get; set; } = 30;
+    public float EagerRefreshThreshold { get; set; } = 0.9f;
     public string? RedisConnectionStringName { get; set; }
-    public string? RedisConfigurationSection { get; set; }
     public string? BackplaneChannelName { get; set; }
 }
 ```
