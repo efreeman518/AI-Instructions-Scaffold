@@ -144,7 +144,7 @@ Real-SQL tiers are the only tiers that prove EF translation. Use them for predic
 
 **AI live-local smoke is a separate RID-bound tier.** When `includeAiServices: true` and the Foundry Local provider is in scope, its live smoke runs in a dedicated RID-bound `Test.FoundryLocal` project - the RID-free mesh (`Test.Aspire`) and in-memory WAF base physically cannot load the native `Microsoft.AI.Foundry.Local` SDK. Every other API-booting tier forces no-op via `AiServices:DisableFoundryLocal` (set on both the WAF base and the AppHost testing branch). Owner: [ai-integration.md](ai-integration.md) section Deciding the Live Lane Without Probing the CLI.
 
-`Test.Aspire` AI smoke is Azure Foundry only when configured; it must set `AiServices:DisableFoundryLocal=true` and never attempt Foundry Local. `Test.FoundryLocal` starts API host directly, sets `AiServices:RequireFoundryLocal=true`, checks `/api/v1/ai/status`, and is inconclusive only when runtime missing or undiscoverable. Installed/discovered runtime plus no-op fallback, timeout, or wrong status is failure.
+`Test.Aspire` AI smoke is Azure Foundry only when configured; it must set `AiServices:DisableFoundryLocal=true` and never attempt Foundry Local. `Test.FoundryLocal` starts API host directly, sets `AiServices:RequireFoundryLocal=true`, checks `/api/v1/ai/status`, and is inconclusive when runtime is missing/undiscoverable or when a healthy provider's model generation runs past the per-request budget (capacity, not failure). Installed/discovered runtime that falls back to no-op, returns bad HTTP or an invalid/missing contract, or reports wrong status is failure.
 
 **Tier ladder - pick the cheapest tier that catches the failure mode you're testing.**
 

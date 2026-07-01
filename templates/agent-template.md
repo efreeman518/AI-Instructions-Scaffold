@@ -228,4 +228,4 @@ return TypedResults.Ok(response);
 .WithSummary("Send a message to the {Agent} agent");
 ```
 
-Smoke tests that should not call tools send `{ "useTools": false }` and assert the no-tool response contract. Tool-calling tests must opt in with `{ "useTools": true }`, use a real timeout budget (`[Timeout]` plus cancellation token / HTTP timeout), and assert a tool-visible effect or DTO field. Prompt text is not control flow.
+Smoke tests that should not call tools send `{ "useTools": false }` and assert the no-tool response contract. Tool-calling tests must opt in with `{ "useTools": true }`, bound the model call with a per-request `CancellationTokenSource.CancelAfter(...)` (the `[Timeout]` is a backstop only), and assert a tool-visible effect or DTO field. Prompt text is not control flow.

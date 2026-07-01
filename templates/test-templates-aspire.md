@@ -225,7 +225,7 @@ public class AspireMeshLifecycle
 
 1. **One shared app per assembly, lazily started** - boot in `EnsureStartedAsync` (guarded by a `SemaphoreSlim`), called from each mesh class's `[ClassInitialize]`. Never per test method. No eager `[AssemblyInitialize]` start.
 2. **`Parameters:*` via `configureBuilder.hostSettings.Configuration`** - not env-var mutation.
-3. **Scope env vars** - `{APP}_ASPIRE_TESTING`, `{APP}_INCLUDE_FUNCTIONS` via `EnvironmentVariableScope` (restored on dispose).
+3. **Scope env vars** - `{APP}_ASPIRE_TESTING`, `{APP}_INCLUDE_FUNCTIONS` via `EnvironmentVariableScope` (restored on dispose). These are read at graph-construction time and baked into the graph once it starts, so the one shared lazily-started graph cannot re-flip them per test. A test that needs a different provider/config (e.g. proving local fallback) builds its own isolated graph (see [ai-integration.md](../skills/ai-integration.md) section Deciding the Live Lane Without Probing the CLI) - it does not mutate the shared graph's env after start.
 4. **Per-call `.WaitAsync(DefaultTimeout, ct)`** on every async Aspire call. Not a single umbrella CTS.
 5. **`WaitForResourceHealthyAsync(name, ct)` before talking to a resource.** Running != ready.
 6. **`[AssemblyCleanup]` lives in `AspireMeshLifecycle`** - bound `StopAsync` with `.WaitAsync(CleanupTimeout)` and catch `TimeoutException` so a stuck teardown does not hang CI.
