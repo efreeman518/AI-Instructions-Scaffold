@@ -168,7 +168,9 @@ public class IntegrationTestSetup
 
 ## Repository Integration Tests
 
-Cover **migration apply** + **CRUD against real SQL** + **child includes** + **updater navigation-add round-trip** (for entities with an `{Entity}Updater`) + **M:N junction navigation** + **tenant query filter** + **polymorphic indexes** when applicable. Build contexts via `SqlContainerFixture` and gate on `StartupError` in `[TestInitialize]`.
+Cover **migration apply** + **CRUD against real SQL** + **child includes** + **updater navigation-add round-trip** (for entities with an `{Entity}Updater`) + **M:N junction navigation** + **tenant query filter** + **polymorphic indexes** when applicable + **paged search projection per searchable aggregate**. Build contexts via `SqlContainerFixture` and gate on `StartupError` in `[TestInitialize]`.
+
+> **Paged search projection is required at `balanced`+ for every searchable aggregate.** Call the repo's search method (which wraps `QueryPageProjectionAsync`) for a normal `PageIndex=1, PageSize=n` request and assert **both** the returned page contents **and** `Total`. This is the only tier that catches a positional `QueryPageProjectionAsync` call - a swapped `pageSize`/`pageIndex` (near-empty page) or `includeTotal:false` (`Total = -1`) - because fake providers used in fast tiers translate the same wrong call into correct-looking results. See the "Call it with named arguments" note in [repository-template.md](repository-template.md).
 
 > **Typed ID - assertion pitfall:** Entity `Id` is now `{Entity}Id` (a typed value struct), not `Guid`. A direct equality comparison between a `Guid` and a typed ID will not compile or silently fail. Always unwrap `.Value` when comparing a typed ID against a raw `Guid`:
 > ```csharp
