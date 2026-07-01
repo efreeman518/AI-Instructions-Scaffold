@@ -55,7 +55,8 @@ These types are consumed throughout scaffolded code. Know where they come from s
 | `IQueryableExtensions` | EF.Data.Contracts | Extension methods for IQueryable |
 | `AuditChangeAttribute` | EF.Data.Contracts | Attribute for audit change tracking |
 | `RelatedDeleteBehavior` | EF.Data.Contracts | Enum for related entity delete behavior |
-| `MigrationSupport` | EF.Data | Migration support utilities |
+| `DatabaseMigrationRunner` | EF.Data (`EF.Data.Migrations`) | Ordered, fail-fast migration runner hosted by `{App}.DatabaseMigrator`. `RunAsync()` executes registered targets in order; first failure exits nonzero and later targets do not run. |
+| `AddDatabaseMigrationRunner()` / `AddEfCoreMigrationTarget<TContext>(logicalName, order)` | EF.Data (`EF.Data.Migrations`) | DI registration for the runner and its EF Core targets. One target per migration-owning context (app Trxn, FlowEngine, third-party stores), deterministic `order`. See [data-persistence-advanced.md](data-persistence-advanced.md) -> Migration Ownership: Dedicated Migrator Host. |
 | `ResilientTransaction` | EF.Data | Resilient transaction wrapper |
 
 ### Common Infrastructure (EF.Common, EF.Common.Contracts)

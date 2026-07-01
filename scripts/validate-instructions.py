@@ -18,6 +18,13 @@ Checks:
     runtime directory present in this repo (catches "added skills/foo, forgot
     to wire it into the installer" mistakes).
   - Installer smoke checks cover every first-class harness entrypoint.
+  - README install-table parity: every file in the installer's INSTRUCTIONS_FILES
+    and every dir in INSTRUCTIONS_DIRS appears in README.md's "What it places"
+    table (catches "installer copies GROUND-RULES.md, README table forgot it").
+  - Bare-version prose guard (GR-08): no unallowlisted semver-looking string
+    (x.y.z) in payload markdown. IP addresses are excluded; the quarantined
+    version-pin owner (skills/ai-integration.md) and reasoned constraints are
+    allowlisted in VERSION_PROSE_ALLOWLIST.
   - Section-anchor existence: when prose says ``[label](file.md) section Section Name``
     or ``file.md -> Section Name`` (with the path in backticks), verify the named
     section exists as a heading in the target file. Catches refs left dangling
@@ -67,11 +74,25 @@ REPO_ROOT = INSTRUCTIONS_ROOT
 # Directories the runtime payload should ship. Must match install-to-project.py.
 EXPECTED_RUNTIME_DIRS = {"ai", "patterns", "profiles", "schemas", "skills", "support", "templates", "scripts"}
 
+# GR-08 bare-version prose guard. Semver-looking string (x.y.z) allowed only when
+# listed here. Value None allowlists the whole file (quarantined version-pin owner);
+# a set allowlists exact version strings (each must carry an inline reason in the file).
+VERSION_PROSE_ALLOWLIST: dict[str, set[str] | None] = {
+    "skills/ai-integration.md": None,  # quarantined preview-pin owner (canary-guarded)
+    "skills/package-dependencies.md": {"9.2.0", "1.0.104", "0.1.0"},  # GR-08 rule's own counter-examples + packable default
+    "skills/azure-data-storage.md": {"1.12.0", "10.0.2"},  # minimum-version constraints with inline reasons
+    "skills/ui-uno-platforms.md": {"1.12.1"},  # upstream Resizetizer bug citation
+    "ai/implementation-plan.md": {"0.1.0"},  # packable project default version
+    "GROUND-RULES.md": {"1.0.104"},  # GR-08 rule's own counter-example
+    "support/tech-design-diagrams.md": {"10.9.1"},  # mermaid-cli pin for deterministic SVG rendering (inline reason)
+    "templates/local-test-stack-template.md": {"2.0.0"},  # JSON manifest format version, not a package version
+}
+
 # Author-side directories that must NOT be in the runtime payload.
 AUTHOR_ONLY_DIRS = {"tests", ".github/workflows", ".githooks", ".vscode", ".venv", ".tmp"}
 
 # Markdown roots to walk. Skip vendored/temporary trees.
-RUNTIME_SCAN_ROOTS = ["ai", "patterns", "schemas", "skills", "support", "templates"]
+RUNTIME_SCAN_ROOTS = ["ai", "patterns", "profiles", "schemas", "skills", "support", "templates"]
 HARNESS_SCAN_ROOTS = [".claude", ".github"]
 INSTRUCTIONS_TOP_LEVEL_MD = ["README.md", "START-AI.md", "CLAUDE.md", "GROUND-RULES.md"]
 APP_TOP_LEVEL_MD = ["AGENTS.md", "CLAUDE.md"]
@@ -419,6 +440,68 @@ def check_payload_shape(findings: Findings) -> None:
             findings.err(installer, f"SMOKE_CHECK_HARNESS_ENTRYPOINTS missing first-class entrypoints: {sorted(missing)}")
         if extra:
             findings.err(installer, f"SMOKE_CHECK_HARNESS_ENTRYPOINTS contains unexpected entries: {sorted(extra)}")
+
+
+def check_readme_install_table(findings: Findings) -> None:
+    """README's 'What it places' table must name every INSTRUCTIONS_FILES file and INSTRUCTIONS_DIRS dir."""
+    installer = INSTRUCTIONS_ROOT / "scripts" / "install-to-project.py"
+    readme = INSTRUCTIONS_ROOT / "README.md"
+    if not installer.exists() or not readme.exists():
+        return  # missing files reported elsewhere
+    text = installer.read_text(encoding="utf-8")
+    files_match = re.search(r"INSTRUCTIONS_FILES\s*=\s*\[(.*?)\]", text, re.DOTALL)
+    dirs_match = re.search(r"INSTRUCTIONS_DIRS\s*=\s*\[(.*?)\]", text, re.DOTALL)
+    if not files_match or not dirs_match:
+        findings.err(installer, "could not parse INSTRUCTIONS_FILES/INSTRUCTIONS_DIRS for README table parity")
+        return
+    payload_files = set(re.findall(r'"([^"]+)"', files_match.group(1)))
+    payload_dirs = set(re.findall(r'"([^"]+)"', dirs_match.group(1)))
+
+    readme_lines = readme.read_text(encoding="utf-8").splitlines()
+    table: list[str] = []
+    in_region = False
+    for line in readme_lines:
+        if line.strip() == "What it places:":
+            in_region = True
+            continue
+        if in_region:
+            if line.startswith("|"):
+                table.append(line)
+            elif table:
+                break  # table ended
+    if not table:
+        findings.err(readme, "could not find the 'What it places' table for install-manifest parity check")
+        return
+    table_text = "\n".join(table)
+    for f in sorted(payload_files):
+        if f"`{f}`" not in table_text:
+            findings.err(readme, f"'What it places' table omits `{f}` (installer INSTRUCTIONS_FILES copies it)")
+    for d in sorted(payload_dirs):
+        if f"`{d}/`" not in table_text:
+            findings.err(readme, f"'What it places' table omits `{d}/` (installer INSTRUCTIONS_DIRS copies it)")
+
+
+# Matches x.y.z(-suffix) but not segments of 4-part dotted quads (IP addresses).
+BARE_VERSION_PATTERN = re.compile(r"(?<![\d.])\d+\.\d+\.\d+(?:-[A-Za-z0-9.]+)?(?![.\d])")
+
+
+def check_version_prose(path: Path, findings: Findings) -> None:
+    """GR-08 guard: bare semver-looking strings in payload markdown must be allowlisted."""
+    try:
+        rel = path.relative_to(INSTRUCTIONS_ROOT).as_posix()
+    except ValueError:
+        rel = path.name  # APP_ROOT harness file outside the instructions root
+    allowed = VERSION_PROSE_ALLOWLIST.get(rel, set())
+    if allowed is None:
+        return  # whole file quarantined
+    for line_no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        for m in BARE_VERSION_PATTERN.finditer(line):
+            if m.group(0) not in allowed:
+                findings.err(
+                    path,
+                    f"line {line_no}: bare version '{m.group(0)}' in payload prose (GR-08) - "
+                    "use <latest-stable>/$(LatestStableTfm), or allowlist it in VERSION_PROSE_ALLOWLIST with an inline reason",
+                )
 
 
 # --- Phase 5 load-set table (GAP-003) ---------------------------------------
@@ -830,10 +913,12 @@ def main() -> int:
         check_phase_labels(path, findings)
         check_section_anchors(path, findings, headings_cache)
         check_refapp_count_claims(path, findings)
+        check_version_prose(path, findings)
 
     check_command_shape(findings)
     check_maintenance_guards(findings)
     check_payload_shape(findings)
+    check_readme_install_table(findings)
     check_phase5_load_set(findings)
     check_phase5_template_coverage(findings)
     check_golden_path_schemas(findings)

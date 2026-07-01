@@ -9,7 +9,7 @@ Use this file for:
 
 Run-once operator setup and the Phase 3 pre-flight live in [operator-setup.md](operator-setup.md).
 
-If another file disagrees on validation gates or commands, this file wins. Session routing and load rules remain owned by [../START-AI.md](../START-AI.md) and [../ai/SKILL.md](../ai/SKILL.md). The 1-page binding-rule index (`GR-01`...`GR-16`) lives at [../GROUND-RULES.md](../GROUND-RULES.md); gates below cite the `GR-NN` they enforce.
+If another file disagrees on validation gates or commands, this file wins. Session routing and load rules remain owned by [../START-AI.md](../START-AI.md) and [../ai/SKILL.md](../ai/SKILL.md). The 1-page binding-rule index (`GR-01`...`GR-17`) lives at [../GROUND-RULES.md](../GROUND-RULES.md); gates below cite the `GR-NN` they enforce.
 
 ---
 
@@ -396,12 +396,15 @@ If live AI endpoints are not yet provisioned, log them in `HANDOFF.md` as deploy
 
 ## Compiler-Warning Policy
 
-`dotnet build` exits 0 is the gate. New compiler/analyzer warnings introduced by generated code are either resolved or recorded in `.scaffold/INSTRUCTION-GAPS.md` with owner and rationale. `TreatWarningsAsErrors` is **off by default**; teams may opt in via `Directory.Build.props` once the codebase is warning-clean.
+`dotnet build` exits 0 is the gate. **Fix warnings at the source - never hide them.** `NoWarn`, `#pragma warning disable`, analyzer severity downgrades, and `WarningLevel` reductions are suppression, not fixes. Suppression is reserved for warnings whose root cause is outside the repo (SDK-generated code, third-party analyzers) and always requires an `.scaffold/INSTRUCTION-GAPS.md` entry with owner and rationale. `TreatWarningsAsErrors` is **off by default**; teams may opt in via `Directory.Build.props` once the codebase is warning-clean.
+
+Restore-time vulnerability warnings (`NU1901`-`NU1904`) are fixed by version movement, never by `NoWarn` - see section Vulnerability Audit for the transitive-pin pattern.
 
 | Blocks the gate | Does not block |
 |---|---|
 | `dotnet build` returns nonzero exit code | Warnings from third-party packages |
 | A warning suppressed without an entry in `.scaffold/INSTRUCTION-GAPS.md` | SDK-generated code warnings (EF migrations, source generators); documented warnings with owner and target resolution date |
+| A vulnerability warning silenced with `NoWarn` | A vulnerable transitive lifted by a commented direct pin (see section Vulnerability Audit) |
 
 ---
 
@@ -415,11 +418,34 @@ dotnet list package --vulnerable --include-transitive
 
 | Severity | Policy |
 |---|---|
-| High | Fix (upgrade direct dependency or pin transitive) **or** record in `.scaffold/INSTRUCTION-GAPS.md` as a blocked deployment dependency with owner and target resolution date |
+| High | Fix (upgrade the direct dependency, or lift the transitive - pattern below) **or** record in `.scaffold/INSTRUCTION-GAPS.md` as a blocked deployment dependency with owner and target resolution date |
 | Moderate | Log in `.scaffold/INSTRUCTION-GAPS.md`; tracked, does not block |
 | Low | Team discretion |
 
 The audit is mandatory before pre-merge gate and as part of the Phase 5d quality regression. CI workflows must include the audit step (see [../skills/cicd.md](../skills/cicd.md)).
+
+### Vulnerable Transitive Lift (canonical pattern)
+
+When the vulnerable package is transitive and a fixed version exists, promote it to a direct pinned reference at the fixed version - never `NoWarn` the `NU19xx`. Both edits carry a comment so the pin is self-explaining and removable:
+
+```xml
+<!-- Directory.Packages.props -->
+<!-- Temporary direct pin: lifts a vulnerable transitive (NU1903) above the version its parent
+     package resolves. Remove when the parent ships a fixed dependency and the audit is clean. -->
+<PackageVersion Include="{VulnerablePackage}" Version="<latest-stable>" />
+```
+
+```xml
+<!-- {Project}.csproj - every project that pulls the vulnerable transitive -->
+<!-- Temporary direct reference lifting a vulnerable transitive - see Directory.Packages.props. -->
+<PackageReference Include="{VulnerablePackage}" />
+```
+
+Rules:
+- The pin is temporary by definition: on every package-update pass, retry removing it and re-run the audit.
+- The direct reference goes only into projects whose dependency graph pulls the vulnerable version (`dotnet list package --vulnerable --include-transitive` names them).
+- When no fixed version exists anywhere, this pattern cannot apply - use the severity table above (gap entry with owner and target date).
+- TaskFlow proof: `MessagePack` lifted above the version `NBomber` resolves (`src/Directory.Packages.props` + `src/Test/Test.Load/Test.Load.csproj`).
 
 ---
 

@@ -412,7 +412,7 @@ Fixed ports and explorer UIs are **local-dev affordances only**. In test runs:
 1. `WithReference(..., connectionName: "X")` must map to runtime key `ConnectionStrings:X`.
 2. **Every project that needs a resource must have its own `.WithReference()` call.** A common bug: adding a new consumer project (e.g., Functions) that uses the same database as the API but forgetting to add `.WithReference(db, connectionName: "...")`. The project silently falls back to `appsettings.json` connection strings (often LocalDB or nonexistent), causing connection errors that look like infrastructure problems.
 3. Keep scheduler single replica when using TickerQ.
-4. Use `WaitFor(...)` for startup ordering dependencies.
+4. Use `WaitFor(...)` for startup ordering dependencies; database-touching runtime hosts also take `WaitForCompletion(migrator)` on the one-shot `{Host}.DatabaseMigrator` resource (graph owner: [../patterns/infrastructure-wiring.md](../patterns/infrastructure-wiring.md) section Aspire Resource Wiring).
 5. Keep Gateway as public ingress, backend hosts internal.
 6. Keep AppHost resource names aligned with IaC modules in [iac.md](iac.md).
 7. Pin SQL Server containers to `WithImageTag("2025-latest")`; EF SQL registrations must use `UseCompatibilityLevel(170)`.
@@ -687,7 +687,7 @@ If a legacy scaffold already added the Uno SDK project to AppHost, remove that d
 
 - [ ] AppHost starts and dashboard is reachable
 - [ ] All resources show "Running" in dashboard (not just "Starting")
-- [ ] API/Gateway/Scheduler startup order works (`WaitFor`)
+- [ ] API/Gateway/Scheduler startup order works (`WaitFor`); migrator completes before DB-touching hosts start (`WaitForCompletion`)
 - [ ] SQL/Redis references inject expected connection keys
 - [ ] Scheduler runs with single replica
 - [ ] Functions listeners start without connection refused errors

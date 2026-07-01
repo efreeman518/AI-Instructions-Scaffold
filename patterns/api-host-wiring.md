@@ -39,7 +39,7 @@ try
     // 3. Build + pipeline
     var app = builder.Build().ConfigurePipeline();
 
-    // 4. Startup tasks (migrations, seeding, etc.)
+    // 4. Startup tasks (cache warmup, dev seeding - never schema migrations)
     await app.RunStartupTasks();
 
     // 5. Switch to runtime logger

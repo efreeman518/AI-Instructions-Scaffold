@@ -9,7 +9,7 @@ This file is an **index**, not a skill. Use it to see which files in the repo be
 A clean-architecture C#/.NET solution with:
 
 - `.slnx` solution layout and central package management (`Directory.Packages.props`).
-- Dual `DbContext` pattern (`{App}DbContextTrxn` / `{App}DbContextQuery`) over the shared `DbContextBase<Guid, Guid>` base type.
+- Dual `DbContext` pattern (`{App}DbContextTrxn` / `{App}DbContextQuery`) over the shared `DbContextBase<string, Guid?>` base type.
 - Entity Framework Core data access with audit/tenant interceptors and integration tests using Testcontainers SQL.
 - DDD aggregate boundaries enforced in the generated write surface (GR-15): aggregate roots get the full slice, while internal children (1:N owned, M:N junction) are mutated only through the root's `Add*`/`Remove*` methods, the `{Root}Updater`, and nested sub-resource routes - no standalone child write handlers/services/endpoints. See [../skills/domain-model.md](../skills/domain-model.md) section Aggregate Roots vs Internal Children.
 - ASP.NET Core minimal-API host with `WebApplicationFactoryBase` test infrastructure.
@@ -26,7 +26,7 @@ Phase 2-5 content. Everything below assumes a C#/.NET/Azure target and reference
 
 - [`ai/resource-implementation-schema.md`](../ai/resource-implementation-schema.md) - Phase 2: maps domain to `packageStrategy`, `customNugetFeeds`, `localPackageLayers`, Aspire resources, SQL/CosmosDB/Table/Blob datastores.
 - [`ai/implementation-plan.md`](../ai/implementation-plan.md) - Phase 3: NuGet feed wiring, `dotnet ef` tooling, Aspire, Function App, React/Vite, Uno platforms.
-- [`ai/contract-scaffolding.md`](../ai/contract-scaffolding.md) - Phase 4: `.slnx`, `Directory.Packages.props`, `DbContextBase<Guid, Guid>`, EF interceptors, `WebApplicationFactoryBase`, Testcontainers SQL.
+- [`ai/contract-scaffolding.md`](../ai/contract-scaffolding.md) - Phase 4: `.slnx`, `Directory.Packages.props`, `DbContextBase<string, Guid?>`, EF interceptors, `WebApplicationFactoryBase`, Testcontainers SQL.
 - [`ai/SKILL.md`](../ai/SKILL.md) - Phase 5 load sets, sub-phase routing, non-negotiables, scaffold definition of done. Title reads "C#/.NET/Azure Profile - Phase 5 Skill Set."
 - [`ai/adopt-codebase.md`](../ai/adopt-codebase.md) - brownfield adoption (replaces Phase 1 interview by reading existing C# code: `Domain.Model`, EF configurations, DI registrations, `nuget.config`, Aspire `AppHost`).
 - [`ai/tdd-protocol.md`](../ai/tdd-protocol.md) - TDD cadence used by Phase 5a/5b. C#-bound in command examples but logically reusable.

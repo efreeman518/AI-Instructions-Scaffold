@@ -50,6 +50,8 @@ CANARIES = {
     "machine capacity, not a contract failure": "skills/ai-integration.md",  # capacity-timeout is Inconclusive, not Fail; keeps the old "timeout -> Fail" wording from drifting back
     "public static IHostApplicationBuilder AddServiceDefaults(": "patterns/infrastructure-wiring.md",  # ServiceDefaults method body; hosts call AddServiceDefaults() but only the owner defines it
     "AddFusionCache(settings.Name)": "skills/caching.md",  # FusionCache registration loop; infrastructure-wiring points here
+    "Add{App}MigrationDbContexts": "support/data-persistence-advanced.md",  # migrator-local context registration; migration ownership owner - other files point, never restate the runner wiring
+    "replica completion count": "support/data-persistence-advanced.md",  # Container Apps Job knobs live once with the migration owner; cicd.md carries the pipeline step and points here
 }
 roots = ["skills", "patterns", "ai", "support", "schemas", "profiles", "templates"]
 files = [p for r in roots for p in pathlib.Path(r).rglob("*.md")]

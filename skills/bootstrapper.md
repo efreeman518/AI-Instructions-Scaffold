@@ -25,7 +25,6 @@ Host/{Host}.Bootstrapper/
 |-- IStartupTask.cs                           # Startup task interface
 |-- IHostExtensions.cs                        # Host extension for running startup tasks
 `-- StartupTasks/
-    |-- ApplyEFMigrationsStartup.cs
     `-- WarmupDependencies.cs
 ```
 
@@ -198,14 +197,18 @@ public static async Task RunStartupTasks(this IHost host)
 
 ### Example Startup Tasks
 
+Startup tasks cover runtime warm-up concerns only: cache preload, dependency warmup, local-dev seeding (see [../patterns/data-layer-wiring.md](../patterns/data-layer-wiring.md) section Startup Tasks). Schema migrations are never a startup task - they run in the dedicated `{App}.DatabaseMigrator` host (see [../support/data-persistence-advanced.md](../support/data-persistence-advanced.md) section Migration Ownership: Dedicated Migrator Host).
+
 ```csharp
-// Apply pending EF migrations
-public class ApplyEFMigrationsStartup(IDbContextFactory<{Project}DbContextTrxn> factory) : IStartupTask
+// Warm critical downstream dependencies before accepting traffic
+public class WarmupDependencies(IFusionCacheProvider cache, ILogger<WarmupDependencies> logger) : IStartupTask
 {
     public async Task ExecuteAsync(CancellationToken ct = default)
     {
-        await using var db = await factory.CreateDbContextAsync(ct);
-        await db.Database.MigrateAsync(ct);
+        logger.LogInformation("Startup warmup start");
+        // Preload hot cache entries, prime connection pools
+        await Task.CompletedTask;
+        logger.LogInformation("Startup warmup finish");
     }
 }
 ```
@@ -254,7 +257,7 @@ await app.RunAsync();
 3. **Extension method chaining** - Each `Register*()` returns `IServiceCollection` for fluent chaining
 4. **Private helper methods** - Keep the public surface clean; group related registrations
 5. **Configuration-driven** - Settings classes loaded from `IConfiguration` sections; bootstrapper reads config, never owns per-host defaults
-6. **Startup tasks run after Build()** - Before `RunAsync()`, migrations applied, caches warmed
+6. **Startup tasks run after Build()** - Before `RunAsync()`, caches warmed, dev seed applied - never schema migrations (migrator host owns those)
 7. **Every host must supply its config** - Any key read inside `RegisterInfrastructureServices` (or any shared registration method) must exist in the `appsettings*.json` of every host that calls it: API, Scheduler, and Functions all need the same config keys
 8. **Build after DI changes** - Small registration changes (factory lambdas, new `using` imports, constructor signature changes) can break compile. Run a focused host build immediately after any registration edit to catch failures early
 
@@ -272,7 +275,7 @@ After generating the Bootstrapper, confirm:
 - [ ] All `IMessageHandler<T>` implementations are registered in DI (typically scoped)
 - [ ] `AutoRegisterMessageHandlers()` called after `Build()` to bind handler assemblies into `IInternalMessageBus`
 - [ ] FusionCache registered with Redis backplane (if caching is enabled)
-- [ ] Startup tasks registered as `IStartupTask` (migrations, cache warmup)
+- [ ] Startup tasks registered as `IStartupTask` (cache warmup, dev seeding - never schema migrations)
 - [ ] No host-specific concerns (no endpoints, no triggers, no YARP) - those belong in the host project
 - [ ] Cross-references: Every service/repository in [solution-structure.md](solution-structure.md) reference map is registered here
 

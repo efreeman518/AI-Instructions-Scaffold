@@ -17,8 +17,8 @@ Use `{Host}.Scheduler` for cron/time-based orchestration with persisted scheduli
 1. Scheduler is a separate host project from API.
 2. Job methods are thin `[TickerFunction]` adapters; business logic lives in handlers.
 3. Deploy one scheduler replica unless Redis coordination is enabled.
-4. TickerQ persistence uses `SchedulerDbContext` and `[Scheduler]` schema.
-5. TickerQ schema setup is not EF migrations.
+4. TickerQ persistence uses the app-owned `{App}TickerQDbContext` with the `[Scheduler]` schema and its own migration history table (`Scheduler.__EFMigrationsHistory_TickerQ`).
+5. TickerQ schema is applied by the `{App}.DatabaseMigrator` host; scheduler startup validates the schema exists and fails fast - it never creates or patches it (see [../support/data-persistence-advanced.md](../support/data-persistence-advanced.md) section Third-Party Operational Store Schemas).
 
 ---
 
@@ -98,7 +98,7 @@ The startup flow must remain in this order:
 3. Register scheduler-specific services.
 4. Configure TickerQ.
 5. Build app.
-6. Configure/validate TickerQ database.
+6. Validate the TickerQ operational store (validate-only; the migrator applied the schema).
 7. Enable `UseTickerQ()` middleware.
 8. Map health/endpoints and run.
 
@@ -112,7 +112,7 @@ services
 builder.AddTickerQConfig();
 
 var app = builder.Build();
-await app.ConfigureTickerQDatabase(config, logger);
+await app.ValidateTickerQDatabase();
 app.UseTickerQ();
 app.MapDefaultEndpoints();
 await app.RunAsync();
@@ -145,7 +145,7 @@ public class ReminderJobs(...) : BaseTickerQJob(...)
 
 - Scoped handlers and job adapters.
 - Scheduler settings (`MaxConcurrency`, time zone, poll interval).
-- EF Core persistence for TickerQ with `[Scheduler]` schema.
+- EF Core persistence via `UseTickerQDbContext<{App}TickerQDbContext>(...)` with the `[Scheduler]` schema; SQL options set the migrations assembly + history table to match the migrator target.
 - Optional dashboard (secure credentials only).
 - Optional Redis coordination for multi-node deployments.
 
@@ -155,17 +155,15 @@ Key settings:
 
 | Section | Keys |
 |---|---|
-| `ConnectionStrings` | `{Project}DbContextTrxn`, `SchedulerDbContext` |
-| `Scheduling` | `UsePersistence`, `EnableDashboard`, `EnableRedis`, `PollIntervalSeconds`, `GenerateDeploymentScript` |
+| `ConnectionStrings` | `{Project}DbContextTrxn`, `TickerQDbContext` |
+| `Scheduling` | `UsePersistence`, `EnableDashboard`, `EnableRedis`, `PollIntervalSeconds` |
 | `Scheduling:Dashboard` | `Username`, `Password` |
 
 ## Database Setup
 
-- `SchedulerDbContext` may target same database as app DB or a dedicated DB.
-- TickerQ tables remain isolated by `[Scheduler]` schema.
-- Setup options:
-  - Enable `Scheduling:GenerateDeploymentScript`.
-  - Or apply manual TickerQ SQL setup script.
+- `TickerQDbContext` keeps its own logical connection name; it may point at the app database (local) or a dedicated DB (Azure) - configuration only, never runtime code.
+- TickerQ tables remain isolated by the `[Scheduler]` schema with their own migration history table.
+- Schema is applied by the `{App}.DatabaseMigrator` host via the app-owned `{App}TickerQDbContext` migration target; migrations live under `Migrations/TickerQ` with an explicit migrations assembly. Scheduler startup validates the schema and fails fast when missing (`ValidateTickerQDatabase`); library auto-create and deployment-script generation stay off. Canonical rules: [../support/data-persistence-advanced.md](../support/data-persistence-advanced.md) section Third-Party Operational Store Schemas.
 
 ---
 
@@ -217,7 +215,7 @@ Skip by default:
 - [ ] `dotnet run --project src/Host/{Host}.Scheduler` starts successfully
 - [ ] At least one `[TickerFunction]` is registered
 - [ ] Jobs delegate through `ExecuteJobAsync<THandler>()`
-- [ ] `SchedulerDbContext` is resolved and reachable
+- [ ] `{App}TickerQDbContext` is resolved; startup validation confirms the `[Scheduler]` schema exists (migrator ran)
 - [ ] Aspire config uses `WithReplicas(1)` unless Redis coordination is enabled
 - [ ] If dashboard enabled, credentials are not default/plain test values
 - [ ] If `{Host}.BackgroundServices` exists, it remains a separate project

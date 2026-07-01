@@ -225,12 +225,13 @@ public static partial class RegisterServices
 {
     private static void AddStartupTasks(IServiceCollection services)
     {
-        services.AddTransient<IStartupTask, ApplyEFMigrationsStartup>();
         services.AddTransient<IStartupTask, WarmupDependencies>();
         services.AddTransient<IStartupTask, LoadCacheStartup>();
     }
 }
 ```
+
+Startup tasks are runtime warm-up only (cache preload, dependency warmup, local-dev seeding). Schema migrations never run here - the dedicated `{App}.DatabaseMigrator` host owns them (see [../support/data-persistence-advanced.md](../support/data-persistence-advanced.md) section Migration Ownership: Dedicated Migrator Host).
 
 ### Example: Cache Warming
 
@@ -339,6 +340,6 @@ dotnet ef migrations has-pending-model-changes `
 
 Use the same `--project` / `--startup-project` rooting that real migrations use. If the Data project itself carries the design-time factory and `Microsoft.EntityFrameworkCore.Design`, you may run with the Data project as startup instead. The command must report `No changes`. If it reports drift, a facet moved (max length, nullability, default, column type, or FK shape). Reconcile the runtime model configuration. Do not blind-regenerate a migration for a mapping-foundation refactor.
 
-### Production migration bundle
+### Production migration execution
 
-Production schema is **not** applied on startup - the startup migration task is gated `IsDevelopment()` and is a no-op in ACA (Production). Apply production schema with an EF migration bundle run from CI, before the image swap. The bundle uses the same `--project`/`--startup-project` rooting as above (Data project when only Data references Design), bundles the **write** context only when Trxn/Query share a schema, and applies with Entra auth. Full step (firewall handling, Entra connection string, dual-context note) lives in [../skills/cicd.md](../skills/cicd.md) -> *Production DB Migration (EF Bundle)*.
+Schema is never applied by runtime hosts, in any environment. The dedicated `{App}.DatabaseMigrator` host applies every migration target - locally under Aspire (runtime hosts `WaitForCompletion`), and in Azure as a one-shot Container Apps Job run from the pipeline before runtime rollout. Canonical rules (target ordering, history tables, timeouts, identity split): [../support/data-persistence-advanced.md](../support/data-persistence-advanced.md) section Migration Ownership: Dedicated Migrator Host. Pipeline step: [../skills/cicd.md](../skills/cicd.md) section Production DB Migration (Migrator Job).

@@ -44,6 +44,7 @@ src/
 |-- Host/
 |   |-- {Host}.Bootstrapper/
 |   |-- {Host}.Api/
+|   |-- {Host}.DatabaseMigrator/        # sole migration owner - runtime hosts never migrate
 |   |-- {Host}.Scheduler/               # optional
 |   |-- {Host}.BackgroundServices/      # optional
 |   |-- {Gateway}.Gateway/              # optional
@@ -282,9 +283,10 @@ Criterion: wrap when the provider's surface is provider-shaped, transport-couple
 | `Infrastructure.Data` | domain projects |
 | `Infrastructure.Repositories` | `Application.Contracts`, `Infrastructure.Data` |
 | `{Host}.Bootstrapper` | app/infrastructure implementations |
+| `{Host}.Api` / `{Host}.Scheduler` / `{Host}.Functions` | `{Host}.Bootstrapper` (+ host-specific packages) |
+| `{Host}.DatabaseMigrator` | `Infrastructure.Data`, `Aspire/ServiceDefaults` (never `{Host}.Bootstrapper` - migrator-local context registrations only) |
 
 Default scaffold and TaskFlow keep `Application.Cqrs` referencing shared `Application.Models` and `Application.Mappers` so service and CQRS styles share one contract. A CQRS-only vertical slice may move feature-specific models, mappers, projections, and adapters under `Application.Cqrs/Features/{Entity}` and then trim unused shared project references.
-| `{Host}.Api` / `{Host}.Scheduler` / `{Host}.Functions` | `{Host}.Bootstrapper` (+ host-specific packages) |
 
 Adjust optional dependencies per enabled features without inverting layer direction. The `+ external packages whose interface is the contract` clause on the application rows is the deliberate direct-reference exception (see Infrastructure Naming Rules -> Wrap vs. Direct Reference): a library like FusionCache whose own interface is already the abstraction is referenced straight from the application layer, so the application project takes that package reference and no Infrastructure wrapper exists. Wrapped integrations (repositories, Refit APIs, messaging adapters) keep their package references in the Infrastructure implementation project, not in the application layer.
 

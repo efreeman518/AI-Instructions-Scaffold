@@ -173,7 +173,7 @@ resource db 'Microsoft.Sql/servers/databases@2023-08-01-preview' = {
 
 ### TickerQ schema deployment
 
-Apply `TickerQ_Deployment.sql` before scheduler rollout; this schema is not a standard app EF migration.
+The `[Scheduler]` schema is a migrator target like any other: the one-shot `{App}.DatabaseMigrator` Container Apps Job applies it before scheduler rollout (see [../skills/cicd.md](../skills/cicd.md) section Production DB Migration (Migrator Job)). IaC ships a container-app-job module for the migrator (manual trigger, migrator image, job name exposed as an output).
 
 ---
 

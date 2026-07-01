@@ -151,9 +151,10 @@ This prevents false-positive fixes where the crash is resolved but the intended 
 
 When a third-party library (scheduler, queue, dashboard, job runner) uses EF-backed or SQL-backed operational tables and startup or seeding fails:
 
-1. **Identify the schema owner.** Does the library auto-create its tables at startup? Does it ship migrations or SQL scripts you must run? Does it expect a design-time factory in your project? Or does it assume tables already exist?
+1. **Identify the schema owner.** The app owns third-party operational schema through an app-owned migration context applied by the migrator host (see [data-persistence-advanced.md](data-persistence-advanced.md) -> Third-Party Operational Store Schemas). If the library is instead auto-creating tables at startup, that is the defect - disable it and add the migration target.
 2. **Do not conflate startup success with schema presence.** Many libraries start without error even when their backing tables are missing - failures appear later during seeding, first job execution, or dashboard queries, and are easily misread as connection or configuration issues.
-3. **Verify the schema directly.** Query `INFORMATION_SCHEMA.TABLES` or the database tool of your choice to confirm the expected tables exist before investigating application-level failures.
+3. **Verify the schema directly.** Query `INFORMATION_SCHEMA.TABLES` or the database tool of your choice to confirm the expected tables exist before investigating application-level failures. Then confirm the migrator ran (its history table, e.g. `Scheduler.__EFMigrationsHistory_TickerQ`, has rows) and that the host's startup validation is wired.
+4. **Record the schema ownership model** in `HANDOFF.md` and `.scaffold/resource-implementation.yaml` so future sessions do not re-diagnose the same issue.
 
 ---
 
@@ -211,8 +212,6 @@ var functions = builder.AddProject<Projects.TaskFlow_Functions>("functions")
 ```
 
 Without the explicit `connectionName`, the Functions project falls back to `appsettings.json` (which may reference LocalDB or a non-existent server).
-4. **Avoid CREATE-on-every-restart patterns.** When using `GenerateCreateScript()` + batch execution to bootstrap third-party schemas, gate it behind an existence check (see [data-persistence-advanced.md](data-persistence-advanced.md) -> Third-Party Operational Store Schemas). Running CREATE statements against existing tables produces `fail:` EF log spam on every restart with persistent data volumes.
-5. **Record the schema ownership model** in `HANDOFF.md` and `.scaffold/resource-implementation.yaml` so future sessions do not re-diagnose the same issue.
 
 ---
 
@@ -282,7 +281,7 @@ For phase gates and validation commands, see [execution-gates.md](execution-gate
 | UI-driven create returns 400, request never reaches the API (identical payload direct-to-gateway succeeds) | MudBlazor dialog interaction + Refit `AddStandardResilienceHandler` short-circuits before the call | Drive **writes through the API/gateway** in tests, not the browser dialog. Reserve browser-driven writes for render/interaction checks. See [test-templates-e2e.md](../templates/test-templates-e2e.md) -> *Prefer the API/gateway path for write assertions*. |
 | Playwright `fill` leaves the field blank on submit / create posts empty values | `@bind-Value` commits on blur; a programmatic fill does not blur the field | Set `Immediate="true"` on the input (or trigger a blur in the test). See [ui-blazor-forms.md](../skills/ui-blazor-forms.md) -> *Editable Forms*. |
 | Event contracts drift between layers (Domain vs Application) | Bus payload records defined in `Domain.*.Events` and/or publisher still named `IDomainEventPublisher` | Move cross-process payloads to `Application.Contracts.Events` and publish through `IIntegrationEventPublisher`. Keep domain events in Domain only for aggregate-local invariants/dispatch. |
-| EF `fail:` log spam on every scheduler/host restart | `GenerateCreateScript()` runs CREATE against existing tables | Gate with `INFORMATION_SCHEMA.TABLES` existence check - see [data-persistence-advanced.md](data-persistence-advanced.md) -> Third-Party Operational Store Schemas |
+| EF `fail:` log spam on every scheduler/host restart | Runtime host runs CREATE/schema-patch statements against existing tables | Runtime hosts never create or patch schema - move the store to an app-owned migration context in the migrator host and validate-only at startup. See [data-persistence-advanced.md](data-persistence-advanced.md) -> Third-Party Operational Store Schemas |
 | `MSB3027` file lock / build fails with PID holding DLL | Orphaned `dotnet.exe` from prior run | `Get-Process -Name dotnet` then `Stop-Process -Name dotnet -Force` |
 | Full-solution build fails intermittently with the WASM/browser UI output DLL locked (VBCSCompiler) | The WASM/browser UI build target locks its output DLL; concurrent full-solution builds collide on it | Build per-project, or run `dotnet build-server shutdown` before a full-solution build. See [execution-gates.md](execution-gates.md). |
 | SQL container starts but auth fails under Aspire | `sql-password` parameter not in user secrets | `dotnet user-secrets set "Parameters:sql-password" "<pw>" --project AppHost` |

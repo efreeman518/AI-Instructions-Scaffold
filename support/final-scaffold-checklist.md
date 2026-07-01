@@ -137,7 +137,7 @@ Scaffold completion is local-complete per **GR-11**; deployment is a separate, h
 - **Provision live infrastructure per IaC** - [../skills/iac.md](../skills/iac.md) section Deployment, plus the manual items in section One-time, account-bound steps (resource group, federated credentials, registry wiring).
 - **Configure CI/CD** - [../skills/cicd.md](../skills/cicd.md) section Required Secrets, plus the Required Variables and Environments sections in the same file.
 - **Flip deployment-only stubs** - walk the deferred external dependencies recorded in `HANDOFF.md`: provision each, fill its config section, remove or gate the `// TODO: [CONFIGURE]` stub, and re-enable the named `[Ignore]`/`Assert.Inconclusive` tests (see [../ai/SKILL.md](../ai/SKILL.md) section Scaffold Definition of Done, item 6).
-- **Production DB migration** - [../skills/cicd.md](../skills/cicd.md) section Production DB Migration (EF bundle, schema leads code).
+- **Production DB migration** - [../skills/cicd.md](../skills/cicd.md) section Production DB Migration (Migrator Job) (one-shot migrator job before image swap; schema leads code).
 
 ---
 

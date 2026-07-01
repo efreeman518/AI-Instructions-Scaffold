@@ -232,7 +232,7 @@ Skill: [ui-react.md](../skills/ui-react.md).
 
 - [ ] `DbSet<{Entity}>` in both Trxn and Query contexts
 - [ ] `{Entity}Configuration` applies expected relationships/indexes
-- [ ] migration generated and applied (or startup migration path validated)
+- [ ] migration generated and applied (direct `dotnet ef` or a migrator-host run - never runtime startup)
 
 ### Build and Tests
 

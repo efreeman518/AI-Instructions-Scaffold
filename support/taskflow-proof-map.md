@@ -34,6 +34,7 @@ Load this file on demand. Keep it out of the default phase context.
 | Phase 5b API endpoints | `src/Host/TaskFlow.Api` | Minimal API grouping, endpoint conventions, exception handling, and registration flow. |
 | Phase 5b runtime wiring | `src/Host/TaskFlow.Api`, `src/Host/TaskFlow.Bootstrapper`, `src/Host/Aspire/AppHost` | Middleware order, DI composition, app host resources, runtime config, and deployment shape. |
 | Phase 5b Aspire service defaults | `src/Host/Aspire/ServiceDefaults` | OpenTelemetry wiring, `/healthz` and `/readyz` defaults, shared host registration. |
+| Phase 5b database migrator | `src/Host/TaskFlow.DatabaseMigrator`, `src/Infrastructure/TaskFlow.Infrastructure.Data/TaskFlowTickerQDbContext.cs`, `infra/modules/container-app-job.bicep`, `.github/workflows/deploy.yml` | Sole migration owner: ordered `AddEfCoreMigrationTarget` registrations, migrator-only timeouts, per-context history tables, app-owned third-party (TickerQ) migration context, AppHost `WaitForCompletion`, one-shot Container Apps Job gating runtime rollout. |
 | Phase 5b gateway | `src/Host/TaskFlow.Gateway` | YARP routing, token forwarding, claims transformation, and CORS wiring. |
 | Phase 5b caching | API + Bootstrapper + cache registrations | FusionCache + Redis backplane patterns and cache-key conventions. |
 | Multitenancy | Request context handling in API + service layer | Tenant extraction, tenant boundary validation, global-admin bypass, tenant filter manipulation logging, `PreventTenantChange`, `ValidationHelper` delegation, `[LoggerMessage]` source-gen. |
@@ -82,6 +83,7 @@ Use these links first. If a branch or path has moved, search inside the same rep
 | Application CQRS features | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/src/Application/TaskFlow.Application.Cqrs/Features> |
 | Application message handlers | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/src/Application/TaskFlow.Application.MessageHandlers> |
 | Data infrastructure | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/src/Infrastructure/TaskFlow.Infrastructure.Data> |
+| Database migrator host | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/src/Host/TaskFlow.DatabaseMigrator> |
 | Repositories | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/src/Infrastructure/TaskFlow.Infrastructure.Repositories> |
 | Storage / external infrastructure | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/src/Infrastructure/TaskFlow.Infrastructure.Storage> |
 | AI infrastructure | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/src/Infrastructure/TaskFlow.Infrastructure.AI> |

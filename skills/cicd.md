@@ -25,7 +25,7 @@ Use GitHub Actions for:
 5. PR CI runs only the fast tiers (`Unit`/`UI`/`Presentation`/`Endpoint`/`Architecture`, no Docker). Every heavy or special-runtime tier (`Integration`/`Aspire`/`E2E`/`PlaywrightUI`/`MobileUI`/Foundry Local/`Load`/`Benchmark`/`Mutation`) is a default-off `workflow_dispatch` toggle, never run automatically.
 6. **Private NuGet feed auth:** If the solution references packages from authenticated feeds (e.g., GitHub Packages), the workflow must authenticate before `dotnet restore`. Store a PAT as a repo secret (e.g., `NUGET_PAT`) and add an auth step. Without this, restore fails with `NU1301 / 401 Unauthorized`. See the NuGet auth step below.
 7. **ACA managed identity can pull ACR but NOT GHCR.** When images live in a **private** GHCR package, the ACA managed identity cannot authenticate to `ghcr.io`. Set an explicit registry credential on each app with a PAT that has `read:packages`: `az containerapp registry set --name <app> --server ghcr.io --username <gh-user> --password <PAT>`. `GITHUB_TOKEN` does NOT work as the ACA pull password - it is job-scoped and expires when the job ends. **Public** GHCR packages need no pull secret. State this tradeoff when offering GHCR as the registry.
-8. **Production DB migrations run as an explicit pipeline step, never on startup in Production.** Startup migration is gated `IsDevelopment()` and is a no-op in ACA. Apply schema with an EF migration bundle BEFORE the image swap so schema leads code (see the migration bundle step below).
+8. **DB migrations run as an explicit pipeline step, never in runtime hosts.** The `{App}.DatabaseMigrator` image runs as a one-shot Container Apps Job BEFORE the image swap so schema leads code; every runtime deploy job gates on its success (see the migrator job step below). Canonical migration rules: [data-persistence-advanced.md](../support/data-persistence-advanced.md) section Migration Ownership: Dedicated Migrator Host.
 
 ### Registry choice is a scaffold input
 
@@ -345,8 +345,8 @@ on:
 
 ### Step order (schema leads code)
 
-1. Build and push images (ACR or GHCR variant).
-2. **Apply EF migration bundle** (below) - BEFORE the image swap.
+1. Build and push images (ACR or GHCR variant) - the migrator image ships with the other deployables.
+2. **Run the migrator job** (below) - BEFORE the image swap.
 3. Deploy: update each ACA app to the new SHA tag.
 
 Keep scheduler replicas pinned when no coordination layer exists.
@@ -439,7 +439,7 @@ Lowercase the owner in bash - do not rely on the raw `github.repository_owner` c
 
 ```yaml
 deploy:
-  needs: [build-and-push, migrate]   # migrate runs before image swap
+  needs: [build-and-push, run-migrations]   # migrator job succeeds before image swap
   runs-on: ubuntu-latest
   environment: ${{ inputs.environment }}
   steps:
@@ -463,50 +463,47 @@ For ACR, swap the image to `${{ vars.ACR_LOGIN_SERVER }}/$svc:${{ github.sha }}`
 
 ---
 
-## Production DB Migration (EF Bundle)
+## Production DB Migration (Migrator Job)
 
-Run BEFORE the image swap so schema leads code. Build a self-contained bundle and apply it with Entra auth.
+Run BEFORE the image swap so schema leads code. The `{App}.DatabaseMigrator` image (built and pushed alongside the other deployables) runs as a one-shot Container Apps Job inside the environment; the pipeline starts it and polls the execution to terminal status. Canonical migration rules (target ordering, history tables, timeouts, identity split): [data-persistence-advanced.md](../support/data-persistence-advanced.md) section Migration Ownership: Dedicated Migrator Host.
 
 ```yaml
-migrate:
-  needs: [build-and-push]
+run-migrations:
+  needs: [build-and-push, deploy-infra]
   runs-on: ubuntu-latest
   environment: ${{ inputs.environment }}
+  timeout-minutes: 60   # sized for data movement, not just DDL
   steps:
-    - uses: actions/checkout@v6
-    - uses: actions/setup-dotnet@v4
-      with:
-        global-json-file: src/global.json
-    - run: dotnet tool install --global dotnet-ef
-    - name: Build migration bundle
-      run: |
-        dotnet ef migrations bundle --self-contained -r linux-x64 \
-          --context {App}DbContextTrxn \
-          --project src/Infrastructure/{Project}.Infrastructure.Data \
-          --startup-project src/Host/{Host}.Api \
-          -o efbundle
     - uses: azure/login@v3
       with:
         client-id: ${{ secrets.AZURE_CLIENT_ID }}
         tenant-id: ${{ secrets.AZURE_TENANT_ID }}
         subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-    - name: Apply bundle (temporary firewall open for the runner)
+    - name: Start migrator job and poll to terminal status
       run: |
-        IP=$(curl -s https://api.ipify.org)
-        az sql server firewall-rule create -g "${{ vars.AZURE_RESOURCE_GROUP }}" \
-          -s "${{ vars.AZURE_SQL_SERVER }}" -n "gha-runner" \
-          --start-ip-address "$IP" --end-ip-address "$IP"
-        trap 'az sql server firewall-rule delete -g "${{ vars.AZURE_RESOURCE_GROUP }}" \
-          -s "${{ vars.AZURE_SQL_SERVER }}" -n "gha-runner" || true' EXIT
-        ./efbundle --connection "Server=tcp:${{ vars.AZURE_SQL_SERVER }}.database.windows.net;Database={Project}db;Authentication=Active Directory Default;Encrypt=True;"
+        JOB="${{ needs.deploy-infra.outputs.migration-job-name }}"
+        RG="${{ vars.AZURE_RESOURCE_GROUP }}"
+        EXECUTION=$(az containerapp job start --name "$JOB" -g "$RG" --query name -o tsv)
+        echo "Started migration execution: $EXECUTION"
+        while :; do
+          STATUS=$(az containerapp job execution show --name "$JOB" -g "$RG" \
+            --job-execution-name "$EXECUTION" --query properties.status -o tsv)
+          case "$STATUS" in
+            Succeeded) exit 0 ;;
+            Failed|Stopped) echo "Migration $STATUS"; exit 1 ;;
+            *) sleep 15 ;;
+          esac
+        done
 ```
+
+Job configuration lives in the Bicep container-app-job module - infra deploys it with the migrator image tag and exposes the job name as an output. Job knobs (trigger, parallelism, completion count, retry, timeout) are canonical in [data-persistence-advanced.md](../support/data-persistence-advanced.md) section Migration Ownership: Dedicated Migrator Host.
 
 Migration gotchas (these cost real time):
 
-- **`--startup-project` must reference `Microsoft.EntityFrameworkCore.Design`.** Use the same startup project that real migration commands use. The example above points at the API host. If the Data project itself owns the design-time factory and Design reference, use the Data project as both `--project` and `--startup-project` instead. (See [data-layer-wiring.md](../patterns/data-layer-wiring.md).)
-- **Dual contexts:** if Trxn (read/write) and Query (read-only) share one schema, only the write context has migrations. Bundle the write context only.
-- **Entra auth:** `Authentication=Active Directory Default` in the connection string. The OIDC principal already has `db_owner` from provisioning (Aspire `AddAzureSqlServer` grants it), so no manual user creation is needed.
-- **Firewall:** Azure SQL blocks GitHub runners. Open a temporary `az sql server firewall-rule` for the runner IP and remove it in a `trap`/`always()`. Alternative when SQL is private-endpoint-only: run the bundle as a manual-trigger ACA Job inside the VNet instead of from the runner.
+- **Gate on the concrete execution.** `az containerapp job start` returns immediately; poll `job execution show` until `Succeeded` and fail the pipeline on `Failed`/`Stopped`. Every runtime deploy job takes `needs: [run-migrations]`.
+- **Dual contexts:** if Trxn (read/write) and Query (read-only) share one schema, only the write context is a migration target.
+- **Identity:** the job runs inside the Container Apps environment with the migrator identity (schema DDL + migration history); runtime identities keep least-privilege DML, no DDL. No runner firewall rules needed - the migrator is not the GitHub runner, so this also works with private-endpoint-only SQL.
+- **Entra auth does not create SQL users.** Entra-auth connection strings never create contained database users or grants. Aspire `AddAzureSqlServer` provisioning grants the managed identity and deploying principal; anything beyond that needs an explicit SQL data-plane step or a clear comment in infra that identities are not wired.
 
 ---
 
@@ -555,7 +552,7 @@ The required secrets/vars differ by registry path. Pick the column that matches 
 | `ACR_LOGIN_SERVER`, `ACR_NAME` | yes | drop |
 | `GHCR_USER` | - | yes |
 | `AZURE_RESOURCE_GROUP` | yes | yes |
-| `AZURE_SQL_SERVER` (for migration bundle) | yes | yes |
+| `AZURE_SQL_SERVER` | yes | yes |
 | `AZURE_ENV_NAME`, `AZURE_LOCATION` (azd) | - | yes |
 | `PROJECT_NAME`, `INCLUDE_SCHEDULER` | yes | yes |
 
@@ -597,7 +594,7 @@ For `scaffoldMode: lite`:
 - [ ] `cd.yml` defaults to `workflow_dispatch` only (push-to-main is opt-in, added after infra exists)
 - [ ] `cd.yml` logs in with OIDC and pushes SHA-tagged images (ACR or GHCR per scaffold choice)
 - [ ] GHCR path: private package has `az containerapp registry set` pull cred per app
-- [ ] EF migration bundle runs BEFORE image swap; uses Data project as `--project` and `--startup-project`
+- [ ] Migrator Container Apps Job runs BEFORE image swap; pipeline polls the execution to terminal status; runtime deploys gate on it
 - [ ] deployment step updates correct environment resources by SHA tag
 - [ ] scheduler deployment order includes prerequisite schema step
 - [ ] `infra.yml`/`provision.yml` validates and deploys infra when enabled

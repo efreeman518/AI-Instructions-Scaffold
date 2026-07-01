@@ -303,7 +303,7 @@ never runs. The navigation still reports `success=True`, which masks the bug. Na
 `"Main"` displays MainPage and lets its `IsDefault` route fill the content region. (If MainPage's
 content host were a plain `<Frame />` region instead of a Visibility region, the leaf path would
 work - but the scaffold's responsive menu uses a Visibility region, so always navigate `"Main"`.)
-Verified on Uno.Sdk 6.5.36 / Uno.Extensions Navigation / net10.0-browserwasm.
+Verified against the reference app's Uno.Extensions Navigation setup on WASM.
 
 ### Shell Non-Negotiables
 

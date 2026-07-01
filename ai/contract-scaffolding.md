@@ -259,20 +259,25 @@ services.AddScoped<I{Entity}Service, NoOp{Entity}Service>();
 ### 6. DbContext Shells
 
 ```csharp
-// Infrastructure.Data/{App}DbContextTrxn.cs
-public class {App}DbContextTrxn : DbContextBase<Guid, Guid>
+// Infrastructure.Data/{App}DbContextBase.cs
+public abstract class {App}DbContextBase(DbContextOptions options) : DbContextBase<string, Guid?>(options)
 {
     public DbSet<{Entity}> {Entities} => Set<{Entity}>();
     // ... per entity
     // SHELL: OnModelCreating with empty configuration (Phase 5a adds EF configs)
 }
 
+// Infrastructure.Data/{App}DbContextTrxn.cs
+public class {App}DbContextTrxn(DbContextOptions<{App}DbContextTrxn> options) : {App}DbContextBase(options);
+
 // Infrastructure.Data/{App}DbContextQuery.cs
-public class {App}DbContextQuery : {App}DbContextTrxn
+public class {App}DbContextQuery(DbContextOptions<{App}DbContextQuery> options) : {App}DbContextBase(options)
 {
     // read-only context configuration (Phase 5a finalizes)
 }
 ```
+
+Trxn and Query are siblings over the shared `{App}DbContextBase`; the entity model lives once in the base, derived contexts only choose tracking and connection behavior (see [data-layer-wiring.md](../patterns/data-layer-wiring.md) section DbContext OnModelCreating Order).
 
 ---
 

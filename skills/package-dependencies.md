@@ -31,7 +31,7 @@ In instruction docs:
 - Do **not** cite versions in prose either ("first-class since Aspire 9.3", "fixed in EF 1.0.104", "MudBlazor 9.x point releases"). Describe the current behavior as present truth - the baseline tracks latest, so the current API is the only one that matters.
 - Do **not** add version-history or backwards-compat framing ("resolved in X", "pre-X bug", "obsolete in X", "verified <date>", "regression guard for the old behavior"). State what the API does now; drop how it got there. ("Legacy" is fine only when it names a non-version concept - the `.sln` format, the `datetime` SQL type - never a package version.)
 
-**Documented exceptions only.** A pinned version is permitted **only** when accompanied by a one-line reason inline (NU1605/NU1011 conflict, breaking-change quarantine, vendor compatibility note). Any pin without justification is a bug - replace with `<latest-stable>`.
+**Documented exceptions only.** A pinned version is permitted **only** when accompanied by a one-line reason inline (NU1605/NU1011 conflict, breaking-change quarantine, vendor compatibility note). Any pin without justification is a bug - replace with `<latest-stable>`. Vulnerable transitives get the commented direct-pin lift - canonical pattern in [../support/execution-gates.md](../support/execution-gates.md) section Vulnerable Transitive Lift.
 
 SDK upgrade discipline:
 

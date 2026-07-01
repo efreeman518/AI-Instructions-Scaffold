@@ -38,7 +38,6 @@ src/
       Workflows/                         # workflow JSON files, copied to output
         approval-loop.json
         notify-on-completion.json
-      ApplyFlowEngineMigrationsStartup.cs
 test/
   Test.Integration.{Project}.FlowEngine/ # workflow-tier guard tests (see flowengine-test-template.md)
 ```
@@ -141,26 +140,16 @@ public static partial class RegisterServices
 
 Call from `RegisterServices.AddInfrastructure` (or the matching aggregate) inside the existing bootstrapper.
 
-## Migration startup task
+## Migration target
+
+The FE context is an ordered target in the dedicated migrator host - no runtime host migrates it (see [../support/data-persistence-advanced.md](../support/data-persistence-advanced.md) section Migration Ownership: Dedicated Migrator Host):
 
 ```csharp
-public sealed class ApplyFlowEngineMigrationsStartup(
-    IServiceProvider sp,
-    ILogger<ApplyFlowEngineMigrationsStartup> log) : IHostedService
-{
-    public async Task StartAsync(CancellationToken ct)
-    {
-        using var scope = sp.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<{Project}FlowEngineDbContext>();
-        await db.Database.MigrateAsync(ct);
-        log.LogInformation("FlowEngine migrations applied.");
-    }
-
-    public Task StopAsync(CancellationToken ct) => Task.CompletedTask;
-}
+// {Project}.DatabaseMigrator - app schema first, FlowEngine second
+.AddEfCoreMigrationTarget<{Project}FlowEngineDbContext>("{Project}FlowEngineDbContext", 20)
 ```
 
-Register as `services.AddHostedService<ApplyFlowEngineMigrationsStartup>()` after `AddFlowEngine` and before `AddWorkflowJsonSeeding` runs (hosted services run in registration order).
+The migrator's FE context registration applies `FlowEngineSqlOptions.Configure` (history table + schema + migrations assembly, above) so the `flowengine` schema keeps its own history table; the FE design-time factory uses the same configuration. `{Project}FlowEngineDbContext` keeps its own logical connection name even when local Aspire points it at the app database. Runtime hosts assume the schema exists; `AddWorkflowJsonSeeding` seeds workflow definitions only, never schema.
 
 ## Workflow JSON content copy
 
@@ -205,7 +194,7 @@ FlowEngine workflows must be invoked by something. The three canonical patterns 
 | **2** | `includeFlowEngine: true`, `flowEngineDbStrategy: same-db-separate-schema` (Variant A default). When choosing `separate-db`, record the outbox trade-off in `.scaffold/DESIGN-DECISIONS.md`. |
 | **3** | Add FE NuGet packages to the package matrix; verify feed access (`EF.FlowEngine`, `EF.FlowEngine.StateStore.Sql`, `EF.FlowEngine.Locks.Sql`, `EF.FlowEngine.WorkflowRegistry.Sql`, `EF.FlowEngine.HumanTaskStore.Sql`, `EF.FlowEngine.Outbox.Sql`, `EF.FlowEngine.CircuitBreaker.Sql`, `EF.FlowEngine.Clients.Http`, `EF.FlowEngine.Clients.Sql`, `EF.FlowEngine.Clients.ServiceBus` if Service Bus enabled, `EF.FlowEngine.Clients.OpenAI` if AI in scope, `EF.FlowEngine.AdminApi`, `EF.FlowEngine.Testing`). |
 | **5a** | Generate `{Project}FlowEngineDbContext`, `FlowEngineSqlOptions`, and the FE migration. Do **not** add FE tables to the app's `OnModelCreating`. |
-| **5b** | Generate `RegisterServices.FlowEngine.cs` partial, `ApplyFlowEngineMigrationsStartup`, and the `MapFlowEngineAdmin` call in the API host. Place a single placeholder workflow JSON in `Workflows/` and emit the seeding hosted service. |
+| **5b** | Generate `RegisterServices.FlowEngine.cs` partial, register the FE context as a migrator target in `{Project}.DatabaseMigrator`, and add the `MapFlowEngineAdmin` call in the API host. Place a single placeholder workflow JSON in `Workflows/` and emit the seeding hosted service. |
 | **5c** | Emit the chosen trigger template(s) when `includeFunctionApp` or `includeScheduler` is enabled. |
 | **5d** | Generate `Test.Integration.{Project}.FlowEngine` with the four-validity-tier guards (deserialize, validate, registry round-trip, builder, file-presence). |
 | **5e** | When AI in scope, FE `agent` nodes use `AddAzureOpenAIAgentClient` factory overload - wire `AzureOpenAIClient` from the app's existing AI bootstrap. |

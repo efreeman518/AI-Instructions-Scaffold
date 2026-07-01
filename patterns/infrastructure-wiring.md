@@ -78,6 +78,15 @@ var redis = builder.AddRedis("redis").WithImageTag("latest");
 if (!isTesting)
     redis = redis.WithLifetime(ContainerLifetime.Persistent).WithDataVolume("{project}-redis-data");
 
+// -- Database migrator: sole migration owner, runs to completion before any runtime host.
+//    One local SQL database, multiple schemas + logical connection names (extra names only
+//    when the matching feature is enabled).
+var migrator = builder.AddProject<Projects.{Host}_DatabaseMigrator>("{host}migrator")
+    .WithReference(db, connectionName: "{Project}DbContextTrxn")
+    .WithReference(db, connectionName: "{Project}FlowEngineDbContext")
+    .WithReference(db, connectionName: "TickerQDbContext")
+    .WaitFor(sql);
+
 // -- API: one WithReference per pooled DbContext connection name, plus Redis
 var api = builder.AddProject<Projects.{Host}_Api>("{host}api")
     .WithReference(db, connectionName: "{Project}DbContextTrxn")
@@ -85,6 +94,7 @@ var api = builder.AddProject<Projects.{Host}_Api>("{host}api")
     .WithReference(redis, connectionName: "Redis1")
     .WaitFor(sql)
     .WaitFor(redis)
+    .WaitForCompletion(migrator)
     .WithExternalHttpEndpoints();
 
 // -- Scheduler: same DB refs, pinned to one replica (dev/prod only)
@@ -92,7 +102,8 @@ var scheduler = builder.AddProject<Projects.{Host}_Scheduler>("{host}scheduler")
     .WithReference(db, connectionName: "{Project}DbContextTrxn")
     .WithReference(db, connectionName: "{Project}DbContextQuery")
     .WithReplicas(1)
-    .WaitFor(sql);
+    .WaitFor(sql)
+    .WaitForCompletion(migrator);
 
 // -- Gateway (YARP): references API only. Destinations are injected here from resolved
 //    endpoints, never read from the Gateway's own config (see aspire.md Gateway Reverse-Proxy).
@@ -111,6 +122,7 @@ await builder.Build().RunAsync();
 ```
 
 **Rules:**
+- **Every runtime host that touches the database declares `.WaitForCompletion(migrator)`** (API, Scheduler, Functions, workers). Runtime hosts never migrate - the migrator host owns schema (canonical rules: [../support/data-persistence-advanced.md](../support/data-persistence-advanced.md) section Migration Ownership: Dedicated Migrator Host).
 - **`.WithExternalHttpEndpoints()` on every host a developer must reach in a browser** (`api`, `gateway`, and UI hosts registered via `AddProject`). Without it the Aspire dashboard shows no URL and does not proxy browser traffic. `AddViteApp` applies it automatically; `AddProject` hosts do not.
 - Only include `AddViteApp(...)` when `includeReactUI: true`; if Gateway is disabled, reference the API project and pass its endpoint to `VITE_API_BASE_URL`.
 - Gateway (YARP) destinations must be injected from the AppHost as resolved `api.GetEndpoint("http")` values - never read from the Gateway's own `appsettings.json` (DCP starts children with `--no-launch-profile` on dynamic ports). Depth: [../skills/aspire.md](../skills/aspire.md) -> *Gateway Reverse-Proxy Destinations Under Aspire (DCP)*.

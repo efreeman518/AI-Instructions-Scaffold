@@ -107,9 +107,10 @@ namespace Test.Integration.Infrastructure;
 /// </summary>
 internal static class AzuriteContainerFixture
 {
-    // Pin the image explicitly - the parameterless AzuriteBuilder() ctor is [Obsolete], so pass the image tag.
+    // Pass the image explicitly (the parameterless AzuriteBuilder() ctor is [Obsolete]); pin the tag
+    // to latest like every other emulator - see aspire.md section Emulator Image Pinning.
     private static readonly AzuriteContainer Azurite =
-        new AzuriteBuilder("mcr.microsoft.com/azure-storage/azurite:3.33.0").Build();
+        new AzuriteBuilder("mcr.microsoft.com/azure-storage/azurite:latest").Build();
 
     /// <summary>Startup failure captured by <see cref="StartAsync"/>; null when the container started cleanly.</summary>
     internal static Exception? StartupError { get; private set; }

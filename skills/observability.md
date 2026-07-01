@@ -18,7 +18,7 @@ Not a monitoring dashboard skill - dashboard/alerting configuration is Azure-sid
 | `Information` | Request/response lifecycle, business events | `"Created {Entity} {EntityId} for tenant {TenantId}"` |
 | `Warning` | Retries, degraded paths, fallback behavior | `"Cache miss for {Entity}:{EntityId}, falling back to database"` |
 | `Error` | Unhandled + caught-and-handled failures | `"Failed to save {Entity} {EntityId}: {ErrorMessage}"` |
-| `Critical` | Startup failures, data corruption, unrecoverable state | `"Database migration failed - application cannot start"` |
+| `Critical` | Startup failures, data corruption, unrecoverable state | `"Required schema missing - run the database migrator; application cannot start"` |
 
 ### Template Format
 
