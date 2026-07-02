@@ -69,14 +69,10 @@ public record DefaultSearchFilter
     public Guid? TenantId { get; set; }
 }
 
+// IEntityBaseDto (Guid? Id) comes from EF.Domain.Contracts - do not declare it app-level
 public abstract record EntityBaseDto : IEntityBaseDto
 {
     public Guid? Id { get; set; }
-}
-
-public interface IEntityBaseDto
-{
-    Guid? Id { get; set; }
 }
 
 public interface ITenantEntityDto

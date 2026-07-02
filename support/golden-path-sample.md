@@ -126,7 +126,19 @@ workflows: []
 | `Active` | state | Project is in active use. | Use as project status. |
 | `Completed` | state | Project work is complete. | Use as project status. |
 | `Archived` | state | Project is retained but inactive. | Use as project status. |
+| `New` | state | Work item not yet started. | Use as work item status. |
+| `InProgress` | state | Work item actively being worked. | Use as work item status. |
+| `Blocked` | state | Work item waiting on an impediment. | Use as work item status. |
+| `Done` | state | Work item complete. | Use as work item status. |
+| `Canceled` | state | Work item abandoned. | Use as work item status. |
+| `Low` | priority | Lowest urgency. | Use as work item priority. |
+| `Normal` | priority | Default urgency. | Use as work item priority. |
+| `High` | priority | Elevated urgency. | Use as work item priority. |
+| `Critical` | priority | Highest urgency. | Use as work item priority. |
 | `ProjectNameRequired` | policy | Project must have a usable name. | Use as domain rule name. |
+| `CompletedDateRequiredWhenDone` | policy | Done work items must record a completion date. | Use as domain rule name. |
+| `DueDateAfterStartDate` | policy | Schedule due date is absent or after start date. | Use as value-object rule name. |
+| `WorkItemBelongsToSameTenantAsProject` | policy | Work item and its project share a tenant. | Use as domain rule name. |
 | `GlobalAdmin` | role | Cross-tenant administrator. | Use for global admin role. |
 | `EntraID` | external-system | Enterprise identity provider. | Use in auth config. |
 | `enterprise` | auth scenario | Internal workforce auth scenario. | Use in domain spec. |
@@ -172,6 +184,7 @@ scaffoldMode: full
 testingProfile: balanced
 packageStrategy: feed
 packagePrefix: EF
+applicationStyle: service
 includeApi: true
 includeGateway: false
 includeFunctionApp: false
@@ -242,6 +255,21 @@ entities:
         entity: Project
         required: true
         deleteRestrict: true
+aspireResources:
+  - name: sql
+    service: Azure SQL Database
+    appHostApi: AddAzureSqlServer
+    localMode: RunAsContainer
+    publishMode: provision
+    connectionNames: [WorkBoardDbContextTrxn, WorkBoardDbContextQuery]
+    docs: https://aspire.dev/integrations/cloud/azure/azuresql/
+  - name: cache
+    service: Azure Managed Redis
+    appHostApi: AddAzureManagedRedis
+    localMode: RunAsContainer
+    publishMode: provision
+    connectionNames: [Redis1]
+    docs: https://aspire.dev/integrations/caching/azure-redis/
 externalDependencyModes:
   sql: emulator
   redis: emulator

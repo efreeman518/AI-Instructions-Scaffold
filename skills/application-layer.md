@@ -255,7 +255,7 @@ catch (Exception ex)
 ## Verification
 
 - [ ] DTO records exist in `Application.Models/{Entity}/`
-- [ ] shared DTO infrastructure is centralized and not duplicated (`EntityBaseDto`, `IEntityBaseDto`, `DefaultSearchFilter`)
+- [ ] shared DTO infrastructure is centralized and not duplicated (`EntityBaseDto`, `DefaultSearchFilter`); `IEntityBaseDto` comes from `EF.Domain.Contracts`, not declared app-level
 - [ ] `DefaultRequest<T>` and `DefaultResponse<T>` are `record` types
 - [ ] search filters are `record` types inheriting `DefaultSearchFilter`
 - [ ] static mapper includes `ToDto`, `ToEntity`, and projector expressions

@@ -198,7 +198,8 @@ Cover **migration apply** + **CRUD against real SQL** + **child includes** + **u
 > (fine for repo-level assertions). When a test needs the **owner/tenant chain** (a row owned by a real
 > user in a real tenant - e.g. anything exercising the write-identity path), use the shared
 > `SqlAggregateSeeder` from `Test.Support` ([test-templates-endpoint.md](test-templates-endpoint.md)
-> section SqlAggregateSeeder) rather than re-inlining tenant+user inserts per test.
+> section SqlAggregateSeeder - conditional, generate on first need) rather than re-inlining
+> tenant+user inserts per test.
 
 ### File: `Test/Test.Integration/{Entity}RepositoryIntegrationTests.cs`
 

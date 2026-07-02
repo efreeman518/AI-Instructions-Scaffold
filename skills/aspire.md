@@ -31,7 +31,7 @@ Use this matrix as the default for Azure left-menu services. Re-check the servic
 | Service family | Left-menu services | Local scaffold stance |
 | --- | --- | --- |
 | Azure emulators | App Configuration, Cosmos DB, Event Hubs, Service Bus, SignalR Service, Storage Blob/Queue/Table via Azure Storage | Use `AddAzure*().RunAsEmulator(...)` in run mode, real Azure on publish. Storage uses Azurite; Cosmos can use the preview emulator/Data Explorer where appropriate. |
-| Azure local containers | Azure Cache for Redis, Azure PostgreSQL Flexible Server, Azure SQL Database/Server | Use `AddAzure*().RunAsContainer(...)` in run mode, real Azure on publish. Prefer this over plain `AddRedis`, `AddPostgres`, or `AddSqlServer` when the published target must be Azure-managed. |
+| Azure local containers | Azure Cache for Redis, Azure PostgreSQL Flexible Server, Azure SQL Database/Server | Use `AddAzure*().RunAsContainer(...)` in run mode, real Azure on publish (Redis: `AddAzureManagedRedis` - see Aspire API Facts). Prefer this over plain `AddRedis`, `AddPostgres`, or `AddSqlServer` when the published target must be Azure-managed. |
 | Azure AI local path | Microsoft Foundry (model inference) | Local (run-mode) path is currently the SDK-direct API-host workaround, attempted by default when Azure is absent (no opt-in; offline / RID-free tiers set `AiServices:DisableFoundryLocal`); the preferred `AddFoundry(...).RunAsFoundryLocal()` is temporarily broken (dotnet/aspire#12750, see *Azure AI Foundry* -> Known issue). Publish or configured real mode uses Azure Foundry; an existing account uses `RunAsExisting`/`PublishAsExisting`/`AsExisting`. |
 | Azure AI cloud-only by default | Azure AI Inference, Azure AI Search, Azure OpenAI, Foundry projects + server-hosted agents (`AddProject`/`AddPromptAgent`) | Use live Azure when configured/published and no-op stubs locally unless the current service page documents a local `RunAs*` path. Azure AI Search has no local emulator in this scaffold. Foundry prompt agents always deploy to Azure even under `aspire run` (no offline path), so keep them opt-in. |
 | Azure app/platform resources | App Service, Container Registry, AKS, Container App Jobs, Front Door, Virtual Network, Log Analytics, Application Insights, Data Explorer, Data Lake Storage, Web PubSub, Key Vault, User-assigned managed identity, role assignments | Model for publish or existing-resource wiring. Do not assume a local emulator. Use `RunAsExisting`, `PublishAsExisting`, `AsExisting`, or app-level no-op/lazy wiring as appropriate. |
@@ -55,7 +55,7 @@ The Aspire catalog also lists local/container integrations outside Azure. Use th
 ### AppHost API Naming Discipline
 
 - Plain local resource APIs such as `AddRedis`, `AddSqlServer`, `AddPostgres`, and service-specific container integrations publish as containers unless documented otherwise.
-- Unified Azure APIs such as `AddAzureSqlServer`, `AddAzurePostgresFlexibleServer`, and `AddAzureRedis` can run locally through `RunAsContainer` and publish as Azure-managed services.
+- Unified Azure APIs such as `AddAzureSqlServer`, `AddAzurePostgresFlexibleServer`, and `AddAzureManagedRedis` can run locally through `RunAsContainer` and publish as Azure-managed services.
 - Azure emulator APIs such as `AddAzureStorage`, `AddAzureServiceBus`, `AddAzureEventHubs`, `AddAzureCosmosDB`, and `AddAzureAppConfiguration` can run locally through `RunAsEmulator` and publish as Azure resources.
 - Existing-resource modes are explicit: `RunAsExisting` for run mode, `PublishAsExisting` for publish mode, and `AsExisting` for both. Require parameterized resource names/resource groups and compatible authentication.
 
@@ -183,7 +183,7 @@ The fixed local SQL port and the `sql-password` parameter live INSIDE the `RunAs
 
 ### Aspire API Facts
 
-- **`AddAzureSqlServer(...)`** auto-assigns a user-assigned managed identity as the SQL admin and grants each deployed app container `db_owner` during provisioning. The deploying principal is also granted `db_owner`. **Consequence:** no manual `CREATE USER ... FROM EXTERNAL PROVIDER` in the pipeline when provisioning and migration run under the same OIDC identity. Use `AddAzureSqlServer` (not `AddSqlServer`) for `deployTarget: ContainerApps` - `AddSqlServer` publishes a SQL container into ACA instead of provisioning Azure SQL.
+- **`AddAzureSqlServer(...)`** auto-assigns a user-assigned managed identity as the SQL admin and grants each deployed app container `db_owner` during provisioning. The deploying principal is also granted `db_owner`. **Consequence:** no manual `CREATE USER ... FROM EXTERNAL PROVIDER` in the pipeline when provisioning and migration run under the same OIDC identity. Use `AddAzureSqlServer` (not `AddSqlServer`) for `deployTarget: ContainerApps` - `AddSqlServer` publishes a SQL container into ACA instead of provisioning Azure SQL. A bare `AddAzureSqlServer(...).RunAsContainer()` (no `WithPassword`) auto-generates the local SA credential - no `sql-password` parameter, no user-secrets preflight; wire the explicit parameter only when tests/tooling need the deterministic fixed-port/password fixture (`LocalSqlSettings.SharedSaPassword`).
 - **`AddAzureCosmosDB(...)`** provisions a SERVERLESS account by default. No SKU/capability config needed; `.WithDefaultAzureSku()` is the opt-in for provisioned throughput.
 - **Use `AddAzureManagedRedis`** for Azure Redis (not `AddAzureRedis(...).RunAsContainer()`). If the app uses FusionCache, omitting Redis on publish degrades it to L1-only with no `IDistributedCache` (a valid cost lever). If you omit Redis, guard every `.WithReference(redis, "Redis1")` with a null check so the model still builds.
 
@@ -588,7 +588,7 @@ Before running `dotnet run --project src/Host/Aspire/AppHost`, confirm the subst
    dotnet user-secrets init --project src/Host/Aspire/AppHost
    dotnet user-secrets set "Parameters:sql-password" "<YourPassword>" --project src/Host/Aspire/AppHost
    ```
-   Without this, the SQL container starts but cannot authenticate.
+   Without this, the SQL container starts but cannot authenticate. Not needed when the parameter is created with an inline value (the canonical AppHost passes `LocalSqlSettings.SharedSaPassword`) or when `AddAzureSqlServer(...).RunAsContainer()` runs bare - see Aspire API Facts.
 5. **Ports available:** No stale containers holding SQL/Redis ports. Run `docker ps` / `podman ps` to check.
 6. **NuGet restore clean:** `dotnet restore` on the AppHost project succeeds (catches `packageSourceMapping` issues before launch).
 7. **Foundry Local (only if running AI demos on-device):** the current SDK-direct API-host workaround needs **no** Foundry CLI/runtime on `PATH` - `Microsoft.AI.Foundry.Local` is self-contained and downloads its providers + model on first run. The `winget`/`foundry` install below applies only to the **future** `RunAsFoundryLocal()` path (after the Aspire fix, see *Azure AI Foundry*):

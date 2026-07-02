@@ -52,6 +52,9 @@ CANARIES = {
     "AddFusionCache(settings.Name)": "skills/caching.md",  # FusionCache registration loop; infrastructure-wiring points here
     "Add{App}MigrationDbContexts": "support/data-persistence-advanced.md",  # migrator-local context registration; migration ownership owner - other files point, never restate the runner wiring
     "replica completion count": "support/data-persistence-advanced.md",  # Container Apps Job knobs live once with the migration owner; cicd.md carries the pipeline step and points here
+    "public record DefaultRequest<T>": "ai/contract-scaffolding.md",  # wrapper shape + Item member name live at the Phase-4 generation point; ef-packages-reference App-Level table points here
+    "Nullable object must have a value": "skills/multi-tenant.md",  # lifted-nullable hand-written tenant filter rule; repository/template files show the guard-flag pattern instead
+    "Descriptor removal no-ops when a registration is absent": "templates/test-templates-endpoint.md",  # EfWebApplicationFactoryBase behavior narrative lives with the adapter shape; other files point
 }
 roots = ["skills", "patterns", "ai", "support", "schemas", "profiles", "templates"]
 files = [p for r in roots for p in pathlib.Path(r).rglob("*.md")]

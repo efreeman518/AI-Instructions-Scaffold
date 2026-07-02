@@ -49,7 +49,7 @@ Run the Tooling Check; use GitHub or Azure tooling only if this phase needs repo
 Generate an implementation plan per .instructions/ai/implementation-plan.md template.
 Read .scaffold/UBIQUITOUS-LANGUAGE.md and .scaffold/DESIGN-DECISIONS.md first. Populate the Decision Dependency Graph.
 Run the Phase 3 pre-flight from START-AI.md section Phase Router (branches on packageStrategy).
-Confirm `dotnet restore` exits 0 in all modes. Verify `dotnet ef` is available.
+Feed/hybrid: confirm the feed pre-flight passes (configure-ef-packages-feed.py --check-only exits 0); local needs no feed. Verify `dotnet ef` is available.
 Flag open questions before writing .scaffold/implementation-plan.md.
 When the plan is reviewed and open questions resolved, update HANDOFF.md and close the session.
 ```

@@ -147,7 +147,9 @@ Migration files should contain schema changes only. Use one-time background jobs
 
 **Canonical owner for migration execution.** Exactly one process owns schema: `src/Host/{App}.DatabaseMigrator`, a console host in the solution (plus a Dockerfile when the app deploys containers). Runtime hosts (API, Scheduler, Functions, workers, Gateway) never call `Database.MigrateAsync`, create schemas, or patch tables at startup. Scaled-out instances race DDL, runtime identities would need broad permissions, and startup failure modes become uncontrollable.
 
-Runner primitives ship in EF.Data (`EF.Data.Migrations` namespace): `AddDatabaseMigrationRunner()`, `AddEfCoreMigrationTarget<TContext>(logicalName, order)`, `DatabaseMigrationRunner.RunAsync()`.
+Runner primitives ship in EF.Data (`EF.Data.Migrations` namespace): `AddDatabaseMigrationRunner()`, `AddEfCoreMigrationTarget<TContext>(logicalName, order)`, `DatabaseMigrationRunner.RunAsync()`. Each target resolves `IDbContextFactory<TContext>` - register target contexts with `AddDbContextFactory` (the `Add{App}MigrationDbContexts` helper's job), never plain `AddDbContext`.
+
+Sub-phase split: Phase 5a creates the initial migration files (the schema artifact); the migrator host project and the AppHost `WaitForCompletion` wiring are generated in 5b with the rest of runtime orchestration.
 
 ```csharp
 var builder = Host.CreateApplicationBuilder(args);

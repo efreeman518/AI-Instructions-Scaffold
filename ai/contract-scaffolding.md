@@ -42,11 +42,33 @@ Follow `solution-structure.md` exactly:
 - `.slnx`, `Directory.Packages.props`, `global.json`, `nuget.config`
 - All project folders and `.csproj` files per the canonical layout
 - Project references wired per the dependency direction contract
-- Test projects: `Test.Support`, `Test.Unit`, `Test.UI` when UI model/presentation coverage exists, `Test.Integration` (component), `Test.Aspire` (mesh), `Test.Endpoints`, `Test.E2E`, `Test.FoundryLocal` when `includeAiServices: true` and Foundry Local provider is in scope, plus profile-specific projects (`Test.Architecture`, `Test.PlaywrightUI`, `Test.Load`, `Test.Benchmarks`, `Test.Mutation`) per `testingProfile`
+- Test projects per `testingProfile` + capability flags (the generation table in [../skills/testing.md](../skills/testing.md) Capability-Gated Test Tiers is authoritative): always `Test.Support`, `Test.Unit`, `Test.Endpoints`; `balanced`+ adds `Test.Integration` (component) + `Test.Architecture` (+ `Test.UI` when UI model/presentation coverage exists); `Test.Aspire` (mesh) and `Test.E2E` only under `comprehensive` or their explicit flags (`includeAspireTests` / `includeE2ETests`); `Test.FoundryLocal` when `includeAiServices: true` and Foundry Local provider is in scope; `comprehensive` adds `Test.PlaywrightUI`, `Test.Load`, `Test.Benchmarks`, `Test.Mutation`
 
 ### 2. Contracts (Per Entity)
 
 For each entity defined in `.scaffold/resource-implementation.yaml`:
+
+> **Aggregate classification first (GR-15).** An entity that appears under another entity's `children:` in `domain-specification.yaml` is aggregate-internal: emit at most a read-only service surface for it (`GetAsync` / `SearchAsync`) - no standalone Create/Update/Delete contracts. Writes flow through the owning root's service (`UpdateFromDto` child sync). Independent aggregates get the full surface below. Endpoint-side rule and the read-only-child carve-out: [../templates/endpoint-template.md](../templates/endpoint-template.md), [../support/vertical-slice-checklist.md](../support/vertical-slice-checklist.md).
+
+**Shared wrappers (Application.Models - generated once at Phase 4; every contract below references them):**
+
+```csharp
+// Application.Models/DefaultRequest.cs
+public record DefaultRequest<T>
+{
+    public required T Item { get; init; }
+}
+
+// Application.Models/DefaultResponse.cs
+public record DefaultResponse<T>
+{
+    public DefaultResponse() { }
+    public DefaultResponse(T? item) { Item = item; }
+    public T? Item { get; init; }  // multi-tenant scaffolds add TenantInfo (see skills/application-layer.md BuildResponse)
+}
+```
+
+The wrapper member is named `Item` - service/endpoint/test templates all consume `.Item`. Do not rename it (e.g. `Data`).
 
 > **Application style first.** The contract shapes below show the `service` style (the default). For `applicationStyle: cqrs` generate command/query request records + one handler per request instead of `I{Entity}Service`; for `switch` generate both. See [Application Style Branch](#application-style-branch) at the end of this file - it is authoritative for which surface each style emits.
 
@@ -149,14 +171,12 @@ public class {Entity} : EntityBase<{Entity}Id>, ITenantEntity<TenantId>
 ### 4. Test Infrastructure
 
 **Test.Support:**
-- `UnitTestBase.cs` - shared `MockRepository` (see `test-templates.md` Common Setup as on-demand reference)
 - `InMemoryDbBuilder.cs` - fluent in-memory/SQLite DB builder
-- `DbSupport.cs` - test DB wiring for integration tests
 - `Utility.cs` - config builder + random string helper
 - `TestConstants.cs` - `DefaultTenantId`, `SystemUserId`
 - `JsonTestOptions.cs` - shared `JsonSerializerOptions` mirroring the API host's `ConfigureHttpJsonOptions` (case-insensitive + `JsonStringEnumConverter`). Required so endpoint / E2E tests deserialize string enums consistently. See [test-templates-endpoint.md](../templates/test-templates-endpoint.md) section Shared JSON Options.
 - `LocalSqlSettings.cs` - exposes a single `SharedSaPassword` constant used by the Aspire test host fixture to drive `Parameters:sql-password` (matches the AppHost parameter name). Keep this in `Test.Support` so both `Test.E2E` and `Test.Integration` consume the same value.
-- `WebApplicationFactoryBase.cs` - abstract `WebApplicationFactory<TProgram>` that removes pooled-EF + interceptor + scoped-factory plumbing and re-registers test-mode contexts. Constrained to `DbContextBase<string, Guid?>` (the EF.Packages canonical audit/tenant shape). Both `Test.Endpoints/CustomApiFactory` and `Test.E2E/SqlApiFactory` derive from it - see [test-templates-endpoint.md](../templates/test-templates-endpoint.md) section Shared WebApplicationFactoryBase for the full file shape.
+- `WebApplicationFactoryBase.cs` - thin app adapter deriving `EF.IntegrationTesting.AspNetCore.EfWebApplicationFactoryBase<TProgram, TTrxnContext, TQueryContext>` (the package owns the pooled-EF + interceptor + scoped-factory swap-out). Constrained to `DbContextBase<string, Guid?>` (the EF.Packages canonical audit/tenant shape). Both `Test.Endpoints/CustomApiFactory` and `Test.E2E/SqlApiFactory` derive from it - see [test-templates-endpoint.md](../templates/test-templates-endpoint.md) section Shared WebApplicationFactoryBase for the adapter shape.
 
 **Test Data Builders (per entity):**
 ```csharp
@@ -192,7 +212,7 @@ public class {Entity}DtoBuilder
 
 The shared base is the **single source of truth** for swapping the production DbContext + interceptors + pooled factories with a test-mode store. Both `Test.Endpoints` (in-memory) and `Test.E2E` (Testcontainers SQL) derive thin specializations. Phase 4 generates all three files so the solution builds end-to-end before Phase 5 begins.
 
-- `Test/Test.Support/WebApplicationFactoryBase.cs` - generic base class + `TestDbContextFactory<T>` + `WebApplicationFactoryHelpers` (reflection-based context creation that bypasses `required` member enforcement, descriptor removal helpers). Full file shape: [test-templates-endpoint.md](../templates/test-templates-endpoint.md) section Shared WebApplicationFactoryBase.
+- `Test/Test.Support/WebApplicationFactoryBase.cs` - thin adapter over the package base `EfWebApplicationFactoryBase` (EF.IntegrationTesting), which owns descriptor removal, reflection-based context creation (bypasses `required` member enforcement), and startup-task suppression. The package's descriptor removal no-ops when a descriptor is absent: at Phase 4 the API host registers no DbContext yet, so the adapter compiles and passes through; the swap takes effect in 5b when pooled contexts + interceptors are registered. Adapter shape: [test-templates-endpoint.md](../templates/test-templates-endpoint.md) section Shared WebApplicationFactoryBase.
 - `Test/Test.Endpoints/CustomApiFactory.cs` - derived factory using `UseInMemoryDatabase`. ~10 lines - overrides only `BuildTrxnOptions` / `BuildQueryOptions`.
 - `Test/Test.E2E/SqlApiFactory.cs` - derived factory using `UseSqlServer(..., sql => sql.UseCompatibilityLevel(170))` against a Testcontainers SQL container, with static `StartContainerAsync` / `StopContainerAsync` lifecycle helpers. Full file shape: [test-templates-e2e.md](../templates/test-templates-e2e.md) section SqlApiFactory.
 - `Test/Test.Integration/Infrastructure/SqlContainerFixture.cs` + `AzuriteContainerFixture.cs` (+ `RedisContainerFixture.cs` when Redis is used) - standalone per-store Testcontainers fixtures for the **component** tier; `SqlContainerFixture` builds `{App}DbContextTrxn` / `{App}DbContextQuery` against its own container. No Aspire. Full file shapes: [test-templates-integration.md](../templates/test-templates-integration.md).
@@ -331,7 +351,7 @@ Developer reviews the scaffolded shape against the verification checklist below.
 - [ ] `dotnet build` succeeds from solution root
 - [ ] Every entity from `.scaffold/resource-implementation.yaml` has: DTO, entity shell, builders, and a repository contract per `repositoryContractStyle` - generic-coverable entities resolve the open-generic `IRepositoryTrxn<TEntity, TId>` / `IRepositoryQuery<TEntity, TId>` (no per-entity interface); bespoke entities have a per-aggregate contract that extends the generic pair (`per-entity` style emits both interfaces for every entity)
 - [ ] All no-op stubs satisfy their interfaces (no abstract/unimplemented methods)
-- [ ] Test.Support contains `UnitTestBase`, `InMemoryDbBuilder`, `DbSupport`, `Utility`, `TestConstants`, `JsonTestOptions`, `LocalSqlSettings`, `WebApplicationFactoryBase`
+- [ ] Test.Support contains `WebApplicationFactoryBase` (thin adapter over `EfWebApplicationFactoryBase`), `JsonTestOptions`, `InMemoryDbBuilder`, `TestConstants`, and `Builders/{Entity}Builder` shells; `LocalSqlSettings` lives in the AppHost project; unit tests are flat classes (no shared unit-test base)
 - [ ] `Test.Endpoints/CustomApiFactory.cs` and `Test.E2E/SqlApiFactory.cs` derive from `WebApplicationFactoryBase<Program, {App}DbContextTrxn, {App}DbContextQuery>` (do not duplicate the swap-out logic)
 - [ ] `Test.Integration/Infrastructure/SqlContainerFixture.cs` + `AzuriteContainerFixture.cs` + `IntegrationTestSetup.cs` (component) and `Test.Aspire/AspireTestHost.cs` + `AspireMeshLifecycle.cs` (mesh) exist (even when no tests reference them yet - Phase 5 fills them)
 - [ ] If `includeAiServices: true` and Foundry Local provider is in scope, `Test.FoundryLocal` exists, is registered in `.slnx`, is RID-bound, and does not reference `AppHost`.

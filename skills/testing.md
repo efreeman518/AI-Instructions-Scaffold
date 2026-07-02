@@ -159,7 +159,7 @@ Pure unit (Test.Unit)
 Mutation overlay (Test.Mutation, Stryker over focused MSTest suite)
 ```
 
-Phase 4 generates the WAF base in `Test.Support`, the `CustomApiFactory` / `SqlApiFactory` shells, the `Test.Integration` store fixtures (`SqlContainerFixture` / `AzuriteContainerFixture` + `IntegrationTestSetup`), and the `Test.Aspire` mesh shells (`AspireTestHost` + `AspireMeshLifecycle`) so the ladder is wired before any Phase 5 tests are written. See [../ai/contract-scaffolding.md](../ai/contract-scaffolding.md) (`### 4. Test Infrastructure`).
+Phase 4 generates the WAF base in `Test.Support`, the `CustomApiFactory` / `SqlApiFactory` shells, the `Test.Integration` store fixtures (`SqlContainerFixture` / `AzuriteContainerFixture` + `IntegrationTestSetup`), and the `Test.Aspire` mesh shells (`AspireTestHost` + `AspireMeshLifecycle`) so the ladder is wired before any Phase 5 tests are written - profile-gated tiers (`Test.E2E`, `Test.Aspire`) get shells only when the Capability-Gated table above generates them. See [../ai/contract-scaffolding.md](../ai/contract-scaffolding.md) (`### 4. Test Infrastructure`).
 
 ### Component vs Mesh split
 
@@ -289,10 +289,11 @@ This isolates startup flakiness (e.g., `RegexMatchTimeoutException` from Testcon
 
 ### Test.Support
 
-- `UnitTestBase` for shared mocks
+- `WebApplicationFactoryBase` - thin adapter over the package base (host-replacement swap lives in EF.IntegrationTesting)
+- `JsonTestOptions` - shared test-side JSON options (see skills/api.md JSON Contract)
 - `InMemoryDbBuilder` for in-memory/sqlite with seed hooks
-- `DbSupport` for runtime DB registration swap in tests
-- Test utilities for config and data generation
+- `TestConstants` + `Builders/{Entity}Builder` for config and data generation
+- Unit tests are flat classes: per-class `Mock<T>` fields + a `CreateService` helper, no shared unit-test base
 
 ### Unit (Test.Unit)
 

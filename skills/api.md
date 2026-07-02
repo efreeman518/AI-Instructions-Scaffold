@@ -45,7 +45,7 @@ public static class TaskItemEndpoints
         return result.Match<IResult>(
             response => TypedResults.Ok(response),
             errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                messages: errors, statusCodeOverride: StatusCodes.Status400BadRequest)),
+                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest)),
             () => TypedResults.NotFound(id));
     }
 }
@@ -161,7 +161,6 @@ public static class JsonTestOptions
     public static readonly JsonSerializerOptions Default = new()
     {
         PropertyNameCaseInsensitive = true,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
         Converters = { new JsonStringEnumConverter() },
     };
 }
@@ -290,7 +289,7 @@ Required endpoint rules:
    return result.Match<IResult>(
        value  => TypedResults.Ok(new DefaultResponse<T>(value)),
        errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                     messages: errors, statusCodeOverride: StatusCodes.Status400BadRequest,
+                     errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest,
                      traceId: httpContext.TraceIdentifier, includeStackTrace: _problemDetailsIncludeStackTrace)),
        ()     => TypedResults.NotFound());
 
@@ -298,7 +297,7 @@ Required endpoint rules:
    return result.Match<IResult>(
        ()     => TypedResults.Ok(),
        errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                     messages: errors, statusCodeOverride: StatusCodes.Status400BadRequest,
+                     errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest,
                      traceId: httpContext.TraceIdentifier, includeStackTrace: _problemDetailsIncludeStackTrace)));
    ```
 4. **Handler signature:** `HttpContext httpContext` must be the first parameter on every handler (needed for `traceId` in `ProblemDetailsHelper`). `CancellationToken` is the last parameter. **Every service-typed parameter MUST carry an explicit `[FromServices]` attribute.** This is non-negotiable.

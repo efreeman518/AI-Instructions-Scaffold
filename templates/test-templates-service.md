@@ -17,11 +17,25 @@ public async Task Given_ValidDto_When_CreateAsync_Then_ReturnsSuccessResult() { 
 
 ---
 
-## Service Creation Helper
+## Test Class Shape
 
-Use a single helper method per test class to avoid repeated mock/bootstrap code:
+Unit test classes are **flat** - no shared unit-test base. Declare per-class `Mock<T>` fields inline, put cross-test setups (request-context tenant, tenant-boundary defaults) in `[TestInitialize]`, and use a single `CreateService` helper per class:
 
 ```csharp
+private readonly Mock<I{Entity}RepositoryTrxn> _repoTrxnMock = new();
+private readonly Mock<I{Entity}RepositoryQuery> _repoQueryMock = new();
+private readonly Mock<IRequestContext<string, Guid?>> _requestContextMock = new();
+private readonly Mock<ITenantBoundaryValidator> _tenantBoundaryMock = new();
+private readonly Mock<IEntityCacheProvider> _entityCacheMock = new();
+private readonly Mock<IFusionCacheProvider> _fusionCacheProviderMock = new();
+
+[TestInitialize]
+public void Setup()
+{
+    _requestContextMock.Setup(x => x.TenantId).Returns(TestConstants.TenantId);
+    _requestContextMock.Setup(x => x.Roles).Returns(new List<string>());
+}
+
 private {Entity}Service CreateService(
     I{Entity}RepositoryTrxn? trxn = null,
     I{Entity}RepositoryQuery? query = null)
@@ -46,7 +60,7 @@ private {Entity}Service CreateService(
 ```csharp
 [TestClass]
 [TestCategory("Unit")]
-public class {Entity}ServiceTests : UnitTestBase
+public class {Entity}ServiceTests
 {
     [TestMethod]
     public async Task Given_ValidDto_When_CreateAsync_Then_ReturnsSuccessResult()

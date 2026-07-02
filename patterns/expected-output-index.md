@@ -64,10 +64,10 @@ Default scaffold and TaskFlow reference app keep DTOs and mappers in `Applicatio
 ## Testing
 | Artifact | Path |
 |---|---|
-| Test support - shared WAF base | `Test/Test.Support/WebApplicationFactoryBase.cs` (with `TestDbContextFactory<T>` + `WebApplicationFactoryHelpers`) |
+| Test support - shared WAF base | `Test/Test.Support/WebApplicationFactoryBase.cs` (thin adapter over `EfWebApplicationFactoryBase` from EF.IntegrationTesting) |
 | Test support - JSON options | `Test/Test.Support/JsonTestOptions.cs` |
-| Test support - shared constants | `Test/Test.Support/TestConstants.cs`, `LocalSqlSettings.cs` |
-| Test support - utilities | `Test/Test.Support/UnitTestBase.cs`, `InMemoryDbBuilder.cs`, `DbSupport.cs` |
+| Test support - shared constants | `Test/Test.Support/TestConstants.cs` (`LocalSqlSettings.cs` lives in the AppHost project) |
+| Test support - utilities | `Test/Test.Support/InMemoryDbBuilder.cs` (unit tests are flat classes - no shared unit-test base) |
 | Test support - builders | `Test/Test.Support/Builders/{Entity}Builder.cs`, `{Entity}DtoBuilder.cs` (one of each per entity) |
 | Unit (domain) | `Test/Test.Unit/Domain/{Entity}Tests.cs`, `{Entity}RulesTests.cs` |
 | Unit (mapper, per entity) | `Test/Test.Unit/Mappers/{Entity}MapperTests.cs` |

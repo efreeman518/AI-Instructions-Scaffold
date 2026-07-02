@@ -35,139 +35,63 @@ If the test base evolves to wrap `HttpClient` in an extension method (e.g. `clie
 
 ## Shared WebApplicationFactoryBase (in Test.Support)
 
-The plumbing for swapping the production DbContext + interceptors + pooled factories with a test-mode store is identical between `Test.Endpoints` (in-memory) and `Test.E2E` (Testcontainers SQL). It lives once in `Test.Support` as `WebApplicationFactoryBase<TProgram, TTrxnContext, TQueryContext>`. Both projects derive thin specializations that only declare which options to use.
+The plumbing for swapping the production DbContext + interceptors + pooled factories with a test-mode store ships in the `EF.IntegrationTesting` package as `EF.IntegrationTesting.AspNetCore.EfWebApplicationFactoryBase<TProgram, TTrxnContext, TQueryContext>`. `Test.Support` carries only a thin app adapter, `WebApplicationFactoryBase<TProgram, TTrxnContext, TQueryContext>`, and both `Test.Endpoints` (in-memory) and `Test.E2E` (Testcontainers SQL) derive specializations that only declare which options to use.
 
-> **Phase 4 generates this file.** The shared base is part of the contract-scaffolding output (see [../ai/contract-scaffolding.md](../ai/contract-scaffolding.md), `### 4. Test Infrastructure`) so the solution builds and both `Test.Endpoints` and `Test.E2E` compile before Phase 5 begins. The shape below is the canonical reference.
+> **Phase 4 generates this file.** The adapter is part of the contract-scaffolding output (see [../ai/contract-scaffolding.md](../ai/contract-scaffolding.md), `### 4. Test Infrastructure`) so the solution builds and both `Test.Endpoints` and `Test.E2E` compile before Phase 5 begins. The package base's descriptor removal no-ops when a descriptor is absent - at Phase 4 the host registers no DbContext yet; the swap takes effect in 5b.
 
 `Test/Test.Support/WebApplicationFactoryBase.cs`:
 
 ```csharp
 using EF.Data;
-using EF.Data.Interceptors;
+using EF.IntegrationTesting.AspNetCore;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace Test.Support;
 
 /// <summary>
-/// Shared base for WebApplicationFactory-based test factories.
-///
-/// Subclasses override BuildTrxnOptions and BuildQueryOptions to choose the test database
-/// (in-memory for endpoint contract tests, Testcontainers SQL for E2E workflow tests).
-///
-/// Removes the standard pooled-DbContext + interceptor + scoped-factory plumbing that the
-/// production host registers, then re-registers test-mode contexts using TestDbContextFactory.
-///
-/// Constrained to DbContextBase&lt;string, Guid?&gt; - the EF.Packages canonical audit/tenant
-/// shape. Apps that deviate from these types must override ConfigureWebHost directly rather
-/// than using this base.
+/// App-specific adapter over the reusable EF.IntegrationTesting WebApplicationFactory base.
+/// Keeps test factories stable while the shared EF host-replacement plumbing lives in the package.
 /// </summary>
-public abstract class WebApplicationFactoryBase<TProgram, TTrxnContext, TQueryContext> : WebApplicationFactory<TProgram>
+public abstract class WebApplicationFactoryBase<TProgram, TTrxnContext, TQueryContext>
+    : EfWebApplicationFactoryBase<TProgram, TTrxnContext, TQueryContext>
     where TProgram : class
     where TTrxnContext : DbContextBase<string, Guid?>
     where TQueryContext : DbContextBase<string, Guid?>
 {
+    protected override string? StartupTaskServiceTypeFullName => "{App}.Bootstrapper.IStartupTask";
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        builder.UseEnvironment("Development");
-        builder.ConfigureServices(services =>
+        base.ConfigureWebHost(builder);
+        builder.ConfigureLogging(logging =>
         {
-            services.RemoveAll<IHostedService>();
-            RemoveStandardEfInfrastructure(services);
-            RemoveAppSpecificServices(services);
-
-            var trxnOptions = BuildTrxnOptions();
-            var queryOptions = BuildQueryOptions();
-            services.AddScoped(_ => WebApplicationFactoryHelpers.CreateContext<TTrxnContext>(trxnOptions));
-            services.AddScoped(_ => WebApplicationFactoryHelpers.CreateContext<TQueryContext>(queryOptions));
-            services.AddSingleton<IDbContextFactory<TTrxnContext>>(new TestDbContextFactory<TTrxnContext>(trxnOptions));
-            services.AddSingleton<IDbContextFactory<TQueryContext>>(new TestDbContextFactory<TQueryContext>(queryOptions));
+            logging.ClearProviders();
+            logging.AddConsole();
         });
-    }
-
-    protected abstract DbContextOptions BuildTrxnOptions();
-    protected abstract DbContextOptions BuildQueryOptions();
-    protected virtual void RemoveAppSpecificServices(IServiceCollection services) { }
-
-    private static void RemoveStandardEfInfrastructure(IServiceCollection services)
-    {
-        services.RemoveAll<AuditInterceptor<string, Guid?>>();
-        services.RemoveAll<ConnectionNoLockInterceptor>();
-
-        WebApplicationFactoryHelpers.RemoveDescriptorsByServiceType(services, typeof(TTrxnContext));
-        WebApplicationFactoryHelpers.RemoveDescriptorsByServiceType(services, typeof(TQueryContext));
-        WebApplicationFactoryHelpers.RemoveDescriptorsByServiceType(services, typeof(DbContextOptions<TTrxnContext>));
-        WebApplicationFactoryHelpers.RemoveDescriptorsByServiceType(services, typeof(DbContextOptions<TQueryContext>));
-        WebApplicationFactoryHelpers.RemoveDescriptorsByServiceType(services, typeof(DbContextOptions));
-        WebApplicationFactoryHelpers.RemoveDescriptorsByServiceType(services, typeof(IDbContextFactory<TTrxnContext>));
-        WebApplicationFactoryHelpers.RemoveDescriptorsByServiceType(services, typeof(IDbContextFactory<TQueryContext>));
-        WebApplicationFactoryHelpers.RemoveDescriptorsByServiceType(services, typeof(DbContextScopedFactory<TTrxnContext, string, Guid?>));
-        WebApplicationFactoryHelpers.RemoveDescriptorsByServiceType(services, typeof(DbContextScopedFactory<TQueryContext, string, Guid?>));
-        WebApplicationFactoryHelpers.RemoveDescriptorsByImplPartialName(services, "DbContextPool");
-    }
-}
-
-public sealed class TestDbContextFactory<TContext>(DbContextOptions options) : IDbContextFactory<TContext>
-    where TContext : DbContext
-{
-    public TContext CreateDbContext() => WebApplicationFactoryHelpers.CreateContext<TContext>(options);
-}
-
-public static class WebApplicationFactoryHelpers
-{
-    public static TContext CreateContext<TContext>(DbContextOptions options) where TContext : DbContext
-    {
-        var genericOptionsType = typeof(DbContextOptions<>).MakeGenericType(typeof(TContext));
-        var ctor = typeof(TContext).GetConstructor([genericOptionsType])
-                ?? typeof(TContext).GetConstructor([typeof(DbContextOptions)]);
-        return (TContext)ctor!.Invoke([options]);
-    }
-
-    public static void RemoveDescriptorsByServiceType(IServiceCollection services, Type serviceType)
-    {
-        foreach (var d in services.Where(d => d.ServiceType == serviceType).ToList())
-            services.Remove(d);
-    }
-
-    public static void RemoveDescriptorsByImplPartialName(IServiceCollection services, string partialName)
-    {
-        foreach (var d in services.Where(d =>
-            d.ImplementationType?.FullName?.Contains(partialName) == true
-            || d.ServiceType.FullName?.Contains(partialName) == true).ToList())
-            services.Remove(d);
     }
 }
 ```
 
-**Why a base class:** the production host registers `AddPooledDbContextFactory` + `DbContextScopedFactory` + `AuditInterceptor` (per [data-layer-wiring.md](../patterns/data-layer-wiring.md)). Both Test.Endpoints and Test.E2E need to remove **all** of the following before re-registering test contexts:
+**What the package base does** (`EfWebApplicationFactoryBase`, namespace `EF.IntegrationTesting.AspNetCore`): removes the production EF registrations for both contexts (pooled contexts and pool/lease plumbing, `DbContextOptions<T>`, `IDbContextFactory<T>` + `DbContextScopedFactory`, the audit and SQL-only interceptors), re-registers test-mode `IDbContextFactory<T>` + scoped contexts built from the options the derived factory supplies, creates contexts via reflection (bypasses `required` audit/tenant member enforcement - no CS9035), and suppresses app startup tasks named by `StartupTaskServiceTypeFullName`. Descriptor removal no-ops when a registration is absent, so the adapter is safe in a Phase 4 contract scaffold where the host registers no DbContext yet.
 
-| Registration to Remove | Why |
-|---|---|
-| `AuditInterceptor<string, Guid?>` | Depends on `IInternalMessageBus` (EF.BackgroundServices), not registered in test host |
-| `ConnectionNoLockInterceptor` | SQL-only interceptor, incompatible with InMemory provider |
-| `IDbContextPool<T>` (internal) | Pooled factory creates singleton pools that conflict with scoped test options |
-| `DbContextScopedFactory<T, string, Guid?>` | Wraps `IDbContextFactory<T>` - must be removed and re-registered |
-| `IDbContextFactory<T>` | Original pooled factory - must be replaced with `TestDbContextFactory<T>` |
-| `DbContextOptions<T>` + `DbContextOptions` | Pool-registered options conflict with new test options |
+**Critical details:**
 
-The base does this once. Derived classes provide only the test-mode store.
-
-**Critical details preserved by the base:**
 1. **Typed options per context.** Use `new DbContextOptionsBuilder<{App}DbContextTrxn>().UseInMemoryDatabase(name).Options` - do NOT use generic `DbContextOptions` when multiple contexts exist. `DbContextBase` constructors take `DbContextOptions` (non-generic base), but EF validates the generic type at runtime.
-2. **Required member bypass.** `DbContextBase<TAuditIdType, TTenantIdType>` declares `required` members (e.g., `AuditId`). The base's `WebApplicationFactoryHelpers.CreateContext<T>` uses `ConstructorInfo.Invoke()` via reflection to bypass compile-time `required` enforcement when creating contexts from a test factory.
-3. **Re-provided `IDbContextFactory<T>`.** `DbContextScopedFactory` resolves `IDbContextFactory<T>` - the base registers `TestDbContextFactory<T>` that creates contexts via reflection.
+2. Derived factories provide only the test-mode store (override the abstract `BuildTrxnOptions()` / `BuildQueryOptions()`); `ConfigureTestConfiguration(IConfigurationBuilder)` is the hook for app-specific test configuration.
+3. Do not hand-roll descriptor-removal or reflection-creation plumbing in the app - it ships in `EF.IntegrationTesting` (see [../support/ef-packages-reference.md](../support/ef-packages-reference.md) section Testing).
 
 ## SqlAggregateSeeder (in Test.Support)
 
-Builders (`Test.Support/Builders/{Entity}Builder.cs`) construct **domain objects in memory**; they do not
-persist a valid FK chain. E2E and integration tests that need a real row to act on (a created parent with
-children, owned by a real user in a real tenant) were duplicating that insert inline, which drifts
-per-test and reintroduces the user/tenant FK bugs the dev seam fixes. Provide one shared seeder in
-`Test.Support` that persists a full FK chain in dependency order through the live DbContext.
+**Conditional - generate on first need, not by default.** When the API can create every row a test acts
+on (dev-seam auth supplies user/tenant), seed through the API - that is the reference pattern, and this
+file is not generated. Builders (`Test.Support/Builders/{Entity}Builder.cs`) construct **domain objects
+in memory**; they do not persist a valid FK chain. When tests need prerequisite rows the API never
+creates (a real user in a real tenant owning the aggregate), do not duplicate that insert inline - it
+drifts per-test and reintroduces the user/tenant FK bugs the dev seam fixes. Provide this one shared
+seeder in `Test.Support` that persists the full FK chain in dependency order through the live DbContext.
 
 `Test/Test.Support/SqlAggregateSeeder.cs`:
 

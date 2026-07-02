@@ -222,7 +222,7 @@ Other key types:
 
 ### `EF.Common.Contracts`
 
-- `Result` / `Result<T>` (same shape as domain result, but `Errors: IReadOnlyList<string>`)
+- `Result` / `Result<T>` (same shape as domain result, `Errors: IReadOnlyList<DomainError>`)
 - `IRequestContext<TAuditIdType, TTenantIdType>`
 - `RequestContext<...>` implementation - constructor order is `(correlationId, auditId, tenantId, roles)`
 - `PagedResponse<T>` - properties: `PageSize` (int), `PageIndex` (int), `Total` (int), `Data` (IReadOnlyList&lt;T&gt;)
@@ -379,9 +379,7 @@ Pattern reference: [external-api.md](external-api.md)
 - [ ] Latest stable versions resolved successfully
 - [ ] `dotnet restore` re-runs cleanly after projects are generated
 - [ ] `EntityBase.Id` behavior preserved (`Guid.CreateVersion7()`)
-- [ ] Domain/application error types are not mixed:
-  - `DomainResult.Errors` -> `IReadOnlyList<DomainError>`
-  - `Result.Errors` -> `IReadOnlyList<string>`
+- [ ] Domain (`DomainResult`) and application (`Result`) result types are not mixed across layer boundaries; both expose `Errors` / `Match` failure as `IReadOnlyList<DomainError>`
 - [ ] Internal message bus namespaces are correct
 - [ ] If `applicationStyle` is `cqrs` or `switch`: `<packagePrefix>.CQRS` is sourced by feed or local project, and no MediatR/dispatcher package was added
 - [ ] Azure client factories and package-required DI wiring are registered

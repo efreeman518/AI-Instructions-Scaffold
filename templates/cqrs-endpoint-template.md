@@ -17,7 +17,7 @@ group.MapPost("/", async (
     return result.Match<IResult>(
         response => TypedResults.Created(httpContext.Request.Path, response),
         errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-            messages: errors,
+            errors: errors,
             traceId: httpContext.TraceIdentifier)));
 });
 ```

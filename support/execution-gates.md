@@ -66,7 +66,7 @@ Exit criteria:
 - [ ] Every entity from `.scaffold/resource-implementation.yaml` has: interface, DTO, entity shell, builders
 - [ ] All no-op stubs satisfy their interfaces
 - [ ] `RegisterServices.cs` wires all no-op stubs
-- [ ] Test.Support contains `UnitTestBase`, `InMemoryDbBuilder`, `DbSupport`, `Utility`, `TestConstants`, `JsonTestOptions`, `LocalSqlSettings`, `WebApplicationFactoryBase`
+- [ ] Test.Support contains `WebApplicationFactoryBase` (thin adapter over `EfWebApplicationFactoryBase`), `JsonTestOptions`, `InMemoryDbBuilder`, `TestConstants`, and `Builders/{Entity}Builder` shells; `LocalSqlSettings` lives in the AppHost project; unit tests are flat classes (no shared unit-test base)
 - [ ] `Test.Endpoints/CustomApiFactory.cs` and `Test.E2E/SqlApiFactory.cs` inherit/use the shared `WebApplicationFactoryBase` (no duplicated swap-out plumbing); `Test.Integration/Infrastructure/*ContainerFixture` + `IntegrationTestSetup` (component) and `Test.Aspire/AspireTestHost` + `AspireMeshLifecycle` (mesh) all compile
 - [ ] `{Entity}DtoBuilder` returns valid DTOs
 - [ ] No domain logic in entity shells (only `throw new NotImplementedException`)

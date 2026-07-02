@@ -208,7 +208,7 @@ Reference: `TaskItem.TransitionStatus` + `IsValidTransition` in the reference ap
 
 ### `DomainError.Create` argument order (GR-14)
 
-`DomainError.Create` takes the **human message FIRST**. The current `EF.Domain.Contracts` exposes `DomainError.Create(string error, string code)` (message, then optional code key) - and some builds expose a single-arg `DomainError.Create(string error)`. Verify the actual overload set against the package (GR-14); do **not** infer it. The common, silent bug is emitting the two-arg form with the arguments reversed:
+`DomainError.Create` takes the **human message FIRST**. `EF.Domain.Contracts` exposes `DomainError.Create(string error)` (no code key) and `DomainError.Create(string error, string code)` (message, then code key). Verify the overload set against the package (GR-14) rather than inferring it. The common, silent bug is emitting the two-arg form with the arguments reversed:
 
 ```csharp
 // WRONG - code key surfaces as the user-facing message
@@ -216,7 +216,7 @@ DomainError.Create("TenantId.Required", "Tenant ID is required.")
 
 // RIGHT - message first
 DomainError.Create("Tenant ID is required.", "TenantId.Required")
-// or, when only the single-arg overload exists (reference-app shape):
+// or, when no machine code key is needed:
 DomainError.Create("Tenant ID is required.")
 ```
 

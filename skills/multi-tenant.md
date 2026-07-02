@@ -61,6 +61,15 @@ private void ConfigureTenantQueryFilters(ModelBuilder modelBuilder)
 
 Use `IgnoreQueryFilters()` only for explicitly authorized cross-tenant paths (for example, global admin tooling).
 
+**Hand-written tenant filters** (when `BuildTenantFilter` does not fit - e.g. entities implement `ITenantEntity<Guid>` while the context is `DbContextBase<string, Guid?>`): use lifted nullable equality - `e => TenantId == null || e.TenantId == TenantId`. Never `e => !TenantId.HasValue || e.TenantId == TenantId!.Value` - EF parameterizes the captured `TenantId.Value` eagerly regardless of the `||` short-circuit and throws `InvalidOperationException: Nullable object must have a value` at query time when the context tenant is null.
+
+## Tenant Input Models
+
+Two valid models for how a request's tenant reaches the service layer; pick one per scaffold and apply it consistently:
+
+- **Client-supplied `TenantId` on the DTO** - services stamp `dto.TenantId = RequestTenantId ?? Guid.Empty` after unwrapping the request, and `ITenantBoundaryValidator` (`EnsureTenantBoundary` / `PreventTenantChange`) guards mismatches. The `[Multi-tenant]` steps in the service/test templates assume this model.
+- **Server-derived tenant (DTOs omit `TenantId`)** - the tenant comes only from `IRequestContext`; there is no client tenant to guard, so skip the boundary validator and the TenantId stamp. Isolation is enforced by the row-level query filter (scoped context factory + `IRequestContext`) plus same-tenant domain rules at the service boundary (e.g. child-belongs-to-same-tenant-as-parent).
+
 ---
 
 ## Request Context Contract

@@ -258,11 +258,11 @@ _During Phase 3, search for CLIs, MCP servers, and online resources matching pro
 
 Before starting Phase 4 (contract scaffolding), verify all of the following:
 
-- [ ] `nuget.config` validated (`dotnet restore` exits 0) - applies in `feed` and `hybrid`; in `local`, `nuget.config` only needs `nuget.org`
+- [ ] `nuget.config` validated (`configure-ef-packages-feed.py --check-only` exits 0) - applies in `feed` and `hybrid`; no solution exists at Phase 3, so full `dotnet restore` proof lands with the Phase 4 build gate; in `local`, `nuget.config` only needs `nuget.org`
 - [ ] All open questions resolved or explicitly deferred with TODO
 - [ ] `scaffoldMode`, `testingProfile`, and all host flags confirmed
 - [ ] `packageStrategy`, `packagePrefix`, `customNugetFeeds`, and `localPackageLayers` confirmed in `.scaffold/resource-implementation.yaml`
-- [ ] If `feed`/`hybrid`: NuGet feed helper run or manually verified (`configure-ef-packages-feed.py --prefix <packagePrefix>`); `NUGET_AUTH_TOKEN` set; `dotnet restore` exits 0
+- [ ] If `feed`/`hybrid`: NuGet feed helper run or manually verified (`configure-ef-packages-feed.py --prefix <packagePrefix>`); `NUGET_AUTH_TOKEN` set; `--check-only` exits 0
 - [ ] If `local`/`hybrid`: every layer in `localPackageLayers` matches a layer in [`../support/ef-packages-reference.md`](../support/ef-packages-reference.md); Phase 4 will generate `src/Packages/<packagePrefix>.<Layer>` packable projects for each
 - [ ] Developer reviews `.scaffold/implementation-plan.md` against `ai/implementation-plan.md` schema
 - [ ] Domain specification and resource implementation YAML files are complete

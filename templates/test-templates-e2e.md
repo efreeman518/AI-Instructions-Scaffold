@@ -348,7 +348,7 @@ public async Task {PrimaryWorkflow}_EndToEnd_AgainstRealSql()
 Rules:
 - Drive **writes through the API/gateway**, not the browser - see [ui-blazor-forms.md](../skills/ui-blazor-forms.md) and the *Prefer the API/gateway path for write assertions* note below.
 - If the workflow invokes an AI agent, run it deterministically via the scripted-agent switch so the journey is offline and repeatable - see [ai-integration.md](../skills/ai-integration.md) section Deterministic agents for tests.
-- Seed the FK chain with the shared `SqlAggregateSeeder` ([test-templates-endpoint.md](test-templates-endpoint.md) section SqlAggregateSeeder), not inline per-test setup.
+- Seed through the API when it can create the rows the test acts on (reference pattern). When it cannot (user/tenant FK chain), use the shared `SqlAggregateSeeder` ([test-templates-endpoint.md](test-templates-endpoint.md) section SqlAggregateSeeder) - never inline per-test inserts.
 
 ---
 
