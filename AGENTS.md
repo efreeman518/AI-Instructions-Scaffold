@@ -1,11 +1,12 @@
 ## AI Harness Entry
 
-Single source of truth for the harness entry rules below. CLI agents that read
-root `AGENTS.md` (Codex CLI, GitHub Copilot CLI, and other agents using the
-same discovery convention) load this file directly; Claude Code loads it
-through the `@AGENTS.md` import in `CLAUDE.md`; GitHub Copilot in VS Code uses
-`.github/copilot-instructions.md` and the scoped agents in `.github/agents/`
-instead.
+Single source of truth for the harness entry rules below. Agents that read
+root `AGENTS.md` (Codex CLI, GitHub Copilot agent surfaces including VS Code,
+Copilot CLI, and other agents using the same discovery convention) load this
+file directly; Claude Code loads it through the `@AGENTS.md` import in
+`CLAUDE.md`. `.github/copilot-instructions.md` remains a thin stub for older
+Copilot clients and non-agent surfaces; the scoped scaffold agents live in
+`.github/agents/`.
 
 Do not auto-activate the scaffold workflow for ordinary work - normal coding,
 review, docs, and maintenance use regular project context.

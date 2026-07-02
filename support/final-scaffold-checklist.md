@@ -91,7 +91,7 @@ Use `curl`, HTTPie, REST Client, or Scalar. Record status codes and endpoint dis
 - [ ] No `<packagePrefix>.*` shared base type is reimplemented in application/domain/host layers - they live in feed packages or `src/Packages/<packagePrefix>.*` projects only, per `packageStrategy`.
 - [ ] **One public type per file** across all generated `.cs` files in `src/` (including `src/Packages/<Prefix>.*`). File name matches the type. Lumped files (multiple top-level public/internal types) are a failure unless they fall under the exception list in [../skills/solution-structure.md](../skills/solution-structure.md) section Non-Negotiables.
 - [ ] Deployment-only dependencies are recorded as non-blocking residuals.
-- [ ] **Harness entrypoints are finalized for steady state** (see section Finalize Harness Entrypoints below). `AGENTS.md` carries an app-specific summary **outside** the `<!-- ai-scaffold: start --> ... <!-- ai-scaffold: end -->` markers, mirrored in `.github/copilot-instructions.md` (VS Code Copilot cannot follow imports); `CLAUDE.md` stays an `@AGENTS.md` import stub. The `AGENTS.md` marked block keeps only the durable vertical-slice + demoted scaffold/adopt pointers and the conditional graphify block.
+- [ ] **Harness entrypoints are finalized for steady state** (see section Finalize Harness Entrypoints below). `AGENTS.md` carries an app-specific summary **outside** the `<!-- ai-scaffold: start --> ... <!-- ai-scaffold: end -->` markers; `CLAUDE.md` stays an `@AGENTS.md` import stub and `.github/copilot-instructions.md` stays a thin stub pointing at `AGENTS.md`. The `AGENTS.md` marked block keeps only the durable vertical-slice + demoted scaffold/adopt pointers and the conditional graphify block.
 - [ ] **Project root is clean.** Only the following files/dirs are expected at the project root after scaffold completion:
   - **Markdown:** `README.md`, `AGENTS.md`, `CLAUDE.md`, `HANDOFF.md`
   - **.NET config:** `global.json`, `nuget.config`, `dotnet-tools.json`, `Directory.Packages.props`, `Directory.Build.props`, `*.slnx`
@@ -113,11 +113,13 @@ always-loaded files a steady-state shape so ordinary post-scaffold sessions are 
 taxed with one-time bootstrap routing.
 
 Author a short **app-specific** section **outside** the `ai-scaffold` markers in
-`AGENTS.md` (above the marked block) and mirror it in `.github/copilot-instructions.md`
-(VS Code Copilot cannot follow imports). Do not duplicate it in `CLAUDE.md` - the
-import already delivers it to Claude Code; add only Claude-specific notes there,
-outside the markers, if any exist. Keep it short - the `.scaffold/` docs remain the
-source of truth; this section is an orientation pointer, not a copy:
+`AGENTS.md` (above the marked block) - and only there. Claude Code receives it
+through the `CLAUDE.md` import, and Copilot agent surfaces read `AGENTS.md`
+natively; `.github/copilot-instructions.md` stays a thin stub for older/non-agent
+Copilot surfaces, so do not copy the summary into it or into `CLAUDE.md` (add only
+harness-specific notes there, outside the markers, if any exist). Keep it short -
+the `.scaffold/` docs remain the source of truth; this section is an orientation
+pointer, not a copy:
 
 - App name + one-line purpose.
 - Architecture/layering in 1-3 lines, or a pointer to the generated solution shape (see [../skills/solution-structure.md](../skills/solution-structure.md)).
