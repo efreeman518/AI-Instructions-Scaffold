@@ -147,3 +147,17 @@ Load .instructions/START-AI.md. No HANDOFF.md needed - this is an add-entity ope
 Add entity {Entity} to the existing solution using .instructions/support/vertical-slice-checklist.md fast-path.
 Follow patterns established by {ExistingEntity}.
 ```
+
+## Slice Review (Optional Second Session)
+
+Optional independent review of a completed slice in a fresh session: a reader with no
+generation context catches spec drift the generating session cannot see. Report findings
+only - fixes belong to a follow-up session.
+
+```text
+Load .instructions/support/vertical-slice-checklist.md. Do not modify any file.
+Review the {Entity} slice just added to this solution:
+1. Spec compliance - every applicable checklist item satisfied; wiring updates present; Phase-1 artifacts (.scaffold/) updated for {Entity} (GR-01).
+2. Code quality - boundaries respect GR-14 (aggregate rules); patterns match {ExistingEntity}; no dead stubs or leftover TODOs.
+Report findings as a numbered list with file paths; end with PASS or FAIL.
+```

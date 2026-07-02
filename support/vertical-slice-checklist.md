@@ -71,7 +71,7 @@ Use this when adding a new entity to an **already-scaffolded** solution. Skip fu
 
 ### Validation
 
-Gate commands: [execution-gates.md](execution-gates.md) section Core Loop. Scope test filter to the new entity (`FullyQualifiedName~{Entity}`). For recurring test failures, see [troubleshooting.md](troubleshooting.md).
+Gate commands: [execution-gates.md](execution-gates.md) section Core Loop. Scope test filter to the new entity (`FullyQualifiedName~{Entity}`). For recurring test failures, see [troubleshooting.md](troubleshooting.md). After the gate passes, run the advisory drift scan `python {instructionsRoot}/scripts/check-artifact-drift.py --root .` - the new entity must appear in the Phase-1 artifacts, not just in code (GR-01).
 
 ### Prompt Pattern
 
@@ -218,6 +218,8 @@ Skill: [ui-react.md](../skills/ui-react.md).
 ---
 
 ## Post-Generation Verification
+
+Optional but recommended for non-trivial slices: run an independent review in a fresh session using [prompt-catalog.md](prompt-catalog.md) section Slice Review (Optional Second Session).
 
 ### DI and Routing
 

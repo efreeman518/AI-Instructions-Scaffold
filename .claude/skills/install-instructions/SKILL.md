@@ -18,10 +18,7 @@ Maintainer skill for the AI-Instructions-Scaffold **source repo only** (it lives
 Run from the repo root with a machine/user Python launcher (`py -3` works here; full fallback chain in `support/python-setup.md`).
 
 ```powershell
-# Existing install (target already has .instructions/) - non-destructive update
-py -3 scripts/install-to-project.py --target "<app-repo-root>" --update --verify
-
-# Fresh install (no .instructions/ in target yet)
+# Fresh install or re-install (content-aware: unchanged files skipped, changed files overwritten and listed)
 py -3 scripts/install-to-project.py --target "<app-repo-root>" --verify
 
 # Plan only / smoke-check an existing target
@@ -31,7 +28,7 @@ py -3 scripts/install-to-project.py --target "<app-repo-root>" --verify-only
 
 ## Notes
 
-- **Pick the mode by target state:** existing `.instructions/` -> `--update` (skips target files newer than source, leaves root `HANDOFF.md` untouched); fresh target -> plain run.
+- **One mode for fresh and existing targets:** installs are content-aware and idempotent - identical files are skipped, differing target files are overwritten and listed (source is SSOT per GR-07). Root `HANDOFF.md` is always left untouched. `--update` is a deprecated no-op kept for compatibility.
 - `AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md` are merged inside `<!-- ai-scaffold: start -->` / `<!-- ai-scaffold: end -->` markers - app content outside the markers is preserved.
 - The script refuses to install into the source repo itself (`target == repo root`), except `--verify-only`.
 - `tests/`, `.git/`, `.venv/`, `.tmp/`, `.vscode/`, `.githooks/`, `__pycache__` are excluded; `.claude/skills/` and root maintainer docs are never in the payload.

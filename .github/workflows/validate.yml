@@ -17,3 +17,9 @@ jobs:
       # structural checks when they are absent.
       - run: pip install pyyaml jsonschema
       - run: python scripts/validate-instructions.py
+      # Self-tests for the tooling above: merge/copy/verify logic, validator
+      # mutation tests (proves it fails on bad input), extraction helpers.
+      - run: python tests/tooling/run-tooling-tests.py
+      # Extraction smoke: proves fixture/prompt extraction and the resource-YAML
+      # transform still work against the docs. No agent, dotnet, or docker needed.
+      - run: python tests/golden-path/run-golden-path.py --dry-run --package-strategy local

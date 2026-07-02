@@ -94,7 +94,7 @@ AUTHOR_ONLY_DIRS = {"tests", ".github/workflows", ".githooks", ".vscode", ".venv
 # Markdown roots to walk. Skip vendored/temporary trees.
 RUNTIME_SCAN_ROOTS = ["ai", "patterns", "profiles", "schemas", "skills", "support", "templates"]
 HARNESS_SCAN_ROOTS = [".claude", ".github"]
-INSTRUCTIONS_TOP_LEVEL_MD = ["README.md", "START-AI.md", "CLAUDE.md", "GROUND-RULES.md"]
+INSTRUCTIONS_TOP_LEVEL_MD = ["README.md", "START-AI.md", "AGENTS.md", "GROUND-RULES.md"]
 APP_TOP_LEVEL_MD = ["AGENTS.md", "CLAUDE.md"]
 
 EXCLUDE_PARTS = {"__pycache__", ".git", ".venv", ".tmp", ".vscode", ".githooks", "tests", "bin", "obj", "node_modules"}
@@ -656,6 +656,100 @@ def check_phase5_template_coverage(findings: Findings) -> None:
         )
 
 
+# --- Phase 5 load-set token budget --------------------------------------------
+# Turns the OPERATIONS.md "Context Budgets" guidance into a tripwire: the
+# required load set of each Phase 5 sub-phase (session base + skills + templates
+# columns) must stay under a ceiling, and the full set (+ on-demand column) must
+# stay clearly below the point where lost-in-the-middle degrades output.
+# Tokens are estimated as chars/4. Ceilings are ~15% above the measured
+# 2026-07-01 baselines; if this check fires, prefer trimming or splitting the
+# offending files over raising the ceiling.
+
+# Session base: files every Phase 5 session loads before the load set.
+LOADSET_SESSION_BASE = ["START-AI.md", "GROUND-RULES.md", "ai/SKILL.md"]
+
+# Required set (session base + skills + templates columns + base-context line).
+# Measured baselines: 5a ~77k, 5b ~111k, 5c ~92k, 5d ~68k, 5e ~58k tokens.
+LOADSET_REQUIRED_CEILINGS = {
+    "5a": 88_000,
+    "5b": 128_000,
+    "5c": 105_000,
+    "5d": 78_000,
+    "5e": 67_000,
+}
+
+# Full set (required + on-demand column). Measured worst: 5b ~148k tokens.
+LOADSET_FULL_CEILING = 170_000
+
+
+def _estimate_tokens(path: Path) -> int:
+    try:
+        return len(path.read_text(encoding="utf-8")) // 4
+    except (OSError, UnicodeDecodeError):
+        return 0
+
+
+def check_loadset_token_budget(findings: Findings) -> None:
+    skill_path = INSTRUCTIONS_ROOT / PHASE5_SKILL_REL
+    if not skill_path.exists():
+        return  # check_phase5_load_set already errors
+    lines = skill_path.read_text(encoding="utf-8").splitlines()
+    start = next((i for i, ln in enumerate(lines) if ln.strip() == PHASE5_TABLE_HEADING), None)
+    if start is None:
+        return  # check_phase5_load_set already errors
+    end = next((j for j in range(start + 1, len(lines)) if lines[j].startswith("## ")), len(lines))
+
+    base_files: list[Path] = [INSTRUCTIONS_ROOT / rel for rel in LOADSET_SESSION_BASE]
+    for line in lines[start:end]:
+        if "base context" in line.strip().lower():
+            for span in BACKTICK_SPAN_PATTERN.findall(line):
+                span = span.strip()
+                if span.endswith(".md") and "/" in span and " " not in span:
+                    base_files.append(INSTRUCTIONS_ROOT / span)
+    base_tokens = sum(_estimate_tokens(p) for p in base_files if p.exists())
+
+    for line in lines[start:end]:
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            continue
+        cells = [c.strip() for c in stripped.strip("|").split("|")]
+        match = re.match(r"\*\*(5[a-e])\b", cells[0]) if len(cells) >= 4 else None
+        if not match:
+            continue
+        sub = match.group(1)
+
+        required: dict[Path, None] = {}
+        on_demand: dict[Path, None] = {}
+        for idx, bucket in ((1, required), (2, required), (3, on_demand)):
+            kind = LOADSET_COLUMN_KINDS[idx]
+            for span in BACKTICK_SPAN_PATTERN.findall(cells[idx]):
+                token = span.strip()
+                if not LOADSET_TOKEN_PATTERN.match(token):
+                    continue
+                for cand in _resolve_loadset_token(token, kind):
+                    if cand.exists():
+                        bucket[cand] = None
+                        break
+
+        required_tokens = base_tokens + sum(_estimate_tokens(p) for p in required)
+        full_tokens = required_tokens + sum(_estimate_tokens(p) for p in on_demand)
+        ceiling = LOADSET_REQUIRED_CEILINGS.get(sub)
+        if ceiling is not None and required_tokens > ceiling:
+            worst = sorted(required, key=_estimate_tokens, reverse=True)[:3]
+            worst_desc = ", ".join(f"{display_path(p)} (~{_estimate_tokens(p)})" for p in worst)
+            findings.err(
+                skill_path,
+                f"Phase {sub} required load set ~{required_tokens} tokens exceeds ceiling {ceiling} "
+                f"(largest: {worst_desc}) - trim or split before raising the ceiling",
+            )
+        if full_tokens > LOADSET_FULL_CEILING:
+            findings.err(
+                skill_path,
+                f"Phase {sub} full load set (required + on-demand) ~{full_tokens} tokens exceeds "
+                f"ceiling {LOADSET_FULL_CEILING} - trim the on-demand column or split files",
+            )
+
+
 # --- Golden-path schema integrity --------------------------------------------
 # The expected YAML blocks in support/golden-path-sample.md are the canonical
 # regression fixture for instruction changes. Keep them consistent with the
@@ -921,6 +1015,7 @@ def main() -> int:
     check_readme_install_table(findings)
     check_phase5_load_set(findings)
     check_phase5_template_coverage(findings)
+    check_loadset_token_budget(findings)
     check_golden_path_schemas(findings)
     check_ef_package_api(findings)
 

@@ -3,9 +3,12 @@
 Local golden-path regression harness (author-side, never shipped to apps).
 
 Proves the instruction set still produces a building, testing app by driving
-one fresh headless agent session per phase (3 -> 4 -> 5a -> 5b) against the
-WorkBoard golden-path fixture, with this harness - not the agent - running the
-deterministic gates (dotnet build / dotnet test) between phases.
+one fresh headless agent session per phase (3 -> 4 -> 5a -> 5b -> slice) against
+the WorkBoard golden-path fixture, with this harness - not the agent - running
+the deterministic gates (dotnet build / dotnet test) between phases. The final
+"slice" phase regression-tests the vertical-slice flow: it adds a new
+independent aggregate to the scaffolded workspace and additionally gates on
+migration-history additivity (GR-13) and the new entity's presence.
 
 No API key required: the claude driver uses the subscription OAuth login from
 `claude /login`; the codex driver uses `codex login` (ChatGPT plan).
@@ -54,8 +57,17 @@ INSTALLER = REPO_ROOT / "scripts" / "install-to-project.py"
 RESOURCE_SCHEMA = REPO_ROOT / "schemas" / "resource-implementation.schema.json"
 REPORT_ROOT = REPO_ROOT / ".tmp" / "golden-path-runs"
 
-PHASE_ORDER = ["3", "4", "5a", "5b"]
-DEFAULT_MAX_TURNS = {"3": 60, "4": 200, "5a": 250, "5b": 300}
+PHASE_ORDER = ["3", "4", "5a", "5b", "slice"]
+DEFAULT_MAX_TURNS = {"3": 60, "4": 200, "5a": 250, "5b": 300, "slice": 150}
+
+# Vertical-slice regression: add a new independent aggregate root to the
+# completed 5b workspace. GR-14 names Tag as the canonical independent-aggregate
+# example; Project is the fixture's primary aggregate whose patterns the slice
+# should follow.
+SLICE_ENTITY = "Tag"
+SLICE_EXISTING_ENTITY = "Project"
+SLICE_ENTITY_PLACEHOLDER = "{Entity}"
+SLICE_EXISTING_PLACEHOLDER = "{ExistingEntity}"
 
 # Layer set for the local-strategy bypass, derived from
 # support/ef-packages-reference.md section Phase Usage (5a/5b) plus test layers.
@@ -82,6 +94,7 @@ PROMPT_HEADINGS = {
     "4": ["## Phase 4 - Contract Scaffolding"],
     "5a": ["## Phase 5 - Session Start", "### 5a - Foundation (TDD)"],
     "5b": ["## Phase 5 - Session Start", "### 5b - App Core + Runtime/Edge"],
+    "slice": ["## Add New Entity (Existing Project)"],
 }
 
 # Gateway is off in the golden-path fixture; the other runtime concerns are on.
@@ -157,6 +170,13 @@ def extract_prompts() -> dict[str, str]:
             if RUNTIME_PLACEHOLDER_5B not in prompt:
                 fail("5b runtime-concern placeholder missing from prompt-catalog.md - update RUNTIME_PLACEHOLDER_5B")
             prompt = prompt.replace(RUNTIME_PLACEHOLDER_5B, RUNTIME_CONCERNS_5B)
+        if phase == "slice":
+            for placeholder in (SLICE_ENTITY_PLACEHOLDER, SLICE_EXISTING_PLACEHOLDER):
+                if placeholder not in prompt:
+                    fail(f"slice placeholder {placeholder} missing from prompt-catalog.md Add New Entity block")
+            prompt = (prompt
+                      .replace(SLICE_ENTITY_PLACEHOLDER, SLICE_ENTITY)
+                      .replace(SLICE_EXISTING_PLACEHOLDER, SLICE_EXISTING_ENTITY))
         prompts[phase] = prompt
     return prompts
 
@@ -307,7 +327,19 @@ def find_solution(target: Path) -> Path | None:
     return None
 
 
-def gate(phase: str, target: Path) -> tuple[bool, list[str]]:
+def snapshot_migrations(target: Path) -> set[str]:
+    """Relative paths of EF migration source files under src/ (bin/obj excluded)."""
+    src = target / "src"
+    if not src.exists():
+        return set()
+    return {
+        p.relative_to(target).as_posix()
+        for p in src.rglob("Migrations/*.cs")
+        if not any(part in ("bin", "obj") for part in p.parts)
+    }
+
+
+def gate(phase: str, target: Path, pre_migrations: set[str] | None = None) -> tuple[bool, list[str]]:
     notes: list[str] = []
     ok = True
     handoff = (target / "HANDOFF.md").read_text(encoding="utf-8", errors="replace") if (target / "HANDOFF.md").exists() else ""
@@ -340,6 +372,35 @@ def gate(phase: str, target: Path) -> tuple[bool, list[str]]:
         test_ok, test_tail = run_gate_cmd(test_cmd, target)
         notes.append(f"dotnet test --filter \"{test_filter}\": {'PASS' if test_ok else 'FAIL'}\n{test_tail if not test_ok else ''}")
         ok = ok and test_ok
+
+    if phase == "slice":
+        entity_pattern = re.compile(rf"\bclass\s+{SLICE_ENTITY}\b")
+        entity_found = any(
+            entity_pattern.search(p.read_text(encoding="utf-8", errors="replace"))
+            for p in (target / "src").rglob("*.cs")
+            if not any(part in ("bin", "obj") for part in p.parts)
+        ) if (target / "src").exists() else False
+        if not entity_found:
+            ok = False
+        notes.append(f"entity {SLICE_ENTITY} present in src/: {'PASS' if entity_found else 'FAIL'}")
+
+        # GR-13: slice flows must preserve existing migration history (additive
+        # migrations only - drop/recreate is greenfield-scaffold-only).
+        if pre_migrations is None:
+            notes.append("migration additivity (GR-13): SKIPPED (no pre-session snapshot; gate-only mode)")
+        else:
+            post = snapshot_migrations(target)
+            removed = sorted(pre_migrations - post)
+            added = sorted(post - pre_migrations)
+            if removed:
+                ok = False
+                notes.append("migration additivity (GR-13): FAIL - pre-existing migration file(s) removed: "
+                             + ", ".join(removed))
+            elif not added:
+                ok = False
+                notes.append("migration additivity (GR-13): FAIL - no new migration added for the slice")
+            else:
+                notes.append(f"migration additivity (GR-13): PASS ({len(added)} new, 0 removed)")
     return ok, notes
 
 
@@ -349,7 +410,7 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Local golden-path regression harness (no API key).")
     p.add_argument("--agent", choices=sorted(DRIVERS), default="claude")
     p.add_argument("--target", type=Path, default=None, help="workspace dir; default %%TEMP%%/workboard-gp-<timestamp>")
-    p.add_argument("--phases", default="3,4,5a,5b", help="comma list from: 3,4,5a,5b")
+    p.add_argument("--phases", default="3,4,5a,5b,slice", help="comma list from: 3,4,5a,5b,slice")
     p.add_argument("--package-strategy", choices=["feed", "local"], default="feed")
     p.add_argument("--package-prefix", default="Package", help="local mode only; default Package")
     p.add_argument("--feed-url", default=None, help="feed mode: real feed URL; default auto-detect")
@@ -358,6 +419,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--max-turns-p4", type=int, dest="max_turns_p4")
     p.add_argument("--max-turns-p5a", type=int, dest="max_turns_p5a")
     p.add_argument("--max-turns-p5b", type=int, dest="max_turns_p5b")
+    p.add_argument("--max-turns-slice", type=int, dest="max_turns_pslice")
     p.add_argument("--timeout-minutes", type=int, default=60)
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--gate-only", action="store_true",
@@ -430,6 +492,8 @@ def main() -> int:
         print("4: dotnet build + HANDOFF contractsScaffolded=true")
         print("5a: dotnet build + dotnet test --filter TestCategory=Unit")
         print('5b: dotnet build + dotnet test --filter "TestCategory=Unit|TestCategory=Endpoint"')
+        print(f'slice: dotnet build + dotnet test --filter "TestCategory=Unit|TestCategory=Endpoint" '
+              f'+ class {SLICE_ENTITY} present + migration additivity (GR-13)')
         return 0
 
     fresh_workspace = not (target / ".instructions").exists()
@@ -469,10 +533,11 @@ def main() -> int:
             log(f"phase {phase}: gate-only {'PASS' if gate_ok else 'FAIL'} ({duration}s)")
         else:
             log(f"phase {phase}: starting {args.agent} session")
+            pre_migrations = snapshot_migrations(target) if phase == "slice" else None
             started = time.monotonic()
             exit_code, meta = DRIVERS[args.agent](prompts[phase], target, args, phase, report_dir)
             duration = int(time.monotonic() - started)
-            gate_ok, gate_notes = gate(phase, target)
+            gate_ok, gate_notes = gate(phase, target, pre_migrations)
             status = "PASS" if (exit_code == 0 and gate_ok) else "FAIL"
             log(f"phase {phase}: agent exit {exit_code}, gate {'PASS' if gate_ok else 'FAIL'} ({duration}s)")
         report_lines += [f"## Phase {phase} - {status}",

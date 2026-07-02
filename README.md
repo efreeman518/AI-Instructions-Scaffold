@@ -55,7 +55,7 @@ What it places:
 
 | Source in this repo | Destination in your app | Mode |
 |---|---|---|
-| `README.md`, `CLAUDE.md`, `START-AI.md`, `GROUND-RULES.md` | `<app>/.instructions/` | copy |
+| `README.md`, `AGENTS.md`, `START-AI.md`, `GROUND-RULES.md` | `<app>/.instructions/` | copy |
 | `ai/`, `patterns/`, `profiles/`, `schemas/`, `skills/`, `support/`, `templates/`, `scripts/` | `<app>/.instructions/` | copy |
 | `AGENTS.md` | `<app>/AGENTS.md` (Codex-style CLI agents) | merge |
 | `CLAUDE.md` | `<app>/CLAUDE.md` (Claude Code project memory) | merge |
@@ -70,7 +70,7 @@ Flags:
 | Flag | Purpose |
 |---|---|
 | `--dry-run` | Print planned copies without writing anything. |
-| `--update` | Re-run against an existing install; preserves any target file with a newer mtime than the source. Leaves `HANDOFF.md` untouched. |
+| `--update` | Deprecated no-op, kept for compatibility. Installs are always content-aware: identical target files are skipped (`[unchanged]`), differing ones are overwritten and listed (installed `.instructions/` is read-only per GR-07, so the source is SSOT). `HANDOFF.md` is always left untouched. |
 | `--instructions-only` | Copy only `<app>/.instructions/`; skip `AGENTS.md`, `.claude/commands/`, and `.github/agents/` placement (useful if you manage those separately). |
 | `--verify` | After install, smoke-check that the expected entrypoints and payload files exist. Non-zero exit if anything is missing. Cheap insurance after a manual edit or selective copy. |
 | `--verify-only` | Skip install entirely; just run the smoke check against an existing target. Useful in CI or to confirm an unfamiliar repo is correctly wired. |
@@ -248,7 +248,7 @@ Expected shape (note `AGENTS.md`, `.github/agents/`, and `.claude/commands/` liv
       vertical-slice.md
   .instructions/
     README.md
-    CLAUDE.md
+    AGENTS.md
     START-AI.md
     ai/
       SKILL.md

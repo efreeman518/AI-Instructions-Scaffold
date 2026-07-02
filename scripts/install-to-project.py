@@ -26,6 +26,7 @@ Usage:
 """
 
 import argparse
+import filecmp
 import shutil
 import sys
 from pathlib import Path
@@ -34,7 +35,7 @@ from pathlib import Path
 # Runtime payload copied into <target>/.instructions/
 INSTRUCTIONS_FILES = [
     "README.md",
-    "CLAUDE.md",
+    "AGENTS.md",
     "START-AI.md",
     "GROUND-RULES.md",
 ]
@@ -112,27 +113,29 @@ def adapt_installed_entrypoint_links(src: Path, content: str) -> str:
 
 
 class Planner:
-    def __init__(self, dry_run: bool, update: bool):
+    def __init__(self, dry_run: bool):
         self.dry_run = dry_run
-        self.update = update
         self.copied = 0
         self.skipped = 0
-        self.preserved = 0
+        self.unchanged = 0
         self.merged = 0
+        self.overwritten: list[str] = []
 
     def _should_skip(self, rel_path: Path) -> bool:
         return any(part in EXCLUDE_PARTS for part in rel_path.parts)
 
     def copy_file(self, src: Path, dst: Path, label: str) -> None:
-        if dst.exists() and self.update:
-            src_mtime = src.stat().st_mtime
-            dst_mtime = dst.stat().st_mtime
-            if dst_mtime > src_mtime:
-                print(f"  [preserve] {label} (target is newer)")
-                self.preserved += 1
-                return
-        action = "[dry-run]" if self.dry_run else "[copy]"
+        # Content-aware and idempotent: identical files are skipped; differing
+        # target files are overwritten (source is SSOT per GR-07) and listed.
+        if dst.exists() and filecmp.cmp(src, dst, shallow=False):
+            print(f"  [unchanged] {label}")
+            self.unchanged += 1
+            return
+        overwrite = dst.exists()
+        action = "[dry-run]" if self.dry_run else ("[overwrite]" if overwrite else "[copy]")
         print(f"  {action} {label}")
+        if overwrite:
+            self.overwritten.append(label)
         if not self.dry_run:
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, dst)
@@ -188,8 +191,12 @@ class Planner:
         print()
         print(f"copied:    {self.copied}")
         print(f"merged:    {self.merged} (appended scaffold block to existing file)")
-        print(f"preserved: {self.preserved} (target newer, --update)")
+        print(f"unchanged: {self.unchanged} (content identical, skipped)")
         print(f"skipped:   {self.skipped}")
+        if self.overwritten:
+            print(f"overwritten: {len(self.overwritten)} target file(s) differed from source (source is SSOT per GR-07):")
+            for label in self.overwritten:
+                print(f"  - {label}")
         if self.dry_run:
             print("(dry-run - no files written)")
 
@@ -204,10 +211,16 @@ def preserve_handoff(target_instructions: Path, dry_run: bool) -> Path | None:
 
 # Required files/dirs after a full install (relative to <target>).
 # Skipped expectations are pruned in verify_install when --instructions-only was used.
+# Payload files removed from INSTRUCTIONS_FILES over time; deleted from targets
+# on install so stale copies cannot contradict the current payload.
+OBSOLETE_PAYLOAD_FILES = [
+    ".instructions/CLAUDE.md",  # replaced by .instructions/AGENTS.md (root CLAUDE.md is now an @AGENTS.md import stub)
+]
+
 SMOKE_CHECK_PAYLOAD = [
     ".instructions/START-AI.md",
     ".instructions/README.md",
-    ".instructions/CLAUDE.md",
+    ".instructions/AGENTS.md",
     ".instructions/GROUND-RULES.md",
     ".instructions/ai/SKILL.md",
     ".instructions/support/execution-gates.md",
@@ -234,6 +247,7 @@ def verify_install(target_root: Path, instructions_only: bool) -> int:
         expected += SMOKE_CHECK_HARNESS_ENTRYPOINTS
 
     missing = [rel for rel in expected if not (target_root / rel).exists()]
+    obsolete = [rel for rel in OBSOLETE_PAYLOAD_FILES if (target_root / rel).exists()]
     unmarked_merge_files: list[str] = []
     if not instructions_only:
         for _src_rel, dst_rel, kind in AGENT_COPIES:
@@ -248,8 +262,8 @@ def verify_install(target_root: Path, instructions_only: bool) -> int:
 
     print()
     print("== install smoke check ==")
-    if missing or unmarked_merge_files:
-        issue_count = len(missing) + len(unmarked_merge_files)
+    if missing or unmarked_merge_files or obsolete:
+        issue_count = len(missing) + len(unmarked_merge_files) + len(obsolete)
         print(f"  [fail] {issue_count} install issue(s) under {target_root}:")
     if missing:
         print("         missing expected file(s):")
@@ -259,7 +273,11 @@ def verify_install(target_root: Path, instructions_only: bool) -> int:
         print("         merge entrypoint(s) missing sentinel markers:")
         for rel in unmarked_merge_files:
             print(f"         - {rel}")
-    if missing or unmarked_merge_files:
+    if obsolete:
+        print("         obsolete payload file(s) present (re-run install to remove):")
+        for rel in obsolete:
+            print(f"         - {rel}")
+    if missing or unmarked_merge_files or obsolete:
         return 1
     print(f"  [ok]   all {len(expected)} expected files present under {target_root}")
     if not instructions_only:
@@ -277,7 +295,8 @@ def main() -> int:
     )
     parser.add_argument(
         "--update", action="store_true",
-        help="Skip files where the target copy is newer than the source.",
+        help="Deprecated no-op, kept for compatibility: installs are always "
+             "content-aware (identical files skipped, changed files overwritten and listed).",
     )
     parser.add_argument(
         "--dry-run", action="store_true",
@@ -320,7 +339,7 @@ def main() -> int:
 
     preserve_handoff(target_instructions, args.dry_run)
 
-    planner = Planner(dry_run=args.dry_run, update=args.update)
+    planner = Planner(dry_run=args.dry_run)
 
     print("== .instructions/ payload ==")
     for rel in INSTRUCTIONS_FILES:
@@ -337,6 +356,14 @@ def main() -> int:
             target_instructions / rel,
             f".instructions/{rel}",
         )
+
+    for rel in OBSOLETE_PAYLOAD_FILES:
+        stale = target_root / rel
+        if stale.exists():
+            action = "[dry-run]" if args.dry_run else "[removed]"
+            print(f"  {action} {rel} (obsolete payload file)")
+            if not args.dry_run:
+                stale.unlink()
 
     if not args.instructions_only:
         print()

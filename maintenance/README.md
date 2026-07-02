@@ -1,6 +1,6 @@
 # Maintaining AI-Instructions-Scaffold (source repo only)
 
-Maintainer guide for **this** repository - the single source of truth for the instruction set. None of this ships to scaffolded apps: the `maintenance/` folder and the `.claude/skills/` maintainer skills are not in `scripts/install-to-project.py`'s copy allowlist, so they never appear under a target's `.instructions/`. (Same reason they are not linked from the shipped `README.md`/`CLAUDE.md` - a link would dangle in every target app.)
+Maintainer guide for **this** repository - the single source of truth for the instruction set. None of this ships to scaffolded apps: the `maintenance/` folder and the `.claude/skills/` maintainer skills are not in `scripts/install-to-project.py`'s copy allowlist, so they never appear under a target's `.instructions/`. (Same reason they are not linked from the shipped `README.md`/`AGENTS.md` - a link would dangle in every target app.)
 
 > **Source repo vs installed app.** In this repo the instruction files live at the root (`skills/`, `ai/`, `patterns/`, `support/`, `templates/`, `schemas/`, `profiles/`). In a scaffolded app they live under `.instructions/`. The scaffold workflows (`/scaffold`, `/scaffold-adopt`, `/vertical-slice`) are for the *app* and ship to it; the maintainer workflows below are for *this repo* and have no presence in an installed app.
 
@@ -10,7 +10,7 @@ The ship boundary is an explicit allowlist in `scripts/install-to-project.py` (c
 
 **Ships** (copied into a target app):
 
-- Payload -> `<app>/.instructions/`: `START-AI.md`, `GROUND-RULES.md`, `README.md`, `CLAUDE.md`, and the dirs `ai/`, `patterns/`, `profiles/`, `schemas/`, `skills/`, `support/`, `templates/`, `scripts/` (the `INSTRUCTIONS_FILES` + `INSTRUCTIONS_DIRS` lists).
+- Payload -> `<app>/.instructions/`: `START-AI.md`, `GROUND-RULES.md`, `README.md`, `AGENTS.md`, and the dirs `ai/`, `patterns/`, `profiles/`, `schemas/`, `skills/`, `support/`, `templates/`, `scripts/` (the `INSTRUCTIONS_FILES` + `INSTRUCTIONS_DIRS` lists).
 - Harness entrypoints -> app root / `.github/` / `.claude/`: `AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md` (merged inside sentinel markers), `.claude/commands/`, `.github/agents/` (the `AGENT_COPIES` list). These sit at the repo root because they are also *this* repo's own agent config - they cannot move into a folder.
 
 **Never ships** (source-repo only):
@@ -25,7 +25,7 @@ For Claude Code these are skills under `.claude/skills/` (auto-discovered, sourc
 
 | Task | Claude skill | Command |
 |---|---|---|
-| Install / update the payload into an app | `/install-instructions` | `py -3 scripts/install-to-project.py --target "<app>" [--update] --verify` |
+| Install / update the payload into an app | `/install-instructions` | `py -3 scripts/install-to-project.py --target "<app>" --verify` |
 | SSOT / drift audit after a refactor | `/maintain-instructions` | `py -3 scripts/validate-instructions.py`, then the audit in [INSTRUCTION-SET-MAINTENANCE.md](INSTRUCTION-SET-MAINTENANCE.md) |
 | Fold feedback / a gap back into the set | `/fold-feedback` | edit the owner file -> validate -> reinstall |
 | End-to-end golden-path regression | `/golden-path` | `py -3 tests/golden-path/run-golden-path.py --dry-run` |
@@ -35,7 +35,7 @@ For Claude Code these are skills under `.claude/skills/` (auto-discovered, sourc
 - Edit instruction files **here**, never a target app's installed `.instructions/` (GR-07). Patch source, then reinstall.
 - One canonical owner per concept; volatile facts live once + pointers elsewhere (SSOT - see [INSTRUCTION-SET-MAINTENANCE.md](INSTRUCTION-SET-MAINTENANCE.md)).
 - Match the house voice: compressed, no em dash / emoji, `->` for arrows, no version numbers in baseline docs.
-- After any edit: `py -3 scripts/validate-instructions.py` must pass; reinstall affected apps with `--update --verify`.
+- After any edit: `py -3 scripts/validate-instructions.py` must pass; reinstall affected apps with `--verify` (installs are content-aware and idempotent).
 
 ## Python launcher
 

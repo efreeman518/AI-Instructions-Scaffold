@@ -6,7 +6,7 @@ trigger: /golden-path
 
 # /golden-path
 
-Maintainer skill for the **source repo only**. Author-side end-to-end regression: drives headless agent sessions (Claude Code subscription login or Codex CLI - no API key) through Phases 3-5b against the golden-path fixture in a throwaway workspace, gating each phase with `dotnet build` / `dotnet test`.
+Maintainer skill for the **source repo only**. Author-side end-to-end regression: drives headless agent sessions (Claude Code subscription login or Codex CLI - no API key) through Phases 3-5b plus a vertical-slice phase against the golden-path fixture in a throwaway workspace, gating each phase with `dotnet build` / `dotnet test`. The final `slice` phase adds a new independent aggregate to the scaffolded workspace and additionally gates on migration-history additivity (GR-13) and entity presence - it regression-tests the `/vertical-slice` flow.
 
 ## When to use
 

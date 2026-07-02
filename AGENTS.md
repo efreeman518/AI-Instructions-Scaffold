@@ -1,17 +1,19 @@
-## AI Harness Entry (CLI agents)
+## AI Harness Entry
 
-Harness-neutral entrypoint for CLI agents that read root `AGENTS.md` files
-(Codex CLI, GitHub Copilot CLI, and other CLI agents using the same discovery
-convention). GitHub Copilot in VS Code uses `.github/copilot-instructions.md`
-and the scoped agents in `.github/agents/` instead.
+Single source of truth for the harness entry rules below. CLI agents that read
+root `AGENTS.md` (Codex CLI, GitHub Copilot CLI, and other agents using the
+same discovery convention) load this file directly; Claude Code loads it
+through the `@AGENTS.md` import in `CLAUDE.md`; GitHub Copilot in VS Code uses
+`.github/copilot-instructions.md` and the scoped agents in `.github/agents/`
+instead.
 
 Do not auto-activate the scaffold workflow for ordinary work - normal coding,
 review, docs, and maintenance use regular project context.
 
 ### Scaffold workflows
 
-- Add an entity/feature slice to an existing scaffolded app: load `.instructions/support/vertical-slice-checklist.md`.
-- Full scaffold, brownfield adopt, or resuming an in-progress scaffold phase: load `.instructions/START-AI.md`, follow the phase router and one-phase-per-session rule. (Brownfield adoption loads `.instructions/ai/adopt-codebase.md` in place of Phase 1.)
+- Add an entity/feature slice to an existing scaffolded app: load `.instructions/support/vertical-slice-checklist.md` (Claude Code: `/vertical-slice`).
+- Full scaffold, brownfield adopt, or resuming an in-progress scaffold phase: load `.instructions/START-AI.md` and follow the phase router and one-phase-per-session rule (Claude Code: `/scaffold` / `/scaffold-adopt`; scoped commands live in `.claude/commands/`). Brownfield adoption loads `.instructions/ai/adopt-codebase.md` in place of Phase 1.
 - Treat installed `.instructions/` files as read-only during scaffold work; record gaps in `.scaffold/INSTRUCTION-GAPS.md` (create `.scaffold/` at project root if absent).
 
 ### Context graph (graphify)

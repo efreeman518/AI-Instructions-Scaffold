@@ -5,7 +5,7 @@ merged, split, or reworded guidance across multiple files. Run it otherwise peri
 release, whenever a "broken until X" deviation is added, or just every so often). There is no schedule.
 Maintenance-only doc - lives in `maintenance/`, **not** copied by
 `scripts/install-to-project.py`, so it never ships into scaffolded apps. (Same reason it is not linked from
-`README.md`/`CLAUDE.md`: those are installed, and a link to this file would dangle in every target app.)
+`README.md`/`AGENTS.md`: those are installed, and a link to this file would dangle in every target app.)
 
 ## Why this exists
 

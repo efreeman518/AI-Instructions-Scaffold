@@ -1,0 +1,313 @@
+#!/usr/bin/env python3
+"""
+Self-tests for the author-side Python tooling (stdlib only, never shipped).
+
+Covers the three scripts everything else trusts:
+  - scripts/install-to-project.py  - merge/copy/verify logic
+  - scripts/validate-instructions.py - pure helpers + mutation tests proving the
+    validator actually FAILS on bad input (its real job)
+  - tests/golden-path/run-golden-path.py - fixture/prompt extraction, YAML
+    transform, and the phase-3 gate
+
+Usage:
+    py -3 tests/tooling/run-tooling-tests.py           # full run
+    py -3 tests/tooling/run-tooling-tests.py --fast    # skip slow mutation tests
+
+Exit code 0 when all tests pass, 1 otherwise.
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+FAST = "--fast" in sys.argv
+if FAST:
+    sys.argv.remove("--fast")
+
+
+def load_module(name: str, path: Path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+installer = load_module("installer", REPO_ROOT / "scripts" / "install-to-project.py")
+validator = load_module("validator", REPO_ROOT / "scripts" / "validate-instructions.py")
+goldenpath = load_module("goldenpath", REPO_ROOT / "tests" / "golden-path" / "run-golden-path.py")
+
+
+class InstallerTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp(prefix="tooling-inst-"))
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def _planner(self):
+        return installer.Planner(dry_run=False)
+
+    def test_should_skip_excluded_parts(self):
+        p = self._planner()
+        self.assertTrue(p._should_skip(Path("__pycache__/x.pyc")))
+        self.assertTrue(p._should_skip(Path("sub/tests/x.md")))
+        self.assertFalse(p._should_skip(Path("skills/api.md")))
+
+    def test_copy_file_unchanged_overwrite_and_fresh(self):
+        src = self.tmp / "src.md"
+        dst = self.tmp / "dst.md"
+        src.write_text("same\n", encoding="utf-8")
+
+        p = self._planner()
+        p.copy_file(src, dst, "dst.md")  # fresh copy
+        self.assertEqual(p.copied, 1)
+        self.assertEqual(p.overwritten, [])
+
+        p.copy_file(src, dst, "dst.md")  # identical -> skipped
+        self.assertEqual(p.unchanged, 1)
+        self.assertEqual(p.copied, 1)
+
+        dst.write_text("edited in target\n", encoding="utf-8")
+        p.copy_file(src, dst, "dst.md")  # differs -> overwritten + listed
+        self.assertEqual(p.overwritten, ["dst.md"])
+        self.assertEqual(dst.read_text(encoding="utf-8"), "same\n")
+
+    def test_merge_file_is_idempotent(self):
+        src = self.tmp / "notes.md"
+        dst = self.tmp / "target-notes.md"
+        src.write_text("# Managed\nmanaged body\n", encoding="utf-8")
+
+        self._planner().merge_file(src, dst, "notes.md")
+        first = dst.read_text(encoding="utf-8")
+        self.assertIn(installer.MERGE_SENTINEL_START, first)
+        self.assertIn("managed body", first)
+
+        self._planner().merge_file(src, dst, "notes.md")
+        second = dst.read_text(encoding="utf-8")
+        self.assertEqual(first.strip(), second.strip())
+
+    def test_merge_file_preserves_content_outside_sentinels(self):
+        src = self.tmp / "notes.md"
+        dst = self.tmp / "target-notes.md"
+        src.write_text("new managed body\n", encoding="utf-8")
+        dst.write_text(
+            "user header\n\n"
+            + installer.MERGE_SENTINEL_START
+            + "\nold managed body\n"
+            + installer.MERGE_SENTINEL_END
+            + "\n\nuser footer\n",
+            encoding="utf-8",
+        )
+        self._planner().merge_file(src, dst, "notes.md")
+        merged = dst.read_text(encoding="utf-8")
+        self.assertIn("user header", merged)
+        self.assertIn("user footer", merged)
+        self.assertIn("new managed body", merged)
+        self.assertNotIn("old managed body", merged)
+
+    def test_merge_file_appends_block_to_unmarked_existing_file(self):
+        src = self.tmp / "notes.md"
+        dst = self.tmp / "target-notes.md"
+        src.write_text("managed body\n", encoding="utf-8")
+        dst.write_text("pre-existing app instructions\n", encoding="utf-8")
+        self._planner().merge_file(src, dst, "notes.md")
+        merged = dst.read_text(encoding="utf-8")
+        self.assertTrue(merged.startswith("pre-existing app instructions"))
+        self.assertIn(installer.MERGE_SENTINEL_START, merged)
+
+    def test_adapt_installed_entrypoint_links(self):
+        adapted = installer.adapt_installed_entrypoint_links(
+            Path("AGENTS.md"), "see [README.md](README.md) for detail"
+        )
+        self.assertIn("[.instructions/README.md](.instructions/README.md)", adapted)
+        untouched = installer.adapt_installed_entrypoint_links(
+            Path("skills/api.md"), "see [README.md](README.md)"
+        )
+        self.assertIn("[README.md](README.md)", untouched)
+
+    def _make_complete_install(self, root: Path) -> None:
+        for rel in installer.SMOKE_CHECK_PAYLOAD + installer.SMOKE_CHECK_HARNESS_ENTRYPOINTS:
+            p = root / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text("x\n", encoding="utf-8")
+        for _src, dst_rel, kind in installer.AGENT_COPIES:
+            if kind == "merge":
+                (root / dst_rel).write_text(
+                    installer.MERGE_SENTINEL_START + "\nx\n" + installer.MERGE_SENTINEL_END + "\n",
+                    encoding="utf-8",
+                )
+
+    def test_verify_install_passes_then_detects_missing_file(self):
+        root = self.tmp / "app"
+        self._make_complete_install(root)
+        self.assertEqual(installer.verify_install(root, instructions_only=False), 0)
+        (root / ".instructions" / "START-AI.md").unlink()
+        self.assertEqual(installer.verify_install(root, instructions_only=False), 1)
+
+    def test_verify_install_detects_missing_sentinels(self):
+        root = self.tmp / "app"
+        self._make_complete_install(root)
+        (root / "AGENTS.md").write_text("no markers here\n", encoding="utf-8")
+        self.assertEqual(installer.verify_install(root, instructions_only=False), 1)
+
+    def test_verify_install_detects_obsolete_payload_file(self):
+        root = self.tmp / "app"
+        self._make_complete_install(root)
+        for rel in installer.OBSOLETE_PAYLOAD_FILES:
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_text("stale\n", encoding="utf-8")
+        self.assertEqual(installer.verify_install(root, instructions_only=False), 1)
+
+
+class ValidatorHelperTests(unittest.TestCase):
+    def test_strip_fenced_code_blocks_preserves_line_numbers(self):
+        text = "before\n```python\ncode [link](x.md)\n```\nafter\n"
+        stripped = validator.strip_fenced_code_blocks(text)
+        self.assertNotIn("[link](x.md)", stripped)
+        self.assertEqual(text.count("\n"), stripped.count("\n"))
+        self.assertIn("after", stripped)
+
+    def test_normalize_text(self):
+        self.assertEqual(validator.normalize_text("  Foo\t Bar  "), "foo bar")
+
+    def test_heading_matches_section(self):
+        headings = ["Menu Navigation: Always Land On Top Page", "5a - Foundation (TDD)", "Aspire AppHost"]
+        self.assertTrue(validator.heading_matches_section(headings, "Menu Navigation"))
+        self.assertTrue(validator.heading_matches_section(headings, "5a"))
+        self.assertTrue(validator.heading_matches_section(headings, "aspire apphost"))
+        self.assertFalse(validator.heading_matches_section(headings, "Nonexistent Section"))
+        self.assertFalse(validator.heading_matches_section(headings, ""))
+
+
+# Module-level: a function stored as a class attribute would bind as a method
+# and receive self as an extra argument inside copytree.
+MUTATION_IGNORE = shutil.ignore_patterns(
+    ".git", ".venv", ".tmp", "__pycache__", "tests", ".vs", "node_modules", "bin", "obj"
+)
+
+
+@unittest.skipIf(FAST, "--fast: skipping slow validator mutation tests")
+class ValidatorMutationTests(unittest.TestCase):
+    """Copy the repo to a temp dir, break one thing, prove the validator fails.
+
+    A validator that silently passes on bad input green-lights drift; these are
+    the tests that catch that failure mode.
+    """
+
+    def _copy_repo(self) -> Path:
+        tmp = Path(tempfile.mkdtemp(prefix="tooling-mut-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        dest = tmp / "repo"
+        shutil.copytree(REPO_ROOT, dest, ignore=MUTATION_IGNORE)
+        return dest
+
+    def _run_validator(self, root: Path) -> int:
+        proc = subprocess.run(
+            [sys.executable, str(root / "scripts" / "validate-instructions.py")],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+        )
+        return proc.returncode
+
+    def test_baseline_copy_passes(self):
+        repo = self._copy_repo()
+        self.assertEqual(self._run_validator(repo), 0)
+
+    def test_dangling_link_fails(self):
+        repo = self._copy_repo()
+        target = repo / "skills" / "api.md"
+        target.write_text(
+            target.read_text(encoding="utf-8") + "\nSee [missing](does-not-exist-xyz.md).\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(self._run_validator(repo), 1)
+
+    def test_bare_version_prose_fails(self):
+        repo = self._copy_repo()
+        target = repo / "patterns" / "api-host-wiring.md"
+        target.write_text(
+            target.read_text(encoding="utf-8") + "\nPin the package to 9.9.9 for stability.\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(self._run_validator(repo), 1)
+
+    def test_deleted_template_fails(self):
+        repo = self._copy_repo()
+        (repo / "templates" / "endpoint-template.md").unlink()
+        self.assertEqual(self._run_validator(repo), 1)
+
+
+class GoldenPathTests(unittest.TestCase):
+    def test_extract_fenced_block_found_and_missing(self):
+        doc = "## Head\n\n```yaml\nkey: value\n```\n"
+        self.assertEqual(goldenpath.extract_fenced_block(doc, "## Head", "yaml"), "key: value")
+        with self.assertRaises(SystemExit):
+            goldenpath.extract_fenced_block(doc, "## Nope", "yaml")
+
+    def test_transform_resource_yaml_feed_replaces_placeholder(self):
+        block = f"packageStrategy: feed\ncustomNugetFeeds:\n  - {goldenpath.FEED_PLACEHOLDER}\n"
+        out = goldenpath.transform_resource_yaml(block, "feed", "https://example.test/index.json", "EF")
+        self.assertIn("https://example.test/index.json", out)
+        self.assertNotIn("{owner}", out)
+
+    def test_transform_resource_yaml_local_swaps_strategy_and_layers(self):
+        block = (
+            "packageStrategy: feed\n"
+            "packagePrefix: EF\n"
+            "customNugetFeeds:\n"
+            "  - https://nuget.pkg.github.com/someone/index.json\n"
+            "otherKey: kept\n"
+        )
+        out = goldenpath.transform_resource_yaml(block, "local", None, "Package")
+        self.assertIn("packageStrategy: local", out)
+        self.assertIn("packagePrefix: Package", out)
+        self.assertNotIn("customNugetFeeds", out)
+        self.assertNotIn("nuget.pkg.github.com", out)
+        self.assertIn("localPackageLayers:", out)
+        self.assertIn("  - Domain", out)
+        self.assertIn("otherKey: kept", out)
+
+    def test_real_fixture_extracts_transforms_and_passes_sanity(self):
+        doc = goldenpath.GOLDEN_PATH_DOC.read_text(encoding="utf-8")
+        block = goldenpath.extract_fenced_block(doc, "## Expected Phase 2 Output", "yaml")
+        for strategy in ("feed", "local"):
+            transformed = goldenpath.transform_resource_yaml(
+                block, strategy, "https://example.test/index.json", "Package"
+            )
+            goldenpath.sanity_check_resource_yaml(transformed)  # fails via SystemExit on drift
+
+    def test_sanity_check_rejects_missing_required_key(self):
+        with self.assertRaises(SystemExit):
+            goldenpath.sanity_check_resource_yaml("unknownKey: 1\n")
+
+    def test_gate_phase3(self):
+        tmp = Path(tempfile.mkdtemp(prefix="tooling-gate-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        (tmp / ".scaffold").mkdir(parents=True)
+        (tmp / "HANDOFF.md").write_text('currentPhase: "4"\n', encoding="utf-8")
+
+        ok, _notes = goldenpath.gate("3", tmp)
+        self.assertFalse(ok)  # implementation-plan.md missing
+
+        (tmp / ".scaffold" / "implementation-plan.md").write_text("# Plan\n", encoding="utf-8")
+        ok, _notes = goldenpath.gate("3", tmp)
+        self.assertTrue(ok)
+
+        (tmp / "HANDOFF.md").write_text('currentPhase: "3"\n', encoding="utf-8")
+        ok, _notes = goldenpath.gate("3", tmp)
+        self.assertFalse(ok)  # HANDOFF did not advance
+
+
+if __name__ == "__main__":
+    os.chdir(REPO_ROOT)
+    unittest.main(verbosity=2)
