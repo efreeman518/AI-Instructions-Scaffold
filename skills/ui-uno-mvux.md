@@ -21,9 +21,11 @@ Use partial records in `src/UI/{Project}.Uno.Presentation/Presentation` with nam
 
 The `{Project}.Uno.Presentation` project is a plain `Microsoft.NET.Sdk` library that references `{Project}.Uno.Core`, MVUX, navigation, and messenger packages directly. Client wrappers stay in `{Project}.Uno.Core`. Presentation models never live in the `{Project}.Uno` `Uno.Sdk` app head. Keep every MVUX partial record for one app in this one assembly; splitting models across assemblies can make the MVUX generators emit duplicate `BindableXxx` wrappers for shared DTO/state types.
 
+**Platform-coupled service exception.** A model whose injected dependency needs the live Uno.UI rendering assemblies - e.g. the concrete `IThemeService` from `Uno.Toolkit.Skia.WinUI` - cannot compile inside the plain `Microsoft.NET.Sdk` `{Project}.Uno.Presentation` library, because those platform packages are not referenceable there (it fails at build, not review). Preferred fix: inject a portable app-owned abstraction (e.g. `IAppThemeService`) implemented in the `{Project}.Uno` app head, so the model stays in Presentation and unit-testable. Only if no abstraction is feasible, leave that one model in the app head and note why. Never add platform-specific package references to `{Project}.Uno.Presentation`.
+
 Fast MVUX/presentation coverage belongs in `Test.UI` with `UI` / `Presentation` categories. `Test.UI` references `{Project}.Uno.Core` and `{Project}.Uno.Presentation` only; it never references `{Project}.Uno`.
 
-Presentation models use injected dependencies for all shell behavior. Inject `INavigator`, `IThemeService` or an app-owned theme abstraction, `IMessenger`, form guards, and shell action abstractions as needed. Do not call static `App.*` members or static app services from MVUX records; that couples the model to the app head and removes the fast unit-test seam.
+Presentation models use injected dependencies for all shell behavior. Inject `INavigator`, an app-owned theme abstraction (preferred over the concrete `IThemeService` - see the platform-coupled service exception above), `IMessenger`, form guards, and shell action abstractions as needed. Do not call static `App.*` members or static app services from MVUX records; that couples the model to the app head and removes the fast unit-test seam.
 
 ### Feed Refresh After Mutations (Version Counter Pattern)
 

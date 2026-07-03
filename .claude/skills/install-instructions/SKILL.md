@@ -28,6 +28,7 @@ py -3 scripts/install-to-project.py --target "<app-repo-root>" --verify-only
 
 ## Notes
 
+- **Never install into `AI-Instructions-ReferenceApp`.** The reference app is the payload-free proof sibling of this repo - it validates the docs by example, it does not consume them. Installing there vendors a duplicate of the source of truth one directory over. Valid targets are real consumer apps only.
 - **One mode for fresh and existing targets:** installs are content-aware and idempotent - identical files are skipped, differing target files are overwritten and listed (source is SSOT per GR-07). Root `HANDOFF.md` is always left untouched. `--update` is a deprecated no-op kept for compatibility.
 - `AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md` are merged inside `<!-- ai-scaffold: start -->` / `<!-- ai-scaffold: end -->` markers - app content outside the markers is preserved.
 - The script refuses to install into the source repo itself (`target == repo root`), except `--verify-only`.

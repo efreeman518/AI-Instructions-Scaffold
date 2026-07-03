@@ -11,8 +11,6 @@
 ### File: Application/Models/{Entity}/{Entity}Dto.cs
 
 ```csharp
-using EF.Domain.Contracts;
-
 namespace Application.Models.{Entity};
 
 public record {Entity}Dto : EntityBaseDto, ITenantEntityDto
@@ -36,8 +34,6 @@ public record {Entity}Dto : EntityBaseDto, ITenantEntityDto
 ### File: Application/Models/{Entity}/{ChildEntity}Dto.cs
 
 ```csharp
-using EF.Domain.Contracts;
-
 namespace Application.Models.{Entity};
 
 public record {ChildEntity}Dto : EntityBaseDto
@@ -69,7 +65,10 @@ public record DefaultSearchFilter
     public Guid? TenantId { get; set; }
 }
 
-// IEntityBaseDto (Guid? Id) comes from EF.Domain.Contracts - do not declare it app-level
+// IEntityBaseDto (Guid? Id) comes from EF.Common.Contracts - do not declare it app-level.
+// Non-Guid-key apps: implement IEntityBaseDto<TKey> / derive EntityBaseDto<TKey>.
+using EF.Common.Contracts;
+
 public abstract record EntityBaseDto : IEntityBaseDto
 {
     public Guid? Id { get; set; }

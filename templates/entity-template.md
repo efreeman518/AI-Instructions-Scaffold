@@ -136,7 +136,7 @@ public class {Entity} : EntityBase<{Entity}Id>, ITenantEntity<TenantId>  // [MUL
 Generate value objects only when `.scaffold/domain-specification.yaml` declares `valueObjects`. Keep them immutable, domain-side, and free of EF/DTO concerns. Use factories returning `DomainResult<T>` for validation instead of throwing expected domain failures.
 
 ```csharp
-using EF.Domain;
+using EF.Domain.Contracts;
 
 namespace Domain.Model.ValueObjects;
 
@@ -158,6 +158,33 @@ public sealed record {ValueObject}
     }
 
     public override string ToString() => Value;
+}
+```
+
+### Composing a value object into the entity factory
+
+VO `Create()` short-circuits on the first error (single-error `DomainResult<T>`). The entity **aggregates** across VOs and primitives so the caller sees every field error in one pass. Use two VO construction paths:
+
+- **Validating intake** (`Create` / `Update`): build the VO via `{ValueObject}.Create(raw)` and fold its errors into the same `List<DomainError>` as the primitive checks; materialize the VO property only when the aggregate passes. Do this inside `Valid()` (which runs on both create and update) so both paths aggregate identically - keep the raw input as a backing field the constructor captures.
+- **Non-validating materialization** (EF rehydration + internal reconstruction): add a `{ValueObject}.From(raw)` that skips validation and trusts stored data. EF and post-materialization code use `From`, never `Create`.
+
+```csharp
+// VO: validating Create for intake, non-validating From for EF/materialization
+public static {ValueObject} From(string value) => new(value); // stored data assumed valid
+
+// Entity Valid() folds the VO's DomainResult into the aggregate (no short-circuit)
+private DomainResult<{Entity}> Valid()
+{
+    var errors = new List<DomainError>();
+    if (string.IsNullOrWhiteSpace(Name)) errors.Add(DomainError.Create("Name is required."));
+
+    var {vo} = {ValueObject}.Create({voRaw});   // {voRaw}: raw input captured at construction
+    if ({vo}.IsFailure) errors.AddRange({vo}.Errors);
+    else {ValueObjectProperty} = {vo}.Value;    // materialize only on success
+
+    return errors.Count > 0
+        ? DomainResult<{Entity}>.Failure(errors)
+        : DomainResult<{Entity}>.Success(this);
 }
 ```
 

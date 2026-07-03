@@ -115,7 +115,7 @@ If `applicationStyle` is `cqrs` or `switch`, include `CQRS` in `localPackageLaye
 
 > **CPM + floating versions = NU1011.** When `ManagePackageVersionsCentrally=true`, every `<PackageVersion>` entry must use an exact version (e.g. `Version="<latest-stable>"` resolved at scaffold time). Wildcard/floating versions (e.g. `1.0.*`, `*`) are prohibited and cause restore to fail with NU1011. To use floating versions, set `ManagePackageVersionsCentrally=false` and add `Version="*"` directly to each `<PackageReference>`. This rule applies regardless of `packageStrategy`.
 
-> **Every `<PackageVersion>` row maps to a real, referenced feed package.** A central version belongs in `Directory.Packages.props` only when the package exists on a configured feed **and** at least one project consumes it via `<PackageReference>`. Do not pre-seed rows from the contract map ([../support/ef-packages-reference.md](../support/ef-packages-reference.md)) for names no project pulls as a package, and never add a row for a layer consumed via `<ProjectReference>` (see the local-mode rule above). Resolve versions by restoring against the configured feed at scaffold time - never guess or invent a version string. Remove orphan `<PackageVersion>` rows when no project references them.
+> **Every `<PackageVersion>` row maps to a real, referenced feed package.** A central version belongs in `Directory.Packages.props` only when the package exists on a configured feed **and** at least one project consumes it via `<PackageReference>`. Do not pre-seed rows from the contract map ([../support/ef-packages-reference.md](../support/ef-packages-reference.md)) for names no project pulls as a package, and never add a row for a layer consumed via `<ProjectReference>` (see the local-mode rule above). Resolve versions by restoring against the configured feed at scaffold time - never guess or invent a version string. These exact rows are latest-at-scaffold snapshots (CPM forbids floating - see NU1011 rule above); on an intentional dependency refresh, re-resolve `<packagePrefix>.*` to the current feed latest rather than hand-editing pins. Remove orphan `<PackageVersion>` rows when no project references them.
 
 ---
 
@@ -179,7 +179,6 @@ public record DomainError(string Error, string? Code = null);
 - map/bind/match/tap helpers for railway flow
 
 Also available:
-- `IEntityBaseDto` (`Guid? Id`)
 - `DomainException`
 - `[Mask]` attribute for redaction
 
@@ -227,6 +226,7 @@ Other key types:
 - `RequestContext<...>` implementation - constructor order is `(correlationId, auditId, tenantId, roles)`
 - `PagedResponse<T>` - properties: `PageSize` (int), `PageIndex` (int), `Total` (int), `Data` (IReadOnlyList&lt;T&gt;)
 - `SearchRequest<TFilter>` - record with: `PageSize` (int), `PageIndex` (int), `Sorts` (IEnumerable&lt;Sort&gt;?), `Filter` (TFilter?)
+- `IEntityBaseDto<TKey>` (`TKey? Id`, `TKey : struct`) + non-generic `IEntityBaseDto : IEntityBaseDto<Guid>` alias - base DTO contract; app-level `EntityBaseDto` implements the alias, non-Guid-key apps derive `EntityBaseDto<TKey>`
 - `Sort` - constructor: `Sort(string propertyName, SortOrder sortOrder)` - properties: `PropertyName`, `SortOrder`
 - `SortOrder` - enum: `Ascending = 0`, `Descending = 1`
 - `IMessage`

@@ -238,6 +238,7 @@ After generating domain entities, confirm:
 - [ ] `RowVersion` property exists for concurrency (configured in EF, not in entity)
 - [ ] No infrastructure concerns (no EF attributes, no `DbContext`, no DTOs)
 - [ ] Value objects are immutable, validate through factory methods returning `DomainResult<T>`, and stay domain-side while DTOs flatten their fields
+- [ ] Entity factory folds each VO's `Create()` `DomainResult` into the aggregate `Valid()` error list (one pass, no short-circuit); a non-validating `From()` handles EF/materialization - see [entity-template.md](../templates/entity-template.md)
 - [ ] `Valid()` uses `DomainConstants` for length/range limits, not magic numbers
 - [ ] `DomainConstants.cs` exists in `Domain.Shared/Constants/` with all validation limits
 - [ ] `InvalidEntityException` exists in `Domain.Shared/Exceptions/`

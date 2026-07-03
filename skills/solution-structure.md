@@ -275,7 +275,7 @@ Criterion: wrap when the provider's surface is provider-shaped, transport-couple
 |---|---|
 | `Domain.Shared` | none |
 | `Domain.Model` | `Domain.Shared` |
-| `Application.Models` | shared/common abstractions as needed |
+| `Application.Models` | `EF.Common.Contracts` (base DTO contract `IEntityBaseDto`), other shared/common abstractions as needed |
 | `Application.Mappers` | `Application.Models`, `Domain.Model`, `Domain.Shared` |
 | `Application.Contracts` | `Application.Models`, `Domain.Model`, `Domain.Shared` |
 | `Application.Services` | `Application.Contracts`, `Application.Mappers`, `Application.Models`, domain projects, + external packages whose interface is the contract (e.g. FusionCache) |

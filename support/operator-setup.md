@@ -67,6 +67,8 @@ Feed-supplied layers require package read access before Phase 4 restore/build ca
 | Found | Author a **secret-free** repo `nuget.config`: copy the global source key into `<packageSources>`, add the prefix entry to `<packageSourceMapping>`, emit **no** `<packageSourceCredentials>` block (a repo credential block would shadow working global creds). NuGet resolves the PAT from the global store locally; CI injects `NUGET_AUTH_TOKEN`. Skip Step 3. |
 | Not found | Run Step 2b below to write the `%NUGET_AUTH_TOKEN%` credential block. |
 
+> **Local restore is a bare `dotnet restore`.** Never pass `--configfile src/nuget.config` for local restore: `--configfile` makes NuGet use only that file and skips the hierarchical merge with the global `NuGet.Config`, so the PAT resolved from the global store is never found and restore 401s on a fresh machine. The repo `nuget.config` is source-mapping only; credentials come from the global store (local) or `NUGET_AUTH_TOKEN` (CI, injected before restore). `--configfile` is correct only on the CI `dotnet nuget update source` step that writes those credentials in first.
+
 **Step 2b - write the credential-bearing config** (only when the probe found no global creds). Use the feed helper:
 
 ```powershell
