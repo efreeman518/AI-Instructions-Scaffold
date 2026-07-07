@@ -337,9 +337,26 @@ dotnet build src/UI/{Project}.Uno/{Project}.Uno.csproj -p:TargetFrameworkOverrid
 - Add method-level `[Timeout]` to every mobile test so Appium hangs cannot consume the lane.
 - Native mobile scope stays small: app launch, native surface, first-viewport accessibility, one reliable text-entry smoke. Do not drive deep CRUD, search persistence, child collections, or long-scroll Skia forms with Appium/UiAutomator2.
 - Use `MobileBy.AccessibilityId` for exact `AutomationProperties.Name` lookups. Avoid broad XPath except fallback probing.
-- Capture screenshot and page source on failure.
+- Write tests against the mobile helpers below, not repeated raw `driver.PageSource` asserts. Oracle and assertion strategy (screenshot-primary, non-empty artifact, no accessibility-tree asserts for Skia) live in [testing-quality.md](../skills/testing-quality.md#uno-mobile-test-split) - follow it, do not restate it here.
 - Put a class-header comment with exact manual runner commands and prerequisites, per the [class-doc convention](../skills/testing.md#test-class-documentation-convention).
 - iOS simulator/device execution is macOS-only. Windows may compile shared test code and record iOS execution as blocked unless a Mac host or macOS CI runner exists.
+
+Generate a `MobileTestHelpers` support type so tests stay declarative and never hold raw driver plumbing:
+
+```csharp
+// Signatures only - implementation lives in Test.Mobile support.
+public static class MobileTestHelpers
+{
+    // Build capabilities (resolved appActivity/appWaitActivity, UiAutomator2 settings) and open a session.
+    public static AndroidDriver StartMobileSession();
+    // Force-stop + relaunch the app package for a clean per-test surface.
+    public static void ResetAndroidApp(AndroidDriver driver);
+    // Primary oracle: write a PNG to the TRX artifact dir; return its path. Assert the file is non-empty.
+    public static string SaveScreenshot(AndroidDriver driver, string name);
+    // Best-effort: return page source or null; never throw, never hang the lane.
+    public static string? TryReadPageSource(AndroidDriver driver);
+}
+```
 
 Runner commands to scaffold:
 

@@ -98,7 +98,7 @@ The container-backed tiers - `Test.Aspire` (mesh) and `Test.Integration` / `Test
 - **Never silently downgrade a mesh or component test to an in-memory provider.** Swapping a Testcontainers SQL / Aspire mesh test to EF InMemory when Docker is absent makes it pass while exercising none of the real-infra failure modes it exists to catch - that hides infra failures behind green. Self-skip (`Inconclusive`); do not rewrite it to a lighter store.
 - **Unit, endpoint, and fake-`IChatClient` AI tests run with no Docker at all** - they must never take a container dependency.
 
-Suspect container resource pressure before editing test logic when health checks flap; the resource floor (4 CPU / 8 GB / 4 GB swap), WSL `.wslconfig`, and runtime-restart guidance live in [../support/troubleshooting.md](../support/troubleshooting.md) -> Docker / Container Runtime.
+Suspect container resource pressure before editing test logic when health checks flap; the resource floor, WSL `.wslconfig`, and runtime-restart guidance live in [../support/troubleshooting.md](../support/troubleshooting.md) -> Docker / Container Runtime.
 
 ## Project Layout
 

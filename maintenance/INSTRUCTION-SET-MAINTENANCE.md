@@ -55,6 +55,31 @@ CANARIES = {
     "public record DefaultRequest<T>": "ai/contract-scaffolding.md",  # wrapper shape + Item member name live at the Phase-4 generation point; ef-packages-reference App-Level table points here
     "Nullable object must have a value": "skills/multi-tenant.md",  # lifted-nullable hand-written tenant filter rule; repository/template files show the guard-flag pattern instead
     "Descriptor removal no-ops when a registration is absent": "templates/test-templates-endpoint.md",  # EfWebApplicationFactoryBase behavior narrative lives with the adapter shape; other files point
+    "primary no-crash oracle": "skills/testing-quality.md",  # Uno/Skia mobile oracle + assertion doctrine; templates point to the section, never restate it
+    "waitForIdleTimeout": "skills/testing-quality.md",  # UiAutomator2 canvas-app settings live with the mobile doctrine
+    "emulator booting visibly": "templates/local-test-stack-template.md",  # run-mobile-tests.ps1 runner mechanics (probe, SDK discovery, visible cold-boot, scoped retry)
+    "StartMobileSession": "templates/test-templates-quality.md",  # MobileTestHelpers contract; the doctrine file points here for the helper shape
+    "Two separate passing runs": "support/execution-gates.md",  # canonical mobile completion gate (visible mobile pass, then non-load exit 0); other files point
+    "If another file disagrees on validation gates or commands, this file wins": "support/execution-gates.md",  # the gates-file SSOT authority declaration; no other file may claim gate authority
+    "If you did not run it, it is not green": "support/execution-gates.md",  # verification-evidence rule (anti-false-green); others point, never restate
+    "Fix warnings at the source - never hide them": "support/execution-gates.md",  # compiler-warning policy canonical wording
+    "the primary actor's main flow works end-to-end against the running stack with seeded data": "ai/SKILL.md",  # load-bearing clause of Scaffold Definition of Done (GR-11); pointed to widely
+    "public record DefaultResponse<T>": "ai/contract-scaffolding.md",  # Phase-4 response wrapper shape; sibling of DefaultRequest<T>, templates re-emit it
+    "HeaderPropagationValues.Headers not initialized": "patterns/infrastructure-wiring.md",  # runtime error anchoring the "no AddHeaderPropagation in ServiceDefaults" rule; drifts when the body is re-copied
+    "intentionally blocked to force use of the concurrency-safe path": "skills/data-persistence.md",  # SaveChangesAsync 1-param NotImplementedException rule; NotImplementedException is a scan hotspot
+    "Body was inferred but the method does not allow inferred body parameters": "skills/api.md",  # runtime failure behind the [FromServices] endpoint-param non-negotiable
+    "NU1011": "skills/package-dependencies.md",  # CPM + floating-version restore-failure rule tied to the central-package-version mandate
+    "10.9.1": "support/tech-design-diagrams.md",  # @mermaid-js/mermaid-cli pin for deterministic SVG render; volatile
+    "1.12.1": "skills/ui-uno-platforms.md",  # Resizetizer WASM manifest-path workaround pin (drop when upstream fixes); volatile
+    "Never rename a migration after it has been shared": "support/data-persistence-advanced.md",  # migration-immutability rule owned with the migration content
+    "4 GB swap": "support/troubleshooting.md",  # Aspire mesh container resource floor; operator-setup/testing point here without the number
+    'AddSqlServer("sql", sqlPassword, port: isTesting ? null : 38433)': "patterns/infrastructure-wiring.md",  # Aspire Resource Wiring graph; quick-reference keeps a minimal correct stub and points here
+    "This holds even for entities the scaffold contracts but does not activate": "templates/no-op-stub-template.md",  # no-op-stub never-throw rule; skills carry a "never-throw rule" pointer, never restate
+    "ApplicationStyleResolver.Resolve(config[ApplicationStyleResolver.ConfigKey]": "templates/cqrs-endpoint-template.md",  # applicationStyle:switch route-mapping code shape; api.md points here
+    "public class ScaffoldAuthHandler": "skills/identity-management.md",  # scaffold auth-toggle handler; api-host-wiring/data-layer/service+endpoint templates only reference it by name
+    "ManagedIdentityCredential": "skills/ai-integration.md",  # production credential-preference rule; DefaultAzureCredential itself is a cross-cutting primitive, not canaried
+    "Verified generated shapes": "ai/SKILL.md",  # GR-18 first-party DTO-read / constructor-read discipline; ai-integration.md carries only the AI-surface cite
+    "Your mono runtime and class libraries are out of sync": "support/troubleshooting.md",  # WASM mono/class-lib mismatch symptom; ui-uno-platforms.md points here for the fix
 }
 roots = ["skills", "patterns", "ai", "support", "schemas", "profiles", "templates"]
 files = [p for r in roots for p in pathlib.Path(r).rglob("*.md")]

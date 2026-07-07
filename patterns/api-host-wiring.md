@@ -266,4 +266,4 @@ private static void AddAuthorization(IServiceCollection services)
 }
 ```
 
-The auth configuration implements no-op path when config section is missing; full JwtBearer + MicrosoftIdentityWebApi + fallback policy when present.
+The auth configuration implements no-op path when config section is missing; full JwtBearer + MicrosoftIdentityWebApi + fallback policy when present. The scaffold-vs-live `AuthMode` toggle and `ScaffoldAuthHandler` are owned by [../skills/identity-management.md](../skills/identity-management.md) (Phase 5e).

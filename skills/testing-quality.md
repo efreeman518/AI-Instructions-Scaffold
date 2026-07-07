@@ -256,10 +256,23 @@ Increase late-lifecycle assertions to `60000` when page loads occur after severa
 - Use Android emulator UI smoke tests only for native startup, native surface, first-viewport accessibility, and one reliable text-entry smoke. Do not drive deep CRUD, search persistence, child collections, or long-scroll Skia forms with Appium/UiAutomator2; cover those in API, integration, unit, and Playwright lanes.
 - When the repo uses MSTest, scaffold mobile native smoke tests as MSTest + Appium (`Test.Mobile`) instead of introducing NUnit. Keep default `dotnet test` dependency-free: unset `{APP}_MOBILE_TESTS_ENABLED` makes methods `Assert.Inconclusive` without starting Appium, emulator, or building APKs.
 - Generate `src/Test/Test.Mobile/run-mobile-tests.ps1`. The runner owns Android restore/build with `-p:BuildAllUnoTargets=true`, emulator readiness, Appium readiness, `{APP}_MOBILE_TESTS_ENABLED=true`, `dotnet test`, and TRX output. Explicit enabled mobile runs fail fast red if APK, emulator/device, Appium, or UiAutomator2 is missing/broken.
-- Test methods must not start Appium, start an Android Emulator, or build APKs. They connect to the prepared device/server, use method-level `[Timeout]`, and capture screenshot + Appium page source on failure.
+- Test methods must not start Appium, start an Android Emulator, or build APKs. They connect to the prepared device/server, use method-level `[Timeout]`, and capture a screenshot on failure.
 - Use `MobileBy.AccessibilityId` for exact `AutomationProperties.Name` lookups. Avoid broad XPath except fallback probing after diagnostics show no accessibility id is exposed.
 - In runner setup, verify `appium`, `uiautomator2`, `adb`, `emulator`, `ANDROID_HOME`, and `JAVA_HOME` with `appium driver doctor uiautomator2` before blaming app code.
 - Treat iOS simulator/device UI tests as macOS-only. On Windows, record iOS compile status and mark simulator/device execution as blocked unless a Mac host or macOS CI runner is available.
+
+**Mobile oracle and assertions (Uno/Skia).** Skia renders to a canvas, so the accessibility tree is thin and unreliable.
+
+- Screenshot is the primary no-crash oracle. Appium page source and element taps are best-effort only unless the app exposes explicit accessibility hooks.
+- Do not assert against the mobile accessibility tree for Skia-rendered controls. Capture a screenshot, assert the artifact is non-empty, and log missing accessibility text as context, not a failure.
+- Set UiAutomator2 `settings[waitForIdleTimeout]=0` for animated/canvas apps so idle-wait never blocks on continuous redraw. Set `settings[enforceXPath1]=true` only if XPath snapshots hang.
+- Use the resolved Android activity for `appActivity` and `appWaitActivity`. Avoid broad `*` waits unless genuinely needed.
+
+**Mobile failure handling.** Keep app/environment failures distinct from test failures.
+
+- Session-creation failure -> fix runner/driver setup. Page-source hang -> fix Appium settings or test strategy (see UiAutomator2 settings above). Empty screenshot -> real test failure.
+- Allow one scoped retry only for the known transient Android launch failure (exact `Cannot start` plus `never started`): force-stop the app, recreate the session, retry once. No broad retries.
+- Debug loop for a red mobile lane: read TRX -> read Appium log -> isolate one failing test -> patch root cause -> rerun that one test -> rerun full mobile -> rerun full non-load suite.
 
 ### MudBlazor Timing Rules
 

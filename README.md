@@ -405,7 +405,6 @@ These references are for **maintaining and developing the instruction set itself
 - [support/troubleshooting.md](support/troubleshooting.md) - failure triage and recurring issue guidance
 - [support/taskflow-proof-map.md](support/taskflow-proof-map.md) - fast reference-app proof map from instruction concern to TaskFlow area
 - [support/multi-agent.md](support/multi-agent.md) - optional, harness-gated guidance for fanning out independent work-items within a phase (orchestrator + workers + independent reviewer)
-- [support/UPDATE-INSTRUCTIONS.md](support/UPDATE-INSTRUCTIONS.md) - capture improvements discovered during scaffolding
 
 Useful script entrypoints:
 

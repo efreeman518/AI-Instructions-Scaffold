@@ -296,7 +296,7 @@ else
 }
 ```
 
-No-op stubs return `Result.Failure("Not configured")` or empty collections and log a warning; they do not throw.
+No-op stubs return `Result.Failure("Not configured")` or empty collections and log a warning; never-throw rule and safe-default table: [../templates/no-op-stub-template.md](../templates/no-op-stub-template.md).
 
 NuGet:
 

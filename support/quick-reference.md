@@ -133,19 +133,18 @@ Both contexts define the same `DbSet<{Entity}>`; query context is configured for
 
 ## Aspire AppHost Pattern
 
-```csharp
-var sql = builder.AddSqlServer("sql")
-    .WithImageTag("2025-latest")
-    .WithDataVolume()
-    .AddDatabase("{project}db");
-var redis = builder.AddRedis("redis");
+Minimal shape - each pooled DbContext gets its own `WithReference(..., connectionName:)`, Redis is `Redis1`, and the migrator completes before DB-touching hosts:
 
-var api = builder.AddProject<Projects.{Host}_Api>("{host}api").WithReference(sql).WithReference(redis);
-var gateway = builder.AddProject<Projects.{Host}_Gateway>("gateway").WithReference(api).WaitFor(api);
-var scheduler = builder.AddProject<Projects.{Host}_Scheduler>("scheduler").WithReference(sql).WithReference(redis).WithReplicas(1);
+```csharp
+var api = builder.AddProject<Projects.{Host}_Api>("{host}api")
+    .WithReference(db, connectionName: "{Project}DbContextTrxn")
+    .WithReference(db, connectionName: "{Project}DbContextQuery")
+    .WithReference(redis, connectionName: "Redis1")
+    .WaitForCompletion(migrator)
+    .WithExternalHttpEndpoints();
 ```
 
-Use underscores in `Projects.{Host}_Api` style identifiers.
+Use underscores in `Projects.{Host}_Api` style identifiers. Canonical full graph (SQL/Redis params, migrator, Scheduler, Gateway, Vite, rules): [../patterns/infrastructure-wiring.md](../patterns/infrastructure-wiring.md) section Aspire Resource Wiring.
 
 ---
 

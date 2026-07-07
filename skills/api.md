@@ -327,19 +327,7 @@ When `applicationStyle: switch`, generate both endpoint sets:
 - CQRS request types are imported from `Application.Cqrs/Features/{Entity}` namespaces.
 - `Application.Contracts/ApplicationStyle.cs` owns `ApplicationStyleResolver` with config key `Application:Style`, env var `<APP>_APPLICATION_STYLE`, default `Service`, and allowed values `Service` / `Cqrs`.
 
-At route mapping time, map one set of CRUD endpoints:
-
-```csharp
-var style = ApplicationStyleResolver.Resolve(app.Configuration[ApplicationStyleResolver.ConfigKey]);
-if (style == ApplicationStyle.Cqrs)
-{
-    api.Map{Entity}CqrsEndpoints(problemDetailsIncludeStackTrace);
-}
-else
-{
-    api.Map{Entity}Endpoints(problemDetailsIncludeStackTrace);
-}
-```
+At route mapping time, resolve `ApplicationStyle` once and map exactly one CRUD endpoint set - `Map{Entity}CqrsEndpoints` or `Map{Entity}Endpoints`. Switch route-mapping code shape: [../templates/cqrs-endpoint-template.md](../templates/cqrs-endpoint-template.md).
 
 Keep route templates and response shapes identical between service and CQRS endpoint sets. Shared read-only view endpoints with no CQRS alternate, such as activity feed or audit search, may remain mapped once outside the switch.
 

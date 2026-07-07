@@ -10,7 +10,7 @@ This file is intentionally lightweight. Use it to decide **what the AI should do
 
 AI agents generate code. Engineers own environment and runtime setup.
 
-> All code generation and fixes apply to the **new project** only. If an error points to a `patterns/` file (see `ai/SKILL.md` section Non-Negotiables for the index), document the issue in `.scaffold/INSTRUCTION-GAPS.md` (in a consumer app) or `support/UPDATE-INSTRUCTIONS.md` (in this repo).
+> All code generation and fixes apply to the **new project** only. If an error points to a `patterns/` file (see `ai/SKILL.md` section Non-Negotiables for the index), document the issue in `.scaffold/INSTRUCTION-GAPS.md` (in a consumer app) or, in this repo, fold the fix directly into the owning instruction file (maintainer skill `/fold-feedback`).
 
 When an error appears:
 1. Classify it (code-generation vs infrastructure/tooling)
@@ -401,5 +401,5 @@ When blocked, log in `HANDOFF.md` (see [template](HANDOFF.md)):
 
 If instruction gaps are discovered:
 - In an installed consumer app, append to `.scaffold/INSTRUCTION-GAPS.md`. Do not modify `.instructions/` files.
-- In this instruction repository, append to `support/UPDATE-INSTRUCTIONS.md`.
+- In this instruction repository, fold the fix directly into the owning instruction file (maintainer skill `/fold-feedback`).
 

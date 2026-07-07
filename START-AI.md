@@ -19,9 +19,9 @@ Each phase - and each Phase 5 sub-phase - runs in its own AI session. When compl
 Before writing `HANDOFF.md` at session close, do a quick instruction-set check: did any instruction behavior turn out missing, ambiguous, or wrong this session - a skill that did not cover the case, a template token with no definition, a gate that misfired? If so, capture it as a one-line entry so it is not lost **(GR-07)**:
 
 - **Installed app:** append to `.scaffold/INSTRUCTION-GAPS.md` at the project root (create `.scaffold/` if absent). Treat `.instructions/` files as read-only during scaffold work.
-- **This instruction repo:** instead append to [`support/UPDATE-INSTRUCTIONS.md`](support/UPDATE-INSTRUCTIONS.md) section Findings.
+- **This instruction repo:** fold the fix directly into the owning instruction file (maintainer skill `/fold-feedback`).
 
-This is a capture step, not a fix step - one line is enough; the maintenance agent triages and folds it back later. Then update `HANDOFF.md` and close.
+This is a capture step, not a fix step (in a consumer app) - one line is enough; a maintainer triages and folds it back later. Then update `HANDOFF.md` and close.
 
 ## Initial Load Rule
 

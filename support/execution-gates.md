@@ -232,6 +232,7 @@ If targeting Android (`<tfm>-android`):
 - [ ] `<EmbedAssembliesIntoApk>true</EmbedAssembliesIntoApk>`, `<AndroidEnableAssemblyCompression>false</AndroidEnableAssemblyCompression>`, and `.so` uncompressed file extension settings are set if manual ADB/Appium sideloading is used
 - [ ] Emulator host networking uses `10.0.2.2` for local backend calls (see `skills/ui-uno-platforms.md` section Emulator Host Networking)
 - [ ] MSTest/Appium mobile smoke passes when native Android UI testing is in scope: `powershell -NoProfile -File src/Test/Test.Mobile/run-mobile-tests.ps1`
+- [ ] **Final green rule (mobile in scope):** do not declare green until the visible mobile suite passes on its own with mobile enabled (runner sets `{APP}_MOBILE_TESTS_ENABLED=true`), and then the full non-load solution run exits 0 (`dotnet test .\{SolutionName}.slnx --filter "TestCategory!=Load"`). Two separate passing runs, in that order. This is the canonical mobile completion gate; other files point here rather than restating it.
 
 > **Starter-library escape hatch:** If the repo currently contains only a single-TFM starter library or shell-contract scaffold instead of a real Uno multi-target app, Phase 5c for Uno must be recorded as **blocked**. `NETSDK1139` on `<tfm>-browserwasm` is expected in that scenario and is evidence that Uno scaffolding is still missing - not an environment glitch. Do not debug/workaround it; record the status as `blocked - Uno multi-target not yet created` and move on.
 
@@ -473,7 +474,7 @@ az bicep build --file infra/main.bicep
 
 - Code-generation failures: one focused AI fix pass, then re-run failing gate.
 - Infra/environment failures: log in `HANDOFF.md`, classify blocker, continue non-blocked scope.
-- Instruction gaps: in a consumer app, append to `.scaffold/INSTRUCTION-GAPS.md`; in this instruction repository, append to `support/UPDATE-INSTRUCTIONS.md`.
+- Instruction gaps: in a consumer app, append to `.scaffold/INSTRUCTION-GAPS.md`; in this instruction repository, fold the fix directly into the owning instruction file (maintainer skill `/fold-feedback`).
 - If a step fails, log the blocker in `HANDOFF.md` (see [HANDOFF.md template](HANDOFF.md)) and continue with non-blocked work.
 - Pattern reference: [../ai/SKILL.md](../ai/SKILL.md) section Non-Negotiables - pattern index for composition wiring.
 

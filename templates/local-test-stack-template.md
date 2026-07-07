@@ -196,11 +196,22 @@ Generate into `.vscode/tasks.json` so Test Explorer users have one-click stack c
 }
 ```
 
+## Mobile runner (`run-mobile-tests.ps1`)
+
+This runner owns the whole Android lane end-to-end. Test methods only connect; the runner does everything else. Responsibilities:
+
+- **Pre-flight probe before starting Appium**, printing the exact resolved path or state for each: Docker, Android SDK path, `adb`, `emulator`, the AVD list, Appium CLI, installed Appium drivers, device boot state, resolved package name, resolved launch activity. Fail fast (red) on any missing prerequisite - do not degrade to inconclusive once the runner is invoked.
+- **SDK discovery.** Do not assume the default SDK path. Accept `-AndroidSdk`, else discover common Windows locations (for example `%LOCALAPPDATA%\Android\Sdk`, `C:\Program Files (x86)\Android\android-sdk`), then export both `ANDROID_HOME` and `ANDROID_SDK_ROOT` (process env only, per the hard rule above) before starting Appium.
+- **Build** the Android package with `-p:BuildAllUnoTargets=true` and the `-android` TFM override.
+- **Visible emulator (`-VisibleEmulator`).** A cold boot can take 10-15 min. Use a long boot timeout and print an "emulator booting visibly" status line so the wait is not read as a hang.
+- **One scoped launch retry.** For the known transient Android launch failure only (exact `Cannot start` plus `never started`): force-stop the app, recreate the session, retry once. No broad retries. (Doctrine: `../skills/testing-quality.md` section Uno Mobile: Test Split.)
+- Set `{APP}_MOBILE_TESTS_ENABLED=true`, run `dotnet test`, write TRX.
+
 ## Verification
 
 - [ ] `eng/test/start-local-test-stack.ps1` exists and runs end-to-end on a clean session.
 - [ ] script mutates **process** env only (no `setx`, no machine/user PATH edits).
 - [ ] `src/Test/Test.Mobile/run-mobile-tests.ps1` exists when mobile tier exists.
-- [ ] Mobile runner resolves Android SDK, prepares process PATH, restores/builds Android with `-p:BuildAllUnoTargets=true`, verifies UiAutomator2/Appium, waits emulator + package manager readiness, sets `{APP}_MOBILE_TESTS_ENABLED=true`, runs `dotnet test`, and writes TRX.
+- [ ] Mobile runner meets the responsibilities in section Mobile runner (`run-mobile-tests.ps1`): resource probe with exact paths, SDK discovery + `ANDROID_HOME`/`ANDROID_SDK_ROOT` export, Android build, visible cold-boot handling, one scoped launch retry, `{APP}_MOBILE_TESTS_ENABLED=true`, `dotnet test`, TRX.
 - [ ] script prints exact endpoints per-tier rerun commands, including mobile runner command.
 - [ ] `.vscode/tasks.json` entries exist for: start stack, build WASM, install Playwright, run non-load, run Aspire/WASM, run Mobile via `run-mobile-tests.ps1`.

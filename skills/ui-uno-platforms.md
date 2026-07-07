@@ -153,7 +153,7 @@ src/UI/{Project}.Uno/bin/<configuration>/net{X}.0-browserwasm
 src/UI/{Project}.Uno/obj/<configuration>/net{X}.0-browserwasm
 ```
 
-Cleaning only `bin/` can leave stale WebCIL/runtime intermediates in `obj/`. If the browser reports `Your mono runtime and class libraries are out of sync` and names `System.Private.CoreLib.dll`, suspect stale mixed WASM output first. Clean both folders, then restore/build with `TargetFrameworkOverride`; do not switch renderers or rewrite startup code until this is ruled out.
+Cleaning only `bin/` can leave stale WebCIL/runtime intermediates in `obj/`, which surfaces at runtime as the WASM mono-runtime / class-library mismatch - see [../support/troubleshooting.md](../support/troubleshooting.md) section WASM Runtime/Class Library Mismatch for the symptom string and full clean/restore/build fix. Suspect stale mixed WASM output first: clean both folders, then restore/build with `TargetFrameworkOverride`; do not switch renderers or rewrite startup code until this is ruled out.
 
 After a test-owned clean rebuild succeeds, write a stamp file inside the fresh target output, for example `bin/Debug/net{X}.0-browserwasm/.{app}-wasm-test-build.stamp`. Freshness checks must require that stamp plus current source timestamps. This prevents Test Explorer from silently accepting an old developer build that happens to have `index.html`.
 
