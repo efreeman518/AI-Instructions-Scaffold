@@ -161,6 +161,12 @@ Mutation overlay (Test.Mutation, Stryker over focused MSTest suite)
 
 Phase 4 generates the WAF base in `Test.Support`, the `CustomApiFactory` / `SqlApiFactory` shells, the `Test.Integration` store fixtures (`SqlContainerFixture` / `AzuriteContainerFixture` + `IntegrationTestSetup`), and the `Test.Aspire` mesh shells (`AspireTestHost` + `AspireMeshLifecycle`) so the ladder is wired before any Phase 5 tests are written - profile-gated tiers (`Test.E2E`, `Test.Aspire`) get shells only when the Capability-Gated table above generates them. See [../ai/contract-scaffolding.md](../ai/contract-scaffolding.md) (`### 4. Test Infrastructure`).
 
+### Heavy Aspire Mesh Graph Rule
+
+`Test.Aspire` owns one assembly-scoped `DistributedApplicationTestingBuilder`/AppHost graph per mesh run - the lazy `AspireTestHost` graph (see [../templates/test-templates-aspire.md](../templates/test-templates-aspire.md)). Do not stand up a second AppHost graph, in a separate class or fixture, to prove optional provider wiring, UI smokes, or feature-specific branches. Prove AppHost opt-in branches with a cheap topology guard instead: set the opt-in env/config flag before builder creation, inspect the resulting resource/provider shape or status setting, then stop. Put live-provider behavior in dedicated lighter lanes such as `Test.FoundryLocal`, a direct API-host smoke, or externally hosted Playwright, so mesh coverage never duplicates infrastructure graphs.
+
+This is the canonical statement of the rule; the Aspire template and the testing-quality checklist point here rather than restating it.
+
 ### Component vs Mesh split
 
 The integration surface is two separate projects, never one mixed assembly:

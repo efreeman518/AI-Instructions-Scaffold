@@ -19,6 +19,10 @@
 
 > **Why a separate project from `Test.Integration`.** The mesh graph costs ~60-90 s on warm Docker (minutes cold). Keeping mesh tests in their own assembly means the fast component tier never pays that boot, and the graph boots **once per run**, only when a mesh test actually executes. A test belongs here when it needs `CreateHttpClient(...)`, multiple Aspire resources, `WaitForResourceHealthyAsync`, or `DistributedApplicationTestingBuilder`. If it instantiates one class against one store, it belongs in `Test.Integration`.
 
+## One AppHost Graph Per Mesh Run
+
+Canonical rule: [../skills/testing.md](../skills/testing.md#heavy-aspire-mesh-graph-rule) (**Heavy Aspire Mesh Graph Rule**). In short: one assembly-scoped `AspireTestHost` graph per mesh run; prove opt-in branches with a cheap topology guard, never a second `DistributedApplicationTestingBuilder` in a test class, and push live-provider behavior to a lighter lane.
+
 ## Lazy startup + lifecycle
 
 `AspireTestHost` is **lazy**: it exposes a static `EnsureStartedAsync(TestContext)` guarded by a `SemaphoreSlim`, called from each mesh test class's `[ClassInitialize]`. There is no eager `[AssemblyInitialize]` start - the graph boots on the first mesh class to run. Teardown is owned by `AspireMeshLifecycle.[AssemblyCleanup]`, which stops/disposes the graph exactly once regardless of which class warmed it up. All mesh tests are `[DoNotParallelize]`.

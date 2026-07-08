@@ -81,6 +81,7 @@ CANARIES = {
     "ManagedIdentityCredential": "skills/ai-integration.md",  # production credential-preference rule; DefaultAzureCredential itself is a cross-cutting primitive, not canaried
     "Verified generated shapes": "ai/SKILL.md",  # GR-18 first-party DTO-read / constructor-read discipline; ai-integration.md carries only the AI-surface cite
     "Your mono runtime and class libraries are out of sync": "support/troubleshooting.md",  # WASM mono/class-lib mismatch symptom; ui-uno-platforms.md points here for the fix
+    "so mesh coverage never duplicates infrastructure graphs": "skills/testing.md",  # one-AppHost-graph-per-mesh-run rule; test-templates-aspire.md + testing-quality.md point here, never restate
 }
 roots = ["skills", "patterns", "ai", "support", "schemas", "profiles", "templates"]
 files = [p for r in roots for p in pathlib.Path(r).rglob("*.md")]

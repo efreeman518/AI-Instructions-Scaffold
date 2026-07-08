@@ -301,6 +301,8 @@ All test projects must be registered in the `.slnx` so both Test Explorers disco
 
 ## Verification Checklist
 
+- [ ] Mesh tests obey the one-AppHost-graph rule ([testing.md](testing.md#heavy-aspire-mesh-graph-rule)): opt-in branches use cheap topology guards, live-provider coverage lives in lighter dedicated lanes - no duplicate infrastructure graphs.
+
 - [ ] Architecture tests enforce layering rules.
 - [ ] Load scenarios track p50/p95/p99 and error rate against an explicit baseline.
 - [ ] Benchmark suites use representative datasets; results compared to a baseline, not measured in isolation.
