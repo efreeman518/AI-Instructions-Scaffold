@@ -76,6 +76,8 @@ Walk these branches in order. Revisit earlier branches when a later answer chang
 
 > **Heads-up - Phase 2 will open with packaging strategy.** The very first Phase 2 question asks whether the project has a private NuGet feed for shared base contracts (e.g., `EF.*`) or whether the scaffold should generate equivalent packable projects under `src/Packages/<Prefix>.*`. Flag any constraints here (corporate feed policy, prefix conventions) so Phase 2 doesn't re-discover them. Full details: [resource-implementation-schema.md section Discovery Conversation Pattern](resource-implementation-schema.md#discovery-conversation-pattern).
 
+> **Heads-up - the Sensitive-Data Trigger fires in the Security branch.** A property holding PII, a secret, or regulated data raises a column-level-encryption decision. See [Sensitive-Data Trigger](#sensitive-data-trigger) below.
+
 > **Heads-up - the Interfaces branch decides UI topology.** When the Actors-and-roles branch found more than one persona (e.g. a distinct admin/operator role vs the primary end user), the Interfaces branch must decide whether a **separate admin portal** is needed - not just which single UI stack to use. Resolve this before Phase 2 sets the host flags; a second head retrofitted after Phase 4 is expensive. See [Multi-Head UI Decision](#multi-head-ui-decision) below.
 
 ## Branch Recap Format
@@ -170,3 +172,13 @@ Record a **persona -> UI-surface mapping** in `.scaffold/DESIGN-DECISIONS.md`, f
 ```
 
 Mechanically, a second head means enabling a second per-stack host flag (`includeUnoUI` / `includeBlazorUI` / `includeReactUI`) - see [resource-implementation-schema.md section Discovery Conversation Pattern](resource-implementation-schema.md#discovery-conversation-pattern) (Question 2) and the sibling-layout guidance in [../skills/ui-blazor.md](../skills/ui-blazor.md). No schema change is required; the decision must record which persona drives which head. If the answer is deferred, mark it `deferred` with `Needed Before: Phase 2` (the host flags are set in Phase 2), not later - the topology cannot float into Phase 4.
+
+## Sensitive-Data Trigger
+
+When the Entities / Value-objects branch surfaced a property holding PII, a secret, or regulated data (SSN, national id, tokens, health data), flag it `sensitive: true` in `domain-specification.yaml` and raise a **Security-branch** decision to protect it with column-level encryption (SQL Always Encrypted). Absence of the flag = plaintext; do not over-apply.
+
+- **Depends on the SQL-store decision.** Always Encrypted is SQL Server / Azure SQL only - close store fit first. If the entity does not land in SQL, the trigger does not apply.
+- **Pick the mode per field.** **Deterministic** - identical plaintext -> identical ciphertext; supports equality lookups / joins / indexes. Use *only* when the app must query by the value. **Randomized** - non-repeatable ciphertext, not queryable; the default for anything not looked up.
+- **Record ubiquitous language.** Add terms: Always Encrypted, CMK (column master key), CEK (column encryption key), deterministic/randomized, and Azure Key Vault (external-system). Include a CMK key-rotation note in the decision.
+
+Record the decision in `.scaffold/DESIGN-DECISIONS.md` (Branch: Security, depends on the store decision). Full implementation mechanics - varbinary(200) + UTF8 converter, raw-SQL migration, local-green gating, runtime wiring, infra RBAC, testing limits - live in [../support/data-persistence-advanced.md](../support/data-persistence-advanced.md) section Always Encrypted.

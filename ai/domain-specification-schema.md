@@ -68,6 +68,7 @@ entities:
 - `kind`: `string` (default) | `enum` | `flags_enum` | `number` | `date` | `boolean` | `identifier` | `money` | `text` | `value_object`
 - No `type`, `maxLength`, `precision` here - those are Phase 2 concerns
 - `required`: business requirement, not database nullability
+- `sensitive: true`: property holds PII / secret / regulated data (SSN, national id, tokens, health data). Absence = not sensitive; do not over-apply. A `sensitive` property raises a Security-branch Always Encrypted decision in Phase 1 (see [shared-understanding-interview.md](shared-understanding-interview.md) section Sensitive-Data Trigger). Mechanics: [../support/data-persistence-advanced.md](../support/data-persistence-advanced.md) section Always Encrypted.
 - For `kind: value_object`, set `valueObject: {ValueObjectName}` and define it under top-level `valueObjects`
 - For operational reason fields (`ReasonCode` style), prefer:
   - fixed, stable set -> `enum`

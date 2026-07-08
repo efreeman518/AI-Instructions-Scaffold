@@ -58,6 +58,7 @@ These types are consumed throughout scaffolded code. Know where they come from s
 | `DatabaseMigrationRunner` | EF.Data (`EF.Data.Migrations`) | Ordered, fail-fast migration runner hosted by `{App}.DatabaseMigrator`. `RunAsync()` executes registered targets in order; first failure exits nonzero and later targets do not run. |
 | `AddDatabaseMigrationRunner()` / `AddEfCoreMigrationTarget<TContext>(logicalName, order)` | EF.Data (`EF.Data.Migrations`) | DI registration for the runner and its EF Core targets. One target per migration-owning context (app Trxn, FlowEngine, third-party stores), deterministic `order`. See [data-persistence-advanced.md](data-persistence-advanced.md) -> Migration Ownership: Dedicated Migrator Host. |
 | `ResilientTransaction` | EF.Data | Resilient transaction wrapper |
+| `MigrationSupport` | EF.Data | Raw-SQL helper for SQL Always Encrypted inside a migration (EF has no fluent mapping). Ctor `(MigrationBuilder, TokenCredential)`; `CreateColumnMasterKey(cmkUrl, cmkName)`, `CreateColumnEncryptionKey(cmkUrl, cmkName, cekName)`, `AlterColumnEncryption(cekName, "[schema].[Table]", "[Col] varbinary(200)", collate, encType)` where `encType` is `DETERMINISTIC` (queryable) or `RANDOMIZED`. See [data-persistence-advanced.md](data-persistence-advanced.md) -> Always Encrypted. |
 
 ### Common Infrastructure (EF.Common, EF.Common.Contracts)
 

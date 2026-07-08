@@ -275,6 +275,11 @@
         "valueObject": {
           "type": "string",
           "description": "Value object name when kind is value_object"
+        },
+        "sensitive": {
+          "type": "boolean",
+          "default": false,
+          "description": "Property holds PII, a secret, or regulated data (SSN, national id, tokens, health data). Absence means not sensitive - do not over-apply. Triggers a Security-branch column-level-encryption (Always Encrypted) design decision in Phase 1; see ai/shared-understanding-interview.md and support/data-persistence-advanced.md."
         }
       }
     },

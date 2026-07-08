@@ -72,6 +72,7 @@ CANARIES = {
     "10.9.1": "support/tech-design-diagrams.md",  # @mermaid-js/mermaid-cli pin for deterministic SVG render; volatile
     "1.12.1": "skills/ui-uno-platforms.md",  # Resizetizer WASM manifest-path workaround pin (drop when upstream fixes); volatile
     "Never rename a migration after it has been shared": "support/data-persistence-advanced.md",  # migration-immutability rule owned with the migration content
+    "SKIP_ALWAYS_ENCRYPTED_SETUP": "support/data-persistence-advanced.md",  # Always Encrypted local-green gating + full mechanics live once here; interview/domain-spec point in by topic name only
     "4 GB swap": "support/troubleshooting.md",  # Aspire mesh container resource floor; operator-setup/testing point here without the number
     'AddSqlServer("sql", sqlPassword, port: isTesting ? null : 38433)': "patterns/infrastructure-wiring.md",  # Aspire Resource Wiring graph; quick-reference keeps a minimal correct stub and points here
     "This holds even for entities the scaffold contracts but does not activate": "templates/no-op-stub-template.md",  # no-op-stub never-throw rule; skills carry a "never-throw rule" pointer, never restate

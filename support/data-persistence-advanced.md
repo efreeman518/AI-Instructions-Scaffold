@@ -234,6 +234,99 @@ For SQL + Cosmos/Table hybrids:
 
 ---
 
+## Always Encrypted (Column-Level Encryption)
+
+Load when a Phase 1 Security-branch decision protects a `sensitive` property with SQL Always Encrypted (SQL Server / Azure SQL only). Trigger and mode choice live in [../ai/shared-understanding-interview.md](../ai/shared-understanding-interview.md) section Sensitive-Data Trigger. This section is the how.
+
+### Storage shape: `varbinary(200)` + UTF8 converter
+
+Map the domain property as a plain `string`; store it as `varbinary(200)` with a UTF8 value converter. This keeps the domain model primitive and sidesteps the `Latin1_General_BIN2` collation that deterministic **string** columns otherwise require (varbinary has no collation). EF bypasses the converter on `null`, so the columns stay nullable.
+
+```csharp
+builder.Property(e => e.SecureDeterministic)
+    .HasConversion(v => Encoding.UTF8.GetBytes(v!), v => Encoding.UTF8.GetString(v))
+    .HasColumnType("varbinary(200)");
+```
+
+Give the domain a UTF8 byte budget matching the column (e.g. `RULE_SECURE_PROPERTY_MAX_BYTES = 200`) and validate against it in the domain rule - the encrypted ciphertext must fit the declared column width.
+
+### EF has no fluent Always Encrypted mapping
+
+There is no `.IsEncrypted()`. The CMK/CEK creation and `ALTER COLUMN ... ENCRYPTED WITH` are raw SQL that must run inside the migration. Do **not** re-derive the T-SQL - `EF.Data` ships a `MigrationSupport` helper. In the migration's `Up`, after `CreateTable`, call a private `ConfigureAlwaysEncrypted(migrationBuilder)`:
+
+```csharp
+var support = new MigrationSupport(migrationBuilder, new DefaultAzureCredential());
+support.CreateColumnMasterKey(urlAkvCmk, "CMK_WITH_AKV");
+support.CreateColumnEncryptionKey(urlAkvCmk, "CMK_WITH_AKV", "CEK_WITH_AKV");
+// varbinary has no collation -> collate: null. encType per field: DETERMINISTIC (queryable) or RANDOMIZED (default).
+support.AlterColumnEncryption("CEK_WITH_AKV", "[schema].[Table]", "[SecureDeterministic] varbinary(200)", collate: null, encType: "DETERMINISTIC");
+support.AlterColumnEncryption("CEK_WITH_AKV", "[schema].[Table]", "[SecureRandom] varbinary(200)", collate: null, encType: "RANDOMIZED");
+```
+
+### Local-green invariant: gate the AKV setup
+
+There is **no Key Vault emulator** - the CMK is a hard cloud dependency (the local SQL container is fine; crypto is client-side). Gate the migration setup behind `SKIP_ALWAYS_ENCRYPTED_SETUP` so build/test/local-Aspire need no Azure and columns stay plain `varbinary(200)`:
+
+```csharp
+private static void ConfigureAlwaysEncrypted(MigrationBuilder migrationBuilder)
+{
+    // Default: skip. Only an explicit SKIP_ALWAYS_ENCRYPTED_SETUP=false runs the AKV setup.
+    if (!string.Equals(Environment.GetEnvironmentVariable("SKIP_ALWAYS_ENCRYPTED_SETUP"), "false", StringComparison.OrdinalIgnoreCase))
+        return;
+    var urlAkvCmk = Environment.GetEnvironmentVariable("AKVCMKURL")
+        ?? throw new InvalidOperationException("AKVCMKURL required when SKIP_ALWAYS_ENCRYPTED_SETUP=false.");
+    // ... MigrationSupport calls above ...
+}
+```
+
+Make the full path opt-in at the AppHost via `TASKFLOW_ENABLE_ALWAYS_ENCRYPTED=true` (which wires `AKVCMKURL` and flips the migrator gate); leave it unset for normal local work.
+
+### Runtime wiring (behind the same opt-in)
+
+Gated by config `Database:AlwaysEncrypted:Enabled` (env `TASKFLOW_ENABLE_ALWAYS_ENCRYPTED`):
+
+- Append `;Column Encryption Setting=Enabled` to the connection string (idempotent - skip if already present).
+- Register the AKV provider **once per process** in a `try/catch`. `SqlConnection.RegisterColumnEncryptionKeyStoreProviders` has no is-registered check and throws on a second registration (matters under `WebApplicationFactory` reuse). Guard with a static bool and swallow the double-register throw:
+
+```csharp
+try
+{
+    SqlConnection.RegisterColumnEncryptionKeyStoreProviders(customProviders: new Dictionary<string, SqlColumnEncryptionKeyStoreProvider>(StringComparer.OrdinalIgnoreCase)
+        { { SqlColumnEncryptionAzureKeyVaultProvider.ProviderName, new SqlColumnEncryptionAzureKeyVaultProvider(new DefaultAzureCredential()) } });
+}
+catch { /* already registered; SqlClient offers no is-registered check, once-per-process */ }
+```
+
+### Infrastructure checklist (beyond secrets)
+
+Key-Vault-as-secrets is **not** sufficient. Add:
+
+- an **RSA CMK key** resource in Key Vault (not a secret);
+- `enablePurgeProtection: true` (**irreversible** - warn before enabling);
+- **Key Vault Crypto User** RBAC (Secrets User is not enough): the **migrator** identity needs `sign` + `wrapKey`, the **runtime** identities need `unwrapKey`. Wire both explicitly (the migrator/runtime identity split is the same one from Migration Ownership).
+
+### Migration hygiene
+
+Prefer a **dedicated additive migration** (let EF auto-generate the model snapshot) over hand-editing a shipped migration. If hand-editing the migration + designer + snapshot is unavoidable, require a drift check before treating it done:
+
+```powershell
+dotnet ef migrations has-pending-model-changes --context {App}DbContextTrxn
+```
+
+Must report `No changes` (same rooting as the Mapping-Foundation Neutrality Gate above).
+
+### Testing expectations
+
+Full encrypt/decrypt E2E needs a real AKV key and **cannot run locally** (no emulator). Do not attempt or claim local E2E of encryption. The runnable checks are: the **domain length/validation test** (value fits `RULE_SECURE_PROPERTY_MAX_BYTES`) and the **model-drift check** above. State this plainly rather than pretending encryption was exercised locally.
+
+### Key rotation
+
+CMK/CEK rotation is an operational task on top of the secret-rotation workflow in [../skills/security.md](../skills/security.md). Rotate the CMK in Key Vault, re-wrap the CEK, then retire the old CMK version; record the rotation owner in the Security-branch decision.
+
+**TaskFlow proof:** `src/Infrastructure/TaskFlow.Infrastructure.Data/Migrations/*_InitialCreate.cs` (`ConfigureAlwaysEncrypted`), `Configurations/TaskItemConfiguration.cs` (varbinary + UTF8 converter), `src/Host/TaskFlow.Bootstrapper/Registration/RegisterServices.Database.cs` (provider registration, `Column Encryption Setting`), `src/Host/Aspire/AppHost/AppHost.cs` (opt-in gate, `AKVCMKURL`), `infra/main.bicep` (CMK key, purge protection, Crypto User RBAC), `src/Test/Test.Unit/Domain/TaskItemTests.cs` (domain length test). Decision recorded as D-019 (Branch Security).
+
+---
+
 ## Startup Seeding / Reference Data
 
 Use the `IStartupTask` pattern for idempotent seed data after `app.Build()` and before `app.RunAsync()`.
@@ -290,4 +383,5 @@ Seeding rules:
 - You need design-time factory guidance.
 - A JSON-column mapping fails during migration generation.
 - You are planning expand/contract schema changes.
+- A `sensitive` property needs SQL Always Encrypted (CMK/CEK, raw-SQL migration, opt-in gating).
 - You need startup seeding patterns.
