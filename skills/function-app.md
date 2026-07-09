@@ -63,6 +63,8 @@ var builder = FunctionsApplication.CreateBuilder(args);
 builder.Configuration.AddJsonFile("appsettings.json", optional: true);
 builder.ConfigureFunctionsWebApplication();
 
+builder.AddServiceDefaults(); // shared telemetry/health/resilience seam - see Telemetry below
+
 builder.Services
     .RegisterDomainServices(config)
     .RegisterInfrastructureServices(config)
@@ -251,6 +253,19 @@ If the Functions host also consumes shared `BlobStorage1`, `TableStorage1`, or `
 ### Always-Aspire by design (no isolation gate)
 
 The API host gates real Azure client registration on connection-string presence so a `WebApplicationFactory` isolation tier can run without Aspire (see [aspire.md](aspire.md) "Detecting Aspire at Runtime - Presence, Not Environment"). The Functions host does **not** do this - it registers its Aspire client integrations unconditionally (`AddSqlServerDbContext`, `AddAzureBlobServiceClient`, `AddAzureServiceBusClient`). This is intentional: there is no in-process WAF-style isolation tier for a Functions worker, so the Aspire-mesh tier - which always supplies connection strings - is the only path that exercises it. Keep these registrations unconditional. If a future Functions host ever needs an isolation tier, reuse the same connection-string presence gate the API uses, never an environment-name check.
+
+---
+
+## Telemetry (Aspire + Functions hazard)
+
+The Functions worker participates in the **shared** telemetry pipeline through `AddServiceDefaults()` (the Azure Monitor OpenTelemetry distro, gated on `APPLICATIONINSIGHTS_CONNECTION_STRING` - owned by [../patterns/infrastructure-wiring.md](../patterns/infrastructure-wiring.md) section Telemetry Export). Two isolated-worker-specific hazards must be respected, or the app breaks at startup or double-reports:
+
+- **No direct App Insights integration in the worker.** Do NOT add `Microsoft.Azure.Functions.Worker.ApplicationInsights` / call `ConfigureFunctionsApplicationInsights()`. Combined with an Aspire orchestration and the Azure Monitor distro it errors on startup. Rely only on the shared exporter in ServiceDefaults.
+- **Suppress ASP.NET Core instrumentation in the worker.** The Functions host process already emits request telemetry per invocation. The Azure Monitor distro's `AddAspNetCoreInstrumentation()` would report the same request a second time with the same `OperationId` (duplicate requests). `ConfigureOpenTelemetry` gates ASP.NET Core metric/trace instrumentation off when `{APP}_SUPPRESS_ASPNETCORE_INSTRUMENTATION=true`; the Functions host is the one host that sets it. **Set the flag in both places** so local (Aspire) and cloud (Container Apps) behave identically:
+  - AppHost: `.WithEnvironment("{APP}_SUPPRESS_ASPNETCORE_INSTRUMENTATION", "true")` on the Functions resource.
+  - `infra/modules/functions.bicep`: the same env var `= 'true'` on the Functions app.
+
+A naive "add App Insights to Functions" instruction breaks the app - this is the correct approach.
 
 ---
 

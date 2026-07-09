@@ -49,6 +49,41 @@ Method-level docs are **not** the convention - Given/When/Then names encode scen
 public class {Entity}WorkflowTests { ... }
 ```
 
+## Cancellation-Token & TestContext Discipline (MSTEST0049)
+
+MSTest's `MSTEST0049` is on by default at **info** severity - it does not fail the build, so token debt accumulates invisibly and only surfaces when a file is opened in the IDE (clean CLI build, Error List full on open). Generated test code MUST be token-clean at generation time. Rules:
+
+- **Flow the `TestContext` cancellation token into every cancellable async call.** `HttpClient` calls (`PostAsJsonAsync`, `ReadFromJsonAsync`, `GetAsync`, `SendAsync`), service/repository async methods, and EF Core async calls all take `TestContext.CancellationToken` as the trailing/named cancellation-token argument. Do **not** use `CancellationToken.None` as a filler in tests.
+- **Private helper methods count too.** A helper inside a test class that makes a cancellable call (e.g. one that creates a parent entity over HTTP) must accept and flow the token - this is the cluster generators and `dotnet format` miss most often.
+- **Declare an instance `TestContext` property on any class with async test methods:** `public TestContext TestContext { get; set; } = null!;` (null-forgiving default). This is what the test methods and their helpers read the token from.
+- **Static `[ClassInitialize]` hook vs. instance `TestContext` are two separate concerns that coexist.** `[ClassInitialize] static Task ClassInit(TestContext context)` receives its own parameter for class-level setup; the instance property is separate and is what per-test cancellation uses. A class with class-level init *and* async tests needs both - do not discard the `ClassInitialize` parameter (`TestContext _`) and assume the instance property is covered.
+- **EF Core `FindAsync` in tests: array-wrap the key + token as the second argument** - `await db.{Entities}.FindAsync([id], TestContext.CancellationToken)`. The named-argument form (`FindAsync(id, cancellationToken: ct)`) binds to the wrong overload and is a **compile break**, not a warning: `FindAsync(object?[]? keyValues, CancellationToken)` needs the key array-wrapped.
+
+```csharp
+[TestClass]
+public class {Entity}Tests
+{
+    public TestContext TestContext { get; set; } = null!;              // instance - per-test token
+
+    [ClassInitialize]
+    public static async Task ClassInit(TestContext context) { /* class-level setup */ }  // static - separate
+
+    [TestMethod]
+    public async Task Given_X_When_Y_Then_Z()
+    {
+        var ct = TestContext.CancellationToken;
+        var resp = await client.PostAsJsonAsync("/api/v1/{entities}", dto, ct);
+        var body = await resp.Content.ReadFromJsonAsync<{Entity}Dto>(ct);
+        var row  = await db.{Entities}.FindAsync([body!.Id], ct);        // array-wrapped key + token
+        var parentId = await CreateParentAsync(ct);                      // helper flows the token too
+    }
+
+    private async Task<Guid> CreateParentAsync(CancellationToken ct) { /* ... uses ct ... */ }
+}
+```
+
+Severity policy for `MSTEST0049` (and the generation-time verify gate that enforces it) is owned by [solution-structure.md](solution-structure.md) section `.editorconfig` and [../support/execution-gates.md](../support/execution-gates.md) section Analyzer-Cleanliness Gate.
+
 ## Profiles
 
 | Profile | Include by default |

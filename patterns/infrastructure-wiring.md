@@ -16,7 +16,7 @@ For base types used here, see [../support/ef-packages-reference.md](../support/e
 
 **Source:** `Host/Aspire/ServiceDefaults/Extensions.cs`
 
-Every host project calls `builder.AddServiceDefaults(config, appName)` as the first registration step. This extension lives in the shared ServiceDefaults project and wires OpenTelemetry, health checks, service discovery, and HTTP resilience defaults.
+**Every server-hosted .NET host calls `builder.AddServiceDefaults(...)` as the first registration step** - not just the API-shaped hosts. This includes the UI hosts: **Blazor Server and the Uno `WasmHost`** are server-hosted .NET processes and MUST participate in the shared telemetry pipeline. The full set: API, Gateway, Scheduler, Functions, DatabaseMigrator, Blazor Server, Uno WasmHost. A host left out of `AddServiceDefaults` emits no traces/metrics/logs and is invisible in the telemetry backend. This extension lives in the shared ServiceDefaults project and wires OpenTelemetry, health checks, service discovery, and HTTP resilience defaults.
 
 ```csharp
 public static IHostApplicationBuilder AddServiceDefaults(
@@ -40,6 +40,41 @@ public static IHostApplicationBuilder AddServiceDefaults(
 - Call once per host, before any other service registration.
 - Do not duplicate OpenTelemetry or health check setup in individual hosts - ServiceDefaults owns it.
 - Add domain-specific readiness checks (SQL, Redis) in host registration, not in ServiceDefaults.
+
+### Telemetry Export (`ConfigureOpenTelemetry`)
+
+`ConfigureOpenTelemetry` registers instrumentation (metrics + tracing + logging) and then wires exporters, each **gated on a connection string** so local runs work with zero Azure resources and cloud export lights up the moment the setting is present:
+
+```csharp
+public static IHostApplicationBuilder ConfigureOpenTelemetry(this IHostApplicationBuilder builder)
+{
+    builder.Logging.AddOpenTelemetry(o => { o.IncludeFormattedMessage = true; o.IncludeScopes = true; });
+
+    // Functions worker: skip ASP.NET Core request instrumentation (see below) but keep everything else.
+    var suppressAspNetCore = string.Equals(
+        builder.Configuration["{APP}_SUPPRESS_ASPNETCORE_INSTRUMENTATION"], "true", StringComparison.OrdinalIgnoreCase);
+
+    builder.Services.AddOpenTelemetry()
+        .WithMetrics(m => { m.AddHttpClientInstrumentation().AddRuntimeInstrumentation();
+                            if (!suppressAspNetCore) m.AddAspNetCoreInstrumentation(); })
+        .WithTracing(t => { t.AddHttpClientInstrumentation();
+                            if (!suppressAspNetCore) t.AddAspNetCoreInstrumentation(); });
+
+    // OTLP -> Aspire dashboard locally (present via ASPIRE injected env).
+    if (!string.IsNullOrWhiteSpace(builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]))
+        builder.Services.AddOpenTelemetry().UseOtlpExporter();
+
+    // Azure Monitor (Application Insights) in cloud - gated on the connection string only.
+    if (!string.IsNullOrWhiteSpace(builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]))
+        builder.Services.AddOpenTelemetry().UseAzureMonitor();
+
+    return builder;
+}
+```
+
+**Discipline gate (docs must match wiring).** "Azure Monitor in cloud" is a wiring claim, not a doc sentence. Every exporter or resource named in an Observability section (tech-design `§Observability`, `infra/README`, the implementation plan) MUST have a matching call-site here, or be explicitly tagged `not wired`. Do not assert a telemetry capability the code does not deliver. The same rule covers instrumentation meters: if a doc lists FusionCache/EF/etc. as instrumented, `ConfigureOpenTelemetry` must register that meter, or the doc drops the claim. Adding `UseAzureMonitor()` requires the `Azure.Monitor.OpenTelemetry.AspNetCore` package.
+
+**One shared telemetry resource.** In cloud there is exactly **one** shared, workspace-based Application Insights resource fanned to every host via `APPLICATIONINSIGHTS_CONNECTION_STRING` - never a per-host ad-hoc component. The resource lives in IaC ([../skills/iac.md](../skills/iac.md) section App Insights); this seam only consumes the injected connection string. App-level logging/metrics/tracing conventions are owned by [../skills/observability.md](../skills/observability.md); the Functions worker's instrumentation caveat by [../skills/function-app.md](../skills/function-app.md) section Telemetry.
 
 `MapDefaultEndpoints` maps two probes with distinct semantics - keep both:
 

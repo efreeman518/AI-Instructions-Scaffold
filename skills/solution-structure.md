@@ -168,7 +168,15 @@ Note: `.scaffold/` is a **tracked** directory - it holds the Phase 1/2/3 artifac
 
 Failure mode is **invisible locally** (files on disk, build green) and surfaces only on a fresh clone or CI runner. The operator-setup post-generation step runs a `git ls-files` check to catch the same class of bug for any future scaffold folder whose name collides with a stock ignore pattern - see [../support/operator-setup.md](../support/operator-setup.md) section Tracked-Source Validation.
 
-**`.editorconfig`** - pinned tab/space + `end_of_line = lf` (belt-and-suspenders with `.gitattributes`).
+**`.editorconfig`** - pinned tab/space + `end_of_line = lf` (belt-and-suspenders with `.gitattributes`). It must also **make an explicit decision on analyzer diagnostics it cannot fully code-gen away** - a formatting-only editorconfig lets package defaults (MSTest, EF, etc.) leak through at `info` severity, producing silent IDE-only debt that never fails the build. For each such diagnostic, pick one policy and state it intentionally. For `MSTEST0049` (flow the `TestContext` token, generated per the [testing.md](testing.md) Cancellation-Token discipline), the default is **enforce** - it matches the app's zero-warnings expectation and can never silently accumulate:
+
+```editorconfig
+# Analyzer severity policy - deliberate, not package-default. Enforce token flow in tests.
+[**/*.cs]
+dotnet_diagnostic.MSTEST0049.severity = warning
+```
+
+Pair `warning` with `TreatWarningsAsErrors` (opt in via `Directory.Build.props` once the codebase is warning-clean). The acknowledge-and-silence alternative (`severity = none` with a comment saying why) is only for a reference app that deliberately does not want token flow. The anti-pattern is leaving a default-`info` analyzer unaddressed. Both the `TreatWarningsAsErrors` policy and the generation-time gate that verifies no residual analyzer debt are owned by [../support/execution-gates.md](../support/execution-gates.md) (sections Compiler-Warning Policy and Analyzer-Cleanliness Gate).
 
 **Shell redirects:** scaffolded shell-agnostic scripts use `> /dev/null`, never `> NUL`. From git-bash, `> NUL` creates a real on-disk file named `NUL` that Win32 then can't open, breaking `git add -A`. Reserve `> nul` (lowercase) for files that only run under `cmd.exe`.
 

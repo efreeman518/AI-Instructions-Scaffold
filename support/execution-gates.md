@@ -409,6 +409,18 @@ Restore-time vulnerability warnings (`NU1901`-`NU1904`) are fixed by version mov
 
 ---
 
+## Analyzer-Cleanliness Gate
+
+`dotnet build` exit 0 does not prove the generated code is analyzer-clean: default-`info` diagnostics (e.g. `MSTEST0049`) never fail the build and surface only when a file is opened in the IDE. Close that loop at generation time - run an analyzer pass at **info** severity with verify-no-changes:
+
+```powershell
+dotnet format analyzers --severity info --verify-no-changes
+```
+
+Nonzero exit means the generated code is not actually clean; it just has not been opened in the IDE yet. Fix the code at the source (flow the `TestContext` token per [../skills/testing.md](../skills/testing.md) Cancellation-Token discipline; set the deliberate severity per [../skills/solution-structure.md](../skills/solution-structure.md) `.editorconfig`) - do not lower the severity to make the gate pass. Run this as part of the Phase 5d quality regression and any payload change that touches generated test code, so residual info/suggestion-level analyzer debt is a deliberate, verified decision rather than invisible default-info debt.
+
+---
+
 ## Vulnerability Audit
 
 Run after `dotnet restore`:

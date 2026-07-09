@@ -230,6 +230,10 @@ public class {Entity}RepositoryIntegrationTests
     private static readonly Guid TenantA = TestConstants.TenantId;
     private static readonly Guid TenantB = Guid.Parse("00000000-0000-0000-0000-000000000099");
 
+    // Async test class -> declare the instance TestContext and flow TestContext.CancellationToken into
+    // every cancellable async call (including helpers). See ../skills/testing.md Cancellation-Token discipline.
+    public TestContext TestContext { get; set; } = null!;
+
     /// <summary>Marks the test Inconclusive when the SQL container failed to start (assembly-init safety).</summary>
     [TestInitialize]
     public void TestSetup()
@@ -242,16 +246,17 @@ public class {Entity}RepositoryIntegrationTests
     [Timeout(120000)]
     public async Task Migrations_ApplyCleanly_ToSqlContainer()
     {
+        var ct = TestContext.CancellationToken;
         await using var db = SqlContainerFixture.CreateTrxnContext();
-        await db.Database.MigrateAsync();
+        await db.Database.MigrateAsync(ct);
 
-        Assert.IsTrue(await db.Database.CanConnectAsync());
+        Assert.IsTrue(await db.Database.CanConnectAsync(ct));
 
         var conn = db.Database.GetDbConnection();
-        await conn.OpenAsync();
+        await conn.OpenAsync(ct);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = '{app}'";
-        var tableCount = (int)(await cmd.ExecuteScalarAsync())!;
+        var tableCount = (int)(await cmd.ExecuteScalarAsync(ct))!;
         Assert.IsGreaterThanOrEqualTo(tableCount, {ExpectedTableCount},
             $"Expected >= {ExpectedTableCount} tables in {app} schema, found {tableCount}");
     }
@@ -260,33 +265,37 @@ public class {Entity}RepositoryIntegrationTests
     [Timeout(120000)]
     public async Task {Entity}_CrudOperations_WorkAgainstRealSql()
     {
+        var ct = TestContext.CancellationToken;
         await using var db = SqlContainerFixture.CreateTrxnContext();
-        await db.Database.MigrateAsync();
+        await db.Database.MigrateAsync(ct);
 
         // Create
         var entity = new {Entity}Builder().WithName("Integration {Entity}").Build();
         db.{Entities}.Add(entity);
-        await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins);
+        await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: ct);
         var id = entity.Id;
         Assert.AreNotEqual(Guid.Empty, id.Value);  // unwrap typed ID for Guid comparison
 
-        // Read
-        var fetched = await db.{Entities}.FindAsync(id);
+        // Read - FindAsync takes the key array-wrapped, THEN the token (the named-arg form is a compile break).
+        var fetched = await db.{Entities}.FindAsync([id], ct);
         Assert.IsNotNull(fetched);
         Assert.AreEqual("Integration {Entity}", fetched.Name);
 
         // Update via domain method
         fetched.Update(name: "Updated {Entity}");
-        await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins);
-        var updated = await db.{Entities}.FindAsync(id);
+        await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: ct);
+        var updated = await db.{Entities}.FindAsync([id], ct);
         Assert.AreEqual("Updated {Entity}", updated!.Name);
 
         // Delete
         db.{Entities}.Remove(updated);
-        await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins);
-        var deleted = await db.{Entities}.FindAsync(id);
+        await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: ct);
+        var deleted = await db.{Entities}.FindAsync([id], ct);
         Assert.IsNull(deleted);
     }
+
+    // The remaining methods in this class follow the same discipline: `var ct = TestContext.CancellationToken;`
+    // then flow `ct` into every MigrateAsync / SaveChangesAsync / FindAsync / EF async call and any private helper.
 
     [TestMethod]
     [Timeout(120000)]
@@ -470,6 +479,8 @@ namespace Test.Integration;
 [DoNotParallelize]
 public class AuditLogRepositoryAzuriteTests
 {
+    public TestContext TestContext { get; set; } = null!;
+
     /// <summary>Marks the test Inconclusive when the Azurite container failed to start (assembly-init safety).</summary>
     [TestInitialize]
     public void TestSetup()
@@ -482,7 +493,7 @@ public class AuditLogRepositoryAzuriteTests
     [Timeout(300000)]
     public async Task Given_AuditEntry_When_AppendAsyncToAzurite_Then_TableEntityPersistedWithExpectedKeys()
     {
-        var ct = CancellationToken.None;
+        var ct = TestContext.CancellationToken;  // flow the test token, not CancellationToken.None
 
         var connectionString = AzuriteContainerFixture.ConnectionString;
         Assert.IsFalse(string.IsNullOrWhiteSpace(connectionString));
@@ -587,13 +598,17 @@ public class DomainEventPipelineTests
 {
     private static readonly Guid TenantId = Guid.Parse("11111111-1111-1111-1111-111111111111");
 
+    // Instance TestContext (per-test cancellation) is separate from the static ClassInitialize parameter
+    // below - both coexist. See ../skills/testing.md Cancellation-Token discipline.
+    public TestContext TestContext { get; set; } = null!;
+
     [ClassInitialize]
-    public static async Task ClassInit(TestContext _)
+    public static async Task ClassInit(TestContext context)
     {
         if (SqlContainerFixture.StartupError != null)
             return; // tests mark themselves Inconclusive in TestSetup
         await using var db = SqlContainerFixture.CreateTrxnContext();
-        await db.Database.MigrateAsync();
+        await db.Database.MigrateAsync(context.CancellationToken);
     }
 
     /// <summary>Marks the test Inconclusive when the SQL container failed to start (assembly-init safety).</summary>

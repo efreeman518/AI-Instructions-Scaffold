@@ -49,6 +49,10 @@ CANARIES = {
     'AiProviderInfo("stub")': "skills/ai-integration.md",  # opt-in dev-stub content tier; pointers say "AiProviderInfo" / provider "stub" only
     "machine capacity, not a contract failure": "skills/ai-integration.md",  # capacity-timeout is Inconclusive, not Fail; keeps the old "timeout -> Fail" wording from drifting back
     "public static IHostApplicationBuilder AddServiceDefaults(": "patterns/infrastructure-wiring.md",  # ServiceDefaults method body; hosts call AddServiceDefaults() but only the owner defines it
+    "builder.Services.AddOpenTelemetry().UseAzureMonitor()": "patterns/infrastructure-wiring.md",  # Azure Monitor export gate (ConfigureOpenTelemetry body); observability/iac/function-app point here, never restate the call-site
+    "No direct App Insights integration in the worker": "skills/function-app.md",  # Aspire+Functions telemetry hazard (startup error + duplicate-request suppression); infrastructure-wiring points here
+    "binds to the wrong overload and is a **compile break**": "skills/testing.md",  # EF FindAsync array-wrap+token rule inside the test cancellation-token discipline; templates point here
+    "--severity info --verify-no-changes": "support/execution-gates.md",  # analyzer-cleanliness gate command; solution-structure/testing point here, never restate the command
     "AddFusionCache(settings.Name)": "skills/caching.md",  # FusionCache registration loop; infrastructure-wiring points here
     "Add{App}MigrationDbContexts": "support/data-persistence-advanced.md",  # migrator-local context registration; migration ownership owner - other files point, never restate the runner wiring
     "replica completion count": "support/data-persistence-advanced.md",  # Container Apps Job knobs live once with the migration owner; cicd.md carries the pipeline step and points here

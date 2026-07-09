@@ -2,6 +2,8 @@
 
 Test scaffolding lives in split files by phase and harness. Load only the matching template(s) for the current task.
 
+**Applies to every template below:** generated test code must be analyzer-clean at generation time. Any class with async test methods declares an instance `TestContext` property and flows `TestContext.CancellationToken` into every cancellable async call (HttpClient, service/repository, EF Core, and private helpers) - EF `FindAsync` takes the key array-wrapped then the token. The canonical rule (and the `MSTEST0049` severity + `dotnet format analyzers --verify-no-changes` gate that enforce it) is [../skills/testing.md](../skills/testing.md) section Cancellation-Token & TestContext Discipline.
+
 | Phase | Template | Generates |
 |---|---|---|
 | 5a | [test-templates-domain.md](test-templates-domain.md) | `Test/Test.Unit/Domain/**` |

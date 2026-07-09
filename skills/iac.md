@@ -17,7 +17,7 @@ Use this skill to generate `infra/` Bicep templates that mirror the runtime topo
 | `AddSqlServer().AddDatabase()` | Azure SQL server + DB | `Microsoft.Sql/servers`, `Microsoft.Sql/servers/databases` |
 | `AddRedis()` | Azure Cache for Redis | `Microsoft.Cache/redis` |
 | `AddProject<Api/Gateway/Scheduler/...>()` | Container App or App Service | `Microsoft.App/containerApps` / `Microsoft.Web/sites` |
-| ServiceDefaults telemetry | App Insights + Log Analytics | `Microsoft.Insights/components`, `Microsoft.OperationalInsights/workspaces` |
+| ServiceDefaults telemetry | **One shared** workspace-based App Insights + Log Analytics | `Microsoft.Insights/components`, `Microsoft.OperationalInsights/workspaces` |
 
 Rule: every `WithReference(resource, connectionName: "X")` in Aspire requires `ConnectionStrings__X` in app env settings.
 
@@ -160,6 +160,23 @@ resource db 'Microsoft.Sql/servers/databases@2023-08-01-preview' = {
 }
 ```
 
+### App Insights (shared, workspace-based)
+
+Provision **exactly one** shared, workspace-based Application Insights component (`modules/app-insights.bicep`) for the whole app - never a per-host component buried inside another module (e.g. a private `${prefix}-func-ai` inside `functions.bicep`). Every host that has ServiceDefaults gets the **same** connection string fanned in as `APPLICATIONINSIGHTS_CONNECTION_STRING`; the host's Azure Monitor exporter (owned by [../patterns/infrastructure-wiring.md](../patterns/infrastructure-wiring.md) section Telemetry Export) is gated on that setting, so no host exports twice and none is silently left out.
+
+```bicep
+// modules/app-insights.bicep - single resource, backed by the Log Analytics workspace.
+resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
+  name: '${resourcePrefix}-ai'
+  location: location
+  kind: 'web'
+  properties: { Application_Type: 'web', WorkspaceResourceId: logAnalyticsWorkspaceId }
+}
+output connectionString string = appInsights.properties.ConnectionString
+```
+
+Fan `appInsights.outputs.connectionString` into every host module (API, Gateway, Scheduler, Blazor, Functions) as the `APPLICATIONINSIGHTS_CONNECTION_STRING` env entry - one resource, N consumers.
+
 ---
 
 ## Required Consistency Rules
@@ -168,7 +185,7 @@ resource db 'Microsoft.Sql/servers/databases@2023-08-01-preview' = {
 2. Connection names match exactly (`WithReference` <-> `ConnectionStrings__*`).
 3. Gateway is the only external ingress by default.
 4. Scheduler stays single replica (`minReplicas = maxReplicas = 1`) when using TickerQ.
-5. ServiceDefaults telemetry maps to App Insights + Log Analytics.
+5. ServiceDefaults telemetry maps to **one shared** workspace-based App Insights (see section App Insights) fanned to every host - no per-host App Insights components.
 6. Keep Aspire resource names, IaC names, and appsettings keys aligned.
 
 ### TickerQ schema deployment

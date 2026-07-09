@@ -4,7 +4,7 @@
 
 Structured logging, distributed tracing, custom metrics, and health checks for all hosts. Complements [aspire.md](aspire.md) (which wires OpenTelemetry/ServiceDefaults) - this skill covers application-level conventions.
 
-Not a monitoring dashboard skill - dashboard/alerting configuration is Azure-side (App Insights, Grafana, Azure Monitor).
+Not a monitoring dashboard skill - dashboard/alerting configuration is Azure-side (App Insights, Grafana, Azure Monitor). The telemetry **export** to Azure Monitor is wired in ServiceDefaults (gated on `APPLICATIONINSIGHTS_CONNECTION_STRING`) - only the dashboards/alerts on top of it are Azure-side. Any exporter, resource, or instrumented meter this skill or a tech-design Observability section names must have a real call-site or be tagged `not wired`; the discipline gate and `ConfigureOpenTelemetry` body are owned by [../patterns/infrastructure-wiring.md](../patterns/infrastructure-wiring.md) section Telemetry Export.
 
 ---
 
