@@ -12,7 +12,7 @@ Use this pattern for all host projects (API, Gateway, Scheduler, Functions).
 
 ```dockerfile
 # ===== Stage 1: Restore (cached layer) =====
-FROM mcr.microsoft.com/dotnet/sdk:9.0 AS restore
+FROM mcr.microsoft.com/dotnet/sdk:latest AS restore
 WORKDIR /src
 
 # Copy only project files + central package management for restore cache
@@ -43,7 +43,11 @@ RUN dotnet publish src/Host/{Host}.Api/{Host}.Api.csproj \
     --no-restore
 
 # ===== Stage 3: Runtime (chiseled, non-root) =====
-FROM mcr.microsoft.com/dotnet/aspnet:9.0-noble-chiseled-extra AS runtime
+# Default to the SMALLEST chiseled variant (see "Chiseled variant selection" below).
+# `-chiseled` has no ICU/tzdata, so pair it with <InvariantGlobalization>true</InvariantGlobalization>
+# in the host .csproj. Step up to `-noble-chiseled-extra` only when the app needs globalization
+# (culture-aware formatting/sorting, non-UTC time zones) or libstdc++.
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled AS runtime
 WORKDIR /app
 COPY --from=publish /app/publish .
 
@@ -66,7 +70,7 @@ Same pattern but replace `{Host}.Api` with `{Host}.Scheduler` and include Ticker
 ## Variant: Function App
 
 ```dockerfile
-FROM mcr.microsoft.com/azure-functions/dotnet-isolated:4-dotnet-isolated9.0 AS runtime
+FROM mcr.microsoft.com/azure-functions/dotnet-isolated:4-dotnet-isolated10.0 AS runtime
 WORKDIR /home/site/wwwroot
 COPY --from=publish /app/publish .
 # Isolated worker listens on port 80 (image sets no ASPNETCORE_URLS).
@@ -85,9 +89,20 @@ docker build -f src/Host/{Host}.Api/Dockerfile .
 
 The build context must match the Dockerfile's `COPY` roots. If you rewrite `COPY` lines to be `src/`-relative, build from `src/` instead. Keep the CI build context ([skills/cicd.md](../skills/cicd.md)) aligned with whichever rooting this Dockerfile uses - do not assume `src/`.
 
+## Chiseled variant selection
+
+Always ship the **smallest chiseled variant the app actually needs** - smaller image, smaller attack surface, faster pulls. Start at the most-chiseled rung and step up only when a runtime need forces it:
+
+1. **`-chiseled`** (default target) - no ICU, no tzdata, no `libstdc++`. Requires `InvariantGlobalization=true` (culture-invariant formatting/sorting, UTC-only). Use for APIs/services that don't do culture-aware formatting or time-zone conversion.
+2. **`-chiseled-extra`** - adds ICU (globalization), tzdata (`TimeZoneInfo` beyond UTC), and `libstdc++`. Use only when the app needs culture-aware formatting/sorting, non-UTC time zones, or native components that link `libstdc++`.
+3. **`-chiseled-aot`** - for Native AOT / trimmed self-contained publishes; no ICU/tzdata/`libstdc++`.
+
+Prefer `-chiseled` and set `<InvariantGlobalization>true</InvariantGlobalization>`; escalate to `-chiseled-extra` only after confirming a globalization/tzdata/`libstdc++` dependency. Never fall back to the full (non-chiseled) `aspnet` image for production.
+
 ## Rules
 
-- **Always use chiseled base images** (`-noble-chiseled-extra`) for production - smaller attack surface, no shell.
+- **Always use chiseled base images** for production - smaller attack surface, no shell. Default to the most-chiseled variant (`-noble-chiseled`) and escalate to `-noble-chiseled-extra` only when needed - see *Chiseled variant selection* above.
+- **Base image versions track the latest .NET** - build on `sdk:latest`; pin the chiseled runtime to the current .NET major (`10.0` today, `-noble-chiseled` has no floating tag). These advance with each .NET release. Keep the runtime major aligned with the project's `TargetFramework` - `sdk:latest` can roll ahead of the pinned runtime major, so bump the runtime tag in the same change that raises the TFM.
 - **Restore layer caching:** Copy `.csproj` files first, then `dotnet restore`, then copy source. This ensures source changes don't invalidate the restore cache.
 - **Port:** Default to `8080` for ASP.NET hosts (API/Gateway/Scheduler) on Container Apps. **Exception: Azure Functions isolated worker listens on 80** - see the Function App variant above.
 - **Non-root:** Chiseled images run as non-root by default.
@@ -100,7 +115,7 @@ The build context must match the Dockerfile's `COPY` roots. If you rewrite `COPY
 - [ ] Restore stage copies all `.csproj` files needed by the target host
 - [ ] `Directory.Packages.props`, `nuget.config`, and `global.json` are copied before restore
 - [ ] Publish uses `--no-restore` (relies on cached restore layer)
-- [ ] Runtime uses chiseled non-root base image
+- [ ] Runtime uses the smallest chiseled non-root variant the app needs (`-chiseled` unless globalization/tzdata/`libstdc++` forces `-chiseled-extra`)
 - [ ] `EXPOSE` port matches Container Apps / Aspire configuration
 - [ ] `ENTRYPOINT` matches the published assembly name
 - [ ] No `HEALTHCHECK` in image - health probes configured at orchestrator level (Container Apps / K8s)
