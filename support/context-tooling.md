@@ -225,6 +225,11 @@ at the root.
   glob above is scoped to the output folder and does not cover it). If it was committed,
   untrack it with `git rm --cached .graphify_detect.json` (keeps the file on disk).
 
+  graphify writes only fixed-name files into `graphify-out/` and has no clean/prune command;
+  it never creates dated subfolders. Any `graphify-out/<YYYY-MM-DD>/` folders (e.g.
+  `2026-06-11/`) are leftover manual snapshots, not graph artifacts - they accumulate
+  unbounded, so delete them as part of the end-of-session graph refresh.
+
 ## Keeping the graph fresh (auto-update on commit)
 
 graphify ships a harness-agnostic git hook that rebuilds the graph after each commit.
