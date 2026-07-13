@@ -120,7 +120,7 @@ internal static class {Entity}StructureValidator
 
 - **Static class** - no DI registration. Call directly: `{Entity}StructureValidator.ValidateCreate(dto)`.
 - **Delegate common checks** - Per-entity validators call `StructureValidators.ValidateCreate/ValidateUpdate` first for null, TenantId, and Id checks. Only add entity-specific rules after.
-- Keep validations purely structural (field presence, length, range). Domain invariants belong in [domain-rules-template](domain-rules-template.md).
+- Keep validations purely structural (field presence, length, range). Domain invariants belong in [domain-rules-template](domain-rules-template.md). Entry-point validators can be bypassed; factories and domain methods are shared across API, CQRS, jobs, messages, and tests, so invariants need one domain-owned enforcement boundary.
 - **Use `DomainConstants`** for string length limits - single source of truth shared with EF configuration and domain `Valid()`. Do not use magic numbers or contextual tokens like `{NameMaxLength}`.
 - Provide separate `ValidateCreate` and `ValidateUpdate` methods - update requires `Id` (via generic `ValidateUpdate<T>`), create may have different required fields.
 - Return all errors at once (don't short-circuit on first failure) so the caller gets a complete validation report.

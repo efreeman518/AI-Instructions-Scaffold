@@ -26,14 +26,26 @@ private readonly Mock<I{Entity}RepositoryTrxn> _repoTrxnMock = new();
 private readonly Mock<I{Entity}RepositoryQuery> _repoQueryMock = new();
 private readonly Mock<IRequestContext<string, Guid?>> _requestContextMock = new();
 private readonly Mock<ITenantBoundaryValidator> _tenantBoundaryMock = new();
+private readonly Mock<IInternalMessageBus> _messageBusMock = new();
 private readonly Mock<IEntityCacheProvider> _entityCacheMock = new();
 private readonly Mock<IFusionCacheProvider> _fusionCacheProviderMock = new();
+private readonly Mock<IFusionCache> _fusionCacheMock = new();
 
 [TestInitialize]
 public void Setup()
 {
     _requestContextMock.Setup(x => x.TenantId).Returns(TestConstants.TenantId);
     _requestContextMock.Setup(x => x.Roles).Returns(new List<string>());
+    _tenantBoundaryMock.Setup(t => t.EnsureTenantBoundary(
+            It.IsAny<ILogger>(), It.IsAny<Guid?>(), It.IsAny<IReadOnlyCollection<string>>(),
+            It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid?>()))
+        .Returns(Result.Success());
+    _tenantBoundaryMock.Setup(t => t.PreventTenantChange(
+            It.IsAny<ILogger>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(),
+            It.IsAny<string>(), It.IsAny<Guid>()))
+        .Returns(Result.Success());
+    _fusionCacheProviderMock.Setup(x => x.GetCache(AppConstants.DEFAULT_CACHE))
+        .Returns(_fusionCacheMock.Object);
 }
 
 private {Entity}Service CreateService(
@@ -45,6 +57,7 @@ private {Entity}Service CreateService(
         _requestContextMock.Object,
         trxn ?? _repoTrxnMock.Object,
         query ?? _repoQueryMock.Object,
+        _messageBusMock.Object,
         _entityCacheMock.Object,
         _fusionCacheProviderMock.Object,
         _tenantBoundaryMock.Object);
@@ -66,25 +79,20 @@ public class {Entity}ServiceTests
     public async Task Given_ValidDto_When_CreateAsync_Then_ReturnsSuccessResult()
     {
         // Arrange
+        var forgedTenantId = Guid.NewGuid();
         var dto = new {Entity}Dto
         {
             Name = "Test {Entity}",
-            TenantId = _testTenantId,
-            Description = "A test entity"
+            TenantId = forgedTenantId
         };
         var request = new DefaultRequest<{Entity}Dto> { Item = dto };
 
-        var createdEntity = {Entity}.Create(dto.TenantId, dto.Name).Value!;
         _repoTrxnMock.Setup(r => r.Create(ref It.Ref<{Entity}>.IsAny));
         _repoTrxnMock.Setup(r => r.UpdateFromDto(It.IsAny<{Entity}>(), It.IsAny<{Entity}Dto>(), It.IsAny<RelatedDeleteBehavior>()))
-            .Returns(DomainResult<{Entity}>.Success(createdEntity));
+            .Returns(({Entity} entity, {Entity}Dto _, RelatedDeleteBehavior _) =>
+                DomainResult<{Entity}>.Success(entity));
         _repoTrxnMock.Setup(r => r.SaveChangesAsync(It.IsAny<OptimisticConcurrencyWinner>(), It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
-        _tenantBoundaryMock.Setup(t => t.EnsureTenantBoundary(
-                It.IsAny<ILogger>(), It.IsAny<Guid?>(), It.IsAny<IReadOnlyCollection<string>>(),
-                It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid?>()))
-            .Returns(Result.Success());
-
+            .ReturnsAsync(0);
         var service = CreateService();
 
         // Act
@@ -94,22 +102,99 @@ public class {Entity}ServiceTests
         Assert.IsTrue(result.IsSuccess);
         Assert.IsNotNull(result.Value?.Item);
         Assert.AreEqual(dto.Name, result.Value.Item.Name);
+        Assert.AreEqual(TestConstants.TenantId, dto.TenantId);
+        Assert.AreEqual(TestConstants.TenantId, result.Value.Item.TenantId);
+        Assert.AreNotEqual(forgedTenantId, result.Value.Item.TenantId);
     }
 
     [TestMethod]
-    public async Task Given_NonExistentEntity_When_UpdateAsync_Then_ReturnsNone()
+    public async Task Given_EmptyPayloadTenant_When_CreateAsync_Then_StampsBeforeValidation()
     {
         // Arrange
-        _repoTrxnMock.Setup(r => r.Get{Entity}Async(It.IsAny<Guid>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(({Entity}?)null);
-        var service = CreateService();
-        var request = new DefaultRequest<{Entity}Dto> { Item = new {Entity}Dto { Id = Guid.NewGuid(), Name = "Test" } };
+        var dto = new {Entity}Dto { Name = "Test {Entity}", TenantId = Guid.Empty };
+        _repoTrxnMock.Setup(r => r.Create(ref It.Ref<{Entity}>.IsAny));
+        _repoTrxnMock.Setup(r => r.UpdateFromDto(It.IsAny<{Entity}>(), dto, It.IsAny<RelatedDeleteBehavior>()))
+            .Returns(({Entity} entity, {Entity}Dto _, RelatedDeleteBehavior _) =>
+                DomainResult<{Entity}>.Success(entity));
+        _repoTrxnMock.Setup(r => r.SaveChangesAsync(It.IsAny<OptimisticConcurrencyWinner>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0);
 
         // Act
-        var result = await service.UpdateAsync(request);
+        var result = await CreateService().CreateAsync(new() { Item = dto });
 
         // Assert
-        Assert.IsTrue(result.IsNone);
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(TestConstants.TenantId, dto.TenantId);
+    }
+
+    [TestMethod]
+    public async Task Given_EmptyPayloadTenantAndMissingEntity_When_UpdateAsync_Then_StampsBeforeLookup()
+    {
+        // Arrange
+        var dto = new {Entity}Dto { Id = Guid.NewGuid(), Name = "Test", TenantId = Guid.Empty };
+        _repoTrxnMock.Setup(r => r.Get{Entity}Async(dto.Id, true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(({Entity}?)null);
+        var service = CreateService();
+
+        // Act
+        var result = await service.UpdateAsync(new() { Item = dto });
+
+        // Assert
+        Assert.IsTrue(result.IsFailure);
+        Assert.AreEqual(TestConstants.TenantId, dto.TenantId);
+        _repoTrxnMock.Verify(r => r.Get{Entity}Async(dto.Id, true, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [DataTestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task Given_UntrustedTenant_When_UpdateAsync_Then_PreservesContextTenant(bool useEmptyTenant)
+    {
+        // Arrange
+        var entityId = Guid.NewGuid();
+        var payloadTenantId = useEmptyTenant ? Guid.Empty : Guid.NewGuid();
+        var entity = {Entity}.Create(TestConstants.TenantId, "Before").Value!;
+        var dto = new {Entity}Dto
+        {
+            Id = entityId,
+            Name = "After",
+            TenantId = payloadTenantId
+        };
+
+        _repoTrxnMock.Setup(r => r.Get{Entity}Async(entityId, true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(entity);
+        _repoTrxnMock.Setup(r => r.UpdateFromDto(entity, dto, RelatedDeleteBehavior.RelationshipAndEntity))
+            .Returns(DomainResult<{Entity}>.Success(entity));
+        _repoTrxnMock.Setup(r => r.SaveChangesAsync(It.IsAny<OptimisticConcurrencyWinner>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0);
+        // Act
+        var result = await CreateService().UpdateAsync(new() { Item = dto });
+
+        // Assert
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(TestConstants.TenantId, dto.TenantId);
+        Assert.AreEqual(TestConstants.TenantId, result.Value!.Item.TenantId);
+        Assert.AreNotEqual(payloadTenantId, result.Value.Item.TenantId);
+    }
+
+    [TestMethod]
+    public async Task Given_MissingContextTenant_When_CreateAsync_Then_RejectsPayloadFallback()
+    {
+        // Arrange
+        _requestContextMock.Setup(x => x.TenantId).Returns((Guid?)null);
+        var dto = new {Entity}Dto { Name = "Forged", TenantId = Guid.NewGuid() };
+
+        // Act
+        var result = await CreateService().CreateAsync(new() { Item = dto });
+
+        // Assert
+        Assert.IsTrue(result.IsFailure);
+        Assert.AreEqual(Guid.Empty, dto.TenantId);
+        _repoTrxnMock.Verify(r => r.Create(ref It.Ref<{Entity}>.IsAny), Times.Never);
+        _repoTrxnMock.Verify(r => r.UpdateFromDto(
+            It.IsAny<{Entity}>(), It.IsAny<{Entity}Dto>(), It.IsAny<RelatedDeleteBehavior>()), Times.Never);
+        _repoTrxnMock.Verify(r => r.SaveChangesAsync(
+            It.IsAny<OptimisticConcurrencyWinner>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [TestMethod]
@@ -117,15 +202,11 @@ public class {Entity}ServiceTests
     {
         // Arrange
         var entityId = Guid.NewGuid();
-        var entity = {Entity}.Create(_testTenantId, "ToDelete").Value!;
+        var entity = {Entity}.Create(TestConstants.TenantId, "ToDelete").Value!;
         _repoTrxnMock.Setup(r => r.Get{Entity}Async(entityId, false, It.IsAny<CancellationToken>()))
             .ReturnsAsync(entity);
         _repoTrxnMock.Setup(r => r.SaveChangesAsync(It.IsAny<OptimisticConcurrencyWinner>(), It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
-        _tenantBoundaryMock.Setup(t => t.EnsureTenantBoundary(
-                It.IsAny<ILogger>(), It.IsAny<Guid?>(), It.IsAny<IReadOnlyCollection<string>>(),
-                It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid?>()))
-            .Returns(Result.Success());
+            .ReturnsAsync(0);
         var service = CreateService();
 
         // Act
@@ -141,8 +222,8 @@ public class {Entity}ServiceTests
     {
         // Arrange
         var entityId = Guid.NewGuid();
-        var entity = {Entity}.Create(_testTenantId, "GetTest").Value!;
-        _repoQueryMock.Setup(r => r.Get{Entity}Async(entityId, It.IsAny<CancellationToken>()))
+        var entity = {Entity}.Create(TestConstants.TenantId, "GetTest").Value!;
+        _repoTrxnMock.Setup(r => r.Get{Entity}Async(entityId, true, It.IsAny<CancellationToken>()))
             .ReturnsAsync(entity);
         var service = CreateService();
 
@@ -156,6 +237,13 @@ public class {Entity}ServiceTests
     }
 }
 ```
+
+Required multi-tenant ownership cases:
+
+- Create with a forged DTO `TenantId` uses `IRequestContext.TenantId` in the DTO passed to validation, mapper, and repository.
+- Update with a forged DTO `TenantId` overwrites it before validation and preserves the loaded entity's server-authoritative tenant.
+- With a valid request-context tenant, create and update DTOs carrying `Guid.Empty` pass structural tenant validation after stamping; this proves stamping runs first.
+- Missing `IRequestContext.TenantId` plus a non-empty DTO `TenantId` fails and never calls `Create`, `UpdateFromDto`, or `SaveChangesAsync`; payload fallback is forbidden.
 
 ---
 
@@ -230,14 +318,18 @@ public class {Entity}MapperTests
     public void Given_ValidDto_When_MappedToEntity_Then_ReturnsValidDomainResult()
     {
         // Arrange
-        var dto = new {Entity}Dto { Name = "From DTO", TenantId = Guid.NewGuid() };
+        var payloadTenantId = Guid.NewGuid();
+        var authoritativeTenantId = Guid.NewGuid();
+        var dto = new {Entity}Dto { Name = "From DTO", TenantId = payloadTenantId };
 
         // Act
-        var result = dto.ToEntity(dto.TenantId);
+        var result = dto.ToEntity(authoritativeTenantId);
 
         // Assert
         Assert.IsTrue(result.IsSuccess);
         Assert.AreEqual(dto.Name, result.Value!.Name);
+        Assert.AreEqual(authoritativeTenantId, result.Value!.TenantId);
+        Assert.AreNotEqual(payloadTenantId, result.Value!.TenantId);
     }
 }
 ```

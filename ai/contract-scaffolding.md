@@ -361,7 +361,7 @@ Developer reviews the scaffolded shape against the verification checklist below.
 - [ ] No local reimplementation of `<packagePrefix>.*` shared base types into application/domain/host layers (they live in feed packages or `src/Packages/<packagePrefix>.*` only)
 - [ ] `dotnet restore` exits 0. For `feed`/`hybrid`: `NUGET_AUTH_TOKEN` is set and all feed-supplied `<packagePrefix>.*` packages resolve. For `local`/`hybrid`: every layer in `localPackageLayers` exists as a project under `src/Packages/<packagePrefix>.<Layer>` and is referenced via `<ProjectReference>`
 - [ ] `dotnet test --filter "TestCategory=Unit|TestCategory=Endpoint"` exits 0 (Phase 4 shells must pass - no red, no aborted assemblies)
-- [ ] Aspire AppHost starts cleanly: `dotnet run --project Host/Aspire/AppHost` reaches `Application started` for every registered resource with no exceptions in the dashboard, and `/healthz` returns 200 on every host project. Stub-mode external deps (`emulator`, `lazy-optional`, `no-op stub`, `deployment-only`) are acceptable; live cloud auth is not required.
+- [ ] Aspire AppHost starts cleanly: `dotnet run --project Host/Aspire/AppHost` reaches `Application started` for every registered resource with no exceptions in the dashboard, and both `/healthz` and `/readyz` return 200 on every API/server host that exposes probes. UI resources without probes pass when their root URL renders without exception. Stub-mode external deps (`emulator`, `lazy-optional`, `no-op stub`, `deployment-only`) are acceptable; live cloud auth is not required.
 - [ ] Developer reviews the scaffolded shape against the items above
 - [ ] Token placeholders follow [placeholder-tokens.md](placeholder-tokens.md)
 

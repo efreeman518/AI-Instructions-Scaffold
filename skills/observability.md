@@ -128,9 +128,9 @@ s_cacheHit.Add(1, new KeyValuePair<string, object?>("key", cacheKey));
 **Required:** SQL connectivity (all hosts), Redis connectivity (if caching enabled).
 **Optional:** Downstream API (Gateway -> API), Blob storage, Service Bus, Cosmos DB.
 
-Implementation: Use `IHealthCheck` per dependency. Register with `services.AddHealthChecks().AddCheck<T>(name, tags: ["ready"])`. Map `/healthz` (liveness, all checks) and `/readyz` (readiness, tag-filtered). See [health-check-template.md](../templates/health-check-template.md) for the implementation pattern.
+Implementation: Use `IHealthCheck` per dependency. Register with `services.AddHealthChecks().AddCheck<T>(name, tags: ["ready"])`. Map `/healthz` to `"live"` checks only and `/readyz` to `"ready"` checks. See [health-check-template.md](../templates/health-check-template.md) for the implementation pattern.
 
-Aspire wiring: ServiceDefaults calls `AddDefaultHealthChecks()` for basic liveness. Add domain-specific readiness checks in host registration.
+Aspire wiring: ServiceDefaults calls `AddDefaultHealthChecks()` to register the `"self"` liveness check. Add domain-specific readiness checks in host registration. Dependency outages make readiness fail without triggering liveness restart loops.
 
 ---
 
@@ -144,4 +144,5 @@ Aspire wiring: ServiceDefaults calls `AddDefaultHealthChecks()` for basic livene
 - [ ] Custom metrics use `System.Diagnostics.Metrics` with `{Project}.{Layer}` naming
 - [ ] Health checks registered for SQL and Redis (if enabled)
 - [ ] `/healthz` (liveness) and `/readyz` (readiness) endpoints mapped
+- [ ] Dependency failure makes `/readyz` unhealthy while `/healthz` stays healthy
 - [ ] ServiceDefaults OpenTelemetry wiring not duplicated

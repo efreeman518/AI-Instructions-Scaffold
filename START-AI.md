@@ -77,7 +77,7 @@ Prefer CLIs over MCP over online resources. Use Microsoft Docs or Context7 when 
 
 ## Ground Rules
 
-The 1-page index of binding rules (`GR-01`...`GR-17`) lives at [`GROUND-RULES.md`](GROUND-RULES.md). Each phase gate and skill cites the `GR-NN` it enforces. Detail enforcement still lives in `ai/SKILL.md`, `support/execution-gates.md`, and the individual skill files - the index is the cite-by-id summary, not a new layer of authority.
+The 1-page index of binding rules with stable `GR-NN` identifiers lives at [`GROUND-RULES.md`](GROUND-RULES.md). Each phase gate and skill cites the `GR-NN` it enforces. Detail enforcement still lives in `ai/SKILL.md`, `support/execution-gates.md`, and the individual skill files - the index is the cite-by-id summary, not a new layer of authority.
 
 ## Conflict Resolution Order
 

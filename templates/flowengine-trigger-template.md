@@ -4,7 +4,7 @@ Generated when `includeFlowEngine: true`. Pick one or more triggers based on `.s
 
 ## App-Level Facade - `IWorkflowTrigger`
 
-`IFlowEngine` is the engine's full API (start, signal, resume, terminate). Wrap it in a thin app-level facade so trigger sites stay testable and small. Generate this in `{Project}.Application.Services`.
+`IFlowEngine` is the engine's full API (start, signal, resume, terminate). Wrap it in a thin app-level facade so trigger sites stay testable and small. Service Bus, inline, and scheduler adapters may launch the same workflow; keeping business logic in workflow nodes gives every source one versioned, tested behavior. Generate this in `{Project}.Application.Services`.
 
 ```csharp
 namespace {Project}.Application.Services;

@@ -16,7 +16,7 @@ Use `{Host}.Scheduler` for cron/time-based orchestration with persisted scheduli
 
 1. Scheduler is a separate host project from API.
 2. Job methods are thin `[TickerFunction]` adapters; business logic lives in handlers.
-3. Deploy one scheduler replica unless Redis coordination is enabled.
+3. Deploy one scheduler replica unless Redis coordination is enabled. **Why:** Without distributed coordination, replicas can independently dispatch the same due schedule, duplicating side effects and racing persisted state. Therefore one replica is the safe baseline.
 4. TickerQ persistence uses the app-owned `{App}TickerQDbContext` with the `[Scheduler]` schema and its own migration history table (`Scheduler.__EFMigrationsHistory_TickerQ`).
 5. TickerQ schema is applied by the `{App}.DatabaseMigrator` host; scheduler startup validates the schema exists and fails fast - it never creates or patches it (see [../support/data-persistence-advanced.md](../support/data-persistence-advanced.md) section Third-Party Operational Store Schemas).
 
@@ -68,7 +68,7 @@ public class SomeService(IBackgroundTaskQueue taskQueue)
 - Use for work that doesn't need persistence or retry - audit logging, cache invalidation, notifications.
 - For work that needs persistence, retry, or scheduling, use TickerQ instead.
 - The queue is in-memory - items are lost if the host crashes before processing.
-- Always create a new DI scope inside the work item if you need scoped services (DbContext, etc.).
+- Always create a new DI scope inside the work item if you need scoped services (DbContext, etc.). **Why:** Queued work can outlive the enqueueing request scope; capturing it can access disposed services or reuse one DbContext unit of work across items. Therefore resolve scoped dependencies inside each work item.
 
 ## Minimal Scheduler Structure
 

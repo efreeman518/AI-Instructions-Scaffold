@@ -7,7 +7,7 @@ Define the canonical clean-architecture layout and dependency direction used by 
 ## Non-Negotiables
 
 1. Use `.slnx` as the solution format (not legacy `.sln`). Place it at **`src/{SolutionName}.slnx`** - inside `src/`, not at the repo root. The repo root holds only cross-cutting files (`.gitignore`, `.editorconfig`, `CLAUDE.md`, `AGENTS.md`, `HANDOFF.md`, `infra/`, `docs/`).
-2. Maintain dependency flow: Domain -> Application -> Infrastructure -> Bootstrapper -> Hosts.
+2. Maintain dependency flow: Domain -> Application -> Infrastructure -> Bootstrapper -> Hosts. **Why:** Reversing the direction couples core policy to adapters, forces adapter dependencies into core tests, and turns provider/host replacement into a cross-layer rewrite. Therefore domain and application projects never reference outward layers.
 3. Domain projects never reference Application or Infrastructure.
 4. Use central package management via `Directory.Packages.props`.
 5. Host projects add host-specific wiring only; shared registrations stay in Bootstrapper.

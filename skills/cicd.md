@@ -18,7 +18,7 @@ Use GitHub Actions for:
 
 ## Non-Negotiables
 
-1. Use OIDC (`id-token: write`) for Azure auth; do not store cloud credentials as static secrets.
+1. Use OIDC (`id-token: write`) for Azure auth; do not store cloud credentials as static secrets. **Why:** OIDC issues short-lived tokens bound to the trusted repository/environment subject; static secrets persist until rotation or revocation and widen the blast radius when leaked. Therefore CI obtains scoped tokens per run.
 2. Promotion path is explicit (`dev -> staging -> prod`) with environment protections.
 3. Deploy artifacts are immutable by commit SHA tag.
 4. Scheduler schema/dependency steps run before scheduler rollout.

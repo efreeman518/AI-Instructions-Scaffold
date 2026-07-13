@@ -70,6 +70,8 @@ public class ChecklistItem
 - Composite keys (`$"{TenantId}:{Region}"`) only when both dimensions are common filters.
 - Avoid random keys that force cross-partition queries for normal reads.
 
+**Why:** The partition key determines physical co-location, point-read routing, and the transactional boundary. A key absent from normal filters forces cross-partition fan-out, increasing RU cost and latency; changing it later requires moving data to a new container. Therefore choose a key present in normal filters and treat changes as data migration.
+
 ### Operational Controls
 
 - Throughput: document expected RU profile (`standard|high|burst`) and autoscale strategy.

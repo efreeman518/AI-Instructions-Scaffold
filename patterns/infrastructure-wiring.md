@@ -39,6 +39,7 @@ public static IHostApplicationBuilder AddServiceDefaults(
 **Rules:**
 - Call once per host, before any other service registration.
 - Do not duplicate OpenTelemetry or health check setup in individual hosts - ServiceDefaults owns it.
+- `AddDefaultHealthChecks()` registers `"self"` tagged `"live"`; host-specific dependencies are tagged `"ready"`.
 - Add domain-specific readiness checks (SQL, Redis) in host registration, not in ServiceDefaults.
 
 ### Telemetry Export (`ConfigureOpenTelemetry`)
@@ -79,11 +80,11 @@ public static IHostApplicationBuilder ConfigureOpenTelemetry(this IHostApplicati
 `MapDefaultEndpoints` maps two probes with distinct semantics - keep both:
 
 ```csharp
-app.MapHealthChecks("/healthz", new HealthCheckOptions { Predicate = _ => true }).AllowAnonymous();        // liveness: all checks
-app.MapHealthChecks("/readyz",  new HealthCheckOptions { Predicate = r => r.Tags.Contains("ready") }).AllowAnonymous(); // readiness: only "ready"-tagged
+app.MapHealthChecks("/healthz", new HealthCheckOptions { Predicate = r => r.Tags.Contains("live") }).AllowAnonymous();
+app.MapHealthChecks("/readyz",  new HealthCheckOptions { Predicate = r => r.Tags.Contains("ready") }).AllowAnonymous();
 ```
 
-`/healthz` (liveness) reports every registered check; `/readyz` (readiness) reports only checks tagged `ready` (e.g. DB reachable, migrations applied). Gate "is this host ready to serve?" on `/readyz`, not `/healthz` - a host can be live before its dependencies are ready. Tests and orchestration gate on `WaitForResourceHealthyAsync` + `/readyz`, never on a resource merely reaching `Running`.
+`/healthz` reports only the self check tagged `live`; `/readyz` reports dependency checks tagged `ready` (e.g. DB reachable, migrations applied). **Why:** dependency failure must remove a host from traffic without turning a healthy process into a liveness failure and restart loop. Tests and orchestration gate on `WaitForResourceHealthyAsync` + `/readyz`, never on a resource merely reaching `Running`. Verify a failed dependency makes `/readyz` unhealthy while `/healthz` stays healthy.
 
 **Non-negotiable:** do NOT add `http.AddHeaderPropagation()` in `AddServiceDefaults` unless a host also registers the `UseHeaderPropagation` middleware AND configures which headers to propagate. The handler alone throws `InvalidOperationException: HeaderPropagationValues.Headers not initialized` the moment an `HttpClient` is used outside an inbound HTTP request scope - a Blazor Server circuit, a background service, or any startup task. Forward cross-cutting context (tenant, correlation) explicitly with a per-client `DelegatingHandler` instead (see [../skills/ui-blazor.md](../skills/ui-blazor.md) section Dev Tenant Header).
 

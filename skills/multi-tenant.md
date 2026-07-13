@@ -12,7 +12,7 @@ Enforce tenant isolation through data, service, and request-context layers with 
 
 1. EF query filters on tenant-scoped entities.
 2. Service-layer tenant boundary validation.
-3. Scoped `IRequestContext` built from authenticated claims (or background fallback context).
+3. Scoped `IRequestContext` built from authenticated claims (or the explicit local/background fallback paths in [api-host-wiring.md](../patterns/api-host-wiring.md)).
 
 ## Non-Negotiables
 
@@ -21,6 +21,7 @@ Enforce tenant isolation through data, service, and request-context layers with 
 3. Services validate tenant boundary before returning/modifying entity data.
 4. Create/update flows derive tenant from request context, not client payload.
 5. Global-admin bypass is explicit and auditable.
+6. DTOs retain `TenantId` for response/round-trip compatibility, but clients never own write-side tenant selection.
 
 ---
 
@@ -38,7 +39,7 @@ public class TodoItem : EntityBase<TodoItemId>, ITenantEntity<TenantId>
 }
 ```
 
-`TenantId` is a typed value struct (`TenantId : IDomainId<TenantId>`) and should be immutable after creation.
+`TenantId` is a typed value struct (`TenantId : IDomainId<TenantId>`) and is immutable after creation. **Why:** Tenant identity is an ownership boundary, not editable business data; reassignment would turn an update into a cross-tenant move that bypasses query-filter and audit assumptions. Therefore ordinary updates cannot change it.
 
 ---
 
@@ -65,10 +66,16 @@ Use `IgnoreQueryFilters()` only for explicitly authorized cross-tenant paths (fo
 
 ## Tenant Input Models
 
-Two valid models for how a request's tenant reaches the service layer; pick one per scaffold and apply it consistently:
+The scaffold baseline is **server-authoritative with a DTO-carried field**:
 
-- **Client-supplied `TenantId` on the DTO** - services stamp `dto.TenantId = RequestTenantId ?? Guid.Empty` after unwrapping the request, and `ITenantBoundaryValidator` (`EnsureTenantBoundary` / `PreventTenantChange`) guards mismatches. The `[Multi-tenant]` steps in the service/test templates assume this model.
-- **Server-derived tenant (DTOs omit `TenantId`)** - the tenant comes only from `IRequestContext`; there is no client tenant to guard, so skip the boundary validator and the TenantId stamp. Isolation is enforced by the row-level query filter (scoped context factory + `IRequestContext`) plus same-tenant domain rules at the service boundary (e.g. child-belongs-to-same-tenant-as-parent).
+- Keep `TenantId` on shared DTOs so read responses, mappers, validators, service/CQRS styles, and existing clients retain one compatible contract.
+- Treat the inbound value as untrusted on create/update. Immediately compute `var authoritativeTenantId = RequestTenantId ?? Guid.Empty`, assign it to `dto.TenantId`, then validate and map with `authoritativeTenantId`.
+- Never use `RequestTenantId ?? dto.TenantId`. Missing trusted tenant context must fail validation/authorization; a caller-provided value cannot establish ownership.
+- Keep `ITenantBoundaryValidator` for loaded-entity access, explicit admin paths, and defense-in-depth reassignment checks.
+
+**Why:** Stamping before validation and mapping makes every downstream check use the same server-owned tenant; validating first either rejects normal empty DTOs or evaluates an attacker-controlled value. Therefore every write path overwrites the DTO first.
+
+Generic service/CQRS create and update paths are tenant-local even for global admins. A cross-tenant admin mutation is a separate, explicitly authorized path: call `EnsureGlobalAdmin`, load the target outside normal query filters, then stamp an update DTO from the loaded entity tenant. A cross-tenant create derives its target from a separately authorized admin contract, never the shared DTO field. Do not route either case through the ordinary request-context stamp.
 
 ---
 
@@ -147,15 +154,18 @@ For searches:
 
 For updates:
 
-- after boundary check, call `PreventTenantChange(...)` to reject tenant reassignment.
+- stamp the request-context tenant before validation,
+- after loading and boundary-checking the entity, call `PreventTenantChange(...)` against the stamped value as a defense-in-depth invariant,
+- never restore or fall back to the original payload tenant,
+- keep generic updates tenant-local; use the explicit admin path above for authorized cross-tenant mutation.
 
 ---
 
 ## API and Route Considerations
 
-- Tenant-scoped APIs may include `tenantId` in route.
+- Tenant-scoped APIs may include `tenantId` in route, but the route value does not establish ownership.
 - Apply route-tenant vs claim-tenant policy (`TenantMatch`) at gateway/API boundary.
-- Keep cross-tenant endpoints clearly separated and admin-guarded.
+- Keep cross-tenant endpoints clearly separated and admin-guarded; role membership alone never turns the generic write endpoint into a cross-tenant mutation path.
 
 ---
 
@@ -178,8 +188,10 @@ Minimum test matrix:
 
 1. same-tenant access succeeds,
 2. cross-tenant access is rejected,
-3. global-admin cross-tenant access succeeds where explicitly allowed,
-4. tenant-change attempts fail.
+3. global-admin cross-tenant access succeeds only on explicitly allowed paths (read-only by default),
+4. forged create/update DTO `TenantId` is overwritten by request-context tenant before validation/mapping,
+5. missing request-context tenant fails even when the DTO supplies a non-empty tenant,
+6. tenant-change attempts fail.
 
 ---
 
@@ -189,7 +201,9 @@ Minimum test matrix:
 - [ ] DbContext applies tenant query filters for tenant entities
 - [ ] request context resolves tenant/roles from claims (with background fallback)
 - [ ] `TenantBoundaryValidator` is used in service operations
-- [ ] create/update flows set tenant from request context, not DTO payload
+- [ ] DTO retains `TenantId`, but create/update flows overwrite it from request context before validation/mapping
+- [ ] no write path uses `RequestTenantId ?? dto.TenantId` or otherwise falls back to payload tenant
 - [ ] global-admin bypass is explicit and limited
-- [ ] tests cover same-tenant, cross-tenant, and admin-bypass scenarios
+- [ ] generic create/update paths remain tenant-local; any cross-tenant admin mutation has a separate authorization contract
+- [ ] tests cover same-tenant, cross-tenant, admin-bypass, forged-payload, and missing-context scenarios
 - [ ] cross-check with [application-layer.md](application-layer.md) and [domain-model.md](domain-model.md)

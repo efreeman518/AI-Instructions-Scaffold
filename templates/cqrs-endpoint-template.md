@@ -6,6 +6,8 @@ Map relative routes only. The API host owns the outer route group and versioning
 
 Import request types from the feature namespace, for example `using {Project}.Application.Cqrs.Features.{EntityPlural};`.
 
+Keep `[FromServices]` on every injected handler parameter; see [api.md](../skills/api.md) section Endpoint Contract for the route-discovery body-inference failure this prevents.
+
 ```csharp
 group.MapPost("/", async (
     HttpContext httpContext,

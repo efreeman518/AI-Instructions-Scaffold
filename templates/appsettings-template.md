@@ -48,6 +48,15 @@ This is a complete reference of all configuration sections used across the solut
     "Audience": "api://{api-client-id}"
   },
 
+  "ForwardedClaims": {
+    "TrustedGatewayClientIds": [
+      "{gateway-service-client-id}"
+    ]
+  },
+
+  "DataProtectionKeysFileUrl": "",
+  "DataProtectionEncryptionKeyUrl": "",
+
   "OpenApiSettings": {
     "Enable": true
   },
@@ -92,8 +101,9 @@ This is a complete reference of all configuration sections used across the solut
     "Routes": {
       "api-route": {
         "ClusterId": "api-cluster",
+        "AuthorizationPolicy": "Default",
         "Match": {
-          "Path": "api/{**catch-all}"
+          "Path": "/api/{**catch-all}"
         },
         "Transforms": [
           { "PathRemovePrefix": "/api" }
@@ -172,6 +182,8 @@ This is a complete reference of all configuration sections used across the solut
 - Redis connection string name (`Redis1`) must match the `RedisConnectionStringName` in `CacheSettings`
 - `CacheSettings` is an array - each entry creates a named FusionCache instance
 - `FailSafeThrottleDurationSeconds` - note the unit is **seconds** (passed to `TimeSpan.FromSeconds()`)
+- `ForwardedClaims:TrustedGatewayClientIds` is the API allowlist for gateway service-token `azp`/`appid` values; omit the section when claim relay is unused, and fail startup if claim relay is registered with an empty list
+- Leave both Data Protection URLs empty in development and isolated test hosts. Deployed configuration must supply both together; see [security.md](../skills/security.md#data-protection). Supply credentials through managed identity, never URL query strings.
 - `ServiceAuth` section in Gateway maps cluster IDs to OAuth2 client credential configs
 - `AiServices:RequireFoundryLocal` stays false in normal appsettings; set true only in `Test.FoundryLocal`
 - For production/Azure: use Key Vault references or App Configuration for secrets

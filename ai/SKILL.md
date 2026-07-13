@@ -38,7 +38,7 @@ This sizing does **not** change phase semantics, gates, or conflict-resolution o
 
 ## Non-Negotiables
 
-> The 1-page constitutional summary lives at [../GROUND-RULES.md](../GROUND-RULES.md) with stable identifiers (`GR-01`...`GR-17`). The detail below is the implementation reference; the `GR-NN` tags after each bullet name the rule it enforces.
+> The 1-page constitutional summary lives at [../GROUND-RULES.md](../GROUND-RULES.md) with stable `GR-NN` identifiers. The detail below is the implementation reference; the `GR-NN` tags after each bullet name the rule it enforces.
 
 - **Authority map (GR-12):** `START-AI.md` owns session boot, phase routing, and load rules. `support/execution-gates.md` owns validation gates and commands. This file (`ai/SKILL.md`) owns Phase 5 load sets, non-negotiables, and concern routing. Individual skills own implementation detail; templates own generated file shape.
 - **Phase-1 artifacts are the binding source of truth (GR-01).** `.scaffold/domain-specification.yaml`, `.scaffold/UBIQUITOUS-LANGUAGE.md`, and `.scaffold/DESIGN-DECISIONS.md` are not snapshots - every session must keep them current. *Fix the artifact first, then the code; when drift exists, the artifact loses to code reality.* Update them **before** generating code that introduces a new term/decision; update them **after** code when drift is discovered. Canonical lifecycle (forward propagation, drift signal, mid-scaffold rollback): [../START-AI.md](../START-AI.md) section Phase-1 Artifact Lifecycle Rule and [../README.md](../README.md) section Phase-1 Artifact Lifecycle.

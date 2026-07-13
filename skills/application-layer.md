@@ -5,26 +5,27 @@
 
 ## Worked Example
 
-This is `TaskItemService.CreateAsync` from TaskFlow (`../AI-Instructions-ReferenceApp/src/Application/TaskFlow.Application.Services/TaskItemService.cs`) - multi-tenant variant. It shows the full `Result<DefaultResponse<T>>` flow: validate, enforce tenant boundary, map DTO -> entity, persist, log, publish integration event.
+This worked example follows the TaskFlow `TaskItemService.CreateAsync` shape (`../AI-Instructions-ReferenceApp/src/Application/TaskFlow.Application.Services/TaskItemService.cs`) and defines the server-authoritative multi-tenant baseline. It shows the full `Result<DefaultResponse<T>>` flow: stamp trusted context, validate, enforce tenant boundary, map DTO -> entity, persist, log, publish integration event.
 
 ```csharp
 public async Task<Result<DefaultResponse<TaskItemDto>>> CreateAsync(
     DefaultRequest<TaskItemDto> request, CancellationToken ct = default)
 {
     var dto = request.Item;
-    dto.TenantId = RequestTenantId ?? Guid.Empty;     // [MULTI-TENANT] stamp from IRequestContext
+    var authoritativeTenantId = RequestTenantId ?? Guid.Empty;
+    dto.TenantId = authoritativeTenantId;             // [MULTI-TENANT] overwrite untrusted payload
 
     var validation = TaskItemStructureValidator.ValidateCreate(dto);
     if (validation.IsFailure)
         return Result<DefaultResponse<TaskItemDto>>.Failure(validation.Errors);
 
     var boundary = tenantBoundaryValidator.EnsureTenantBoundary(    // [MULTI-TENANT]
-        logger, RequestTenantId, RequestRoles, dto.TenantId,
+        logger, RequestTenantId, RequestRoles, authoritativeTenantId,
         "TaskItem:Create", nameof(TaskItem));
     if (boundary.IsFailure)
         return Result<DefaultResponse<TaskItemDto>>.Failure(boundary.ErrorMessage!);
 
-    var entityResult = dto.ToEntity(dto.TenantId)
+    var entityResult = dto.ToEntity(authoritativeTenantId)
         .Bind(e => repoTrxn.UpdateFromDto(e, dto));   // DomainResult chain
     if (entityResult.IsFailure)
         return Result<DefaultResponse<TaskItemDto>>.Failure(entityResult.ErrorMessage!);
@@ -42,7 +43,7 @@ Things to notice:
 - Primary constructor injection brings in repo split (`repoTrxn`/`repoQuery`), `IRequestContext` (audit + tenant), `ITenantBoundaryValidator`, cache, integration event publisher.
 - `BuildResponse` is a private static helper - every Success path uses it. Never inline `new DefaultResponse<T>`.
 - DTO -> entity mapping uses static mappers (`dto.ToEntity()`, `entity.ToDto()`); no AutoMapper.
-- Multi-tenant stamping happens *before* validation. For single-tenant scaffolds, drop the `// [MULTI-TENANT]` lines and `TenantInfo` from `BuildResponse`.
+- Multi-tenant stamping happens *before* validation. DTOs retain `TenantId` for contract compatibility, but the service overwrites inbound values because tenant ownership comes only from `IRequestContext`. For single-tenant scaffolds, drop the `// [MULTI-TENANT]` lines and `TenantInfo` from `BuildResponse`.
 
 The principles below are commentary on this shape.
 
@@ -59,7 +60,7 @@ Base types (`IRequestContext`, `Result<T>`, `IStartupTask`): [../support/ef-pack
 3. Mappers are static and provide EF-safe projector expressions.
 4. **[Multi-tenant only]** Services enforce validation + tenant boundary checks before writes. See [multi-tenant.md](multi-tenant.md) for `TenantBoundaryValidator` usage and `EnsureTenantBoundary(...)` patterns.
 5. Internal event DTOs and handlers stay in contracts/message-handler projects.
-6. **[Multi-tenant only]** Services MUST stamp `dto.TenantId = RequestTenantId ?? Guid.Empty` on the DTO immediately after `var dto = request.Item;` in both `CreateAsync` and `UpdateAsync`. DTOs arrive from the API layer without TenantId. Use `dto.TenantId` (not `RequestTenantId`) in subsequent boundary-validator and `ToEntity()` calls.
+6. **[Multi-tenant only]** Immediately after `var dto = request.Item;` in both `CreateAsync` and `UpdateAsync`, compute `var authoritativeTenantId = RequestTenantId ?? Guid.Empty` and overwrite `dto.TenantId`. Validate and map with that value. Never use `RequestTenantId ?? dto.TenantId`; missing trusted context must fail instead of accepting caller-selected ownership.
 7. Use `nameof({Entity})` in service logging and validator calls - never hardcoded entity name strings.
 8. Use `ErrorConstants` for shared error keys; use `ServiceErrorMessages` for formatted error messages.
 9. Use `[LoggerMessage]` source-generated extensions for high-frequency structured logging in `Rules/`.
@@ -133,7 +134,7 @@ See [service-template.md](../templates/service-template.md) for full implementat
 Service rules:
 
 1. Primary-constructor DI only.
-2. Validate request structure before domain operations.
+2. Validate request structure before domain operations; for multi-tenant writes, stamp the request-context tenant first.
 3. **[Multi-tenant only]** Enforce tenant boundary on each operation.
 4. Use transactional repo for writes, query repo for read/projection.
 5. Keep delete idempotent - for **hard delete**, call `repoTrxn.Delete(entity)` before `SaveChangesAsync`. For **soft delete** (main entities), flip flags: `entity.Update(flags: entity.Flags | {Entity}Flags.IsInactive)` then save. Both patterns wrap `SaveChangesAsync` in try/catch returning `Result.Failure(ex.GetBaseException().Message)`.
@@ -145,8 +146,8 @@ Service rules:
 
 Flow pattern:
 
-- Create: validate -> boundary -> map/domain create -> persist.
-- Update: validate -> load -> boundary -> apply updater -> persist.
+- Create: stamp authoritative tenant -> validate -> boundary -> map/domain create -> persist.
+- Update: stamp authoritative tenant -> validate -> load -> boundary -> apply updater -> persist.
 - Delete: load (optional) -> boundary -> delete/return success.
 
 ## CQRS Application Style
@@ -270,10 +271,11 @@ catch (Exception ex)
 - [ ] service has `BuildResponse` helper method
 - [ ] service uses `nameof({Entity})` in boundary-validator and error messages
 - [ ] **[Multi-tenant only]** `ITenantEntityDto` defined, `DefaultResponse` includes `TenantInfoDto?`
-- [ ] **[Multi-tenant only]** service stamps `dto.TenantId = RequestTenantId ?? Guid.Empty` before validation in Create/Update
+- [ ] **[Multi-tenant only]** service overwrites DTO tenant from request context before validation/mapping in Create/Update; no payload fallback
 - [ ] **[Multi-tenant only]** service executes tenant boundary checks on write/read flows
 - [ ] **[Multi-tenant only]** Search enforces tenant filter for non-admin; logs tenant filter manipulation via `[LoggerMessage]`
 - [ ] **[Multi-tenant only]** Update calls `PreventTenantChange` after boundary check
+- [ ] **[Multi-tenant only]** tests prove forged DTO tenant is overwritten and missing request tenant cannot fall back to payload
 - [ ] event DTOs are in contracts and handlers are in message-handlers project
 - [ ] service signatures align with [endpoint-template.md](../templates/endpoint-template.md)
 

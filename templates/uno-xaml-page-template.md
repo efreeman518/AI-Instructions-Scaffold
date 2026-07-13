@@ -20,7 +20,7 @@ This replaces the old 3-page pattern (List + Detail + Create/Edit). The entity p
 
 ## List Page
 
-List item templates must not use `Button` as the root element. Put navigation attached properties on the item surface and reserve buttons for explicit row actions.
+When the whole row navigates, make the item root a transparent `Button` with `uen:Navigation.Request` and `uen:Navigation.Data`. The button supplies reliable pointer/keyboard activation and accessibility semantics; attached navigation on a non-interactive `Border` is not an equivalent click target. Do not nest row-action buttons inside it - rows with independent actions use a non-navigating container plus explicit action buttons.
 
 ```xml
 <Page x:Class="{Project}.Uno.Views.{Entity}ListPage"
@@ -72,27 +72,33 @@ List item templates must not use `Button` as the root element. Put navigation at
                     <ListView ItemsSource="{Binding Data}" SelectionMode="None">
                         <ListView.ItemTemplate>
                             <DataTemplate>
-                                <Border Style="{StaticResource ListItemCardStyle}"
-                                        uen:Navigation.Request="{Entity}Item"
+                                <Button uen:Navigation.Request="{Entity}Item"
                                         uen:Navigation.Data="{Binding}"
+                                        HorizontalAlignment="Stretch"
+                                        HorizontalContentAlignment="Stretch"
+                                        Background="Transparent"
+                                        BorderThickness="0"
+                                        Padding="0"
                                         AutomationProperties.Name="{Binding Title}">
-                                    <Grid ColumnSpacing="12">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <FontIcon Grid.Column="0" Glyph="&#xE9D5;" FontSize="16"
-                                                  Foreground="{ThemeResource PrimaryBrush}"
-                                                  VerticalAlignment="Center" />
-                                        <TextBlock Grid.Column="1" Text="{Binding Title}"
-                                                   Style="{StaticResource BodyStrongTextBlockStyle}"
-                                                   TextTrimming="CharacterEllipsis" />
-                                        <Border Grid.Column="2" Style="{StaticResource BadgeStyle}">
-                                            <TextBlock Text="{Binding Status}" Style="{StaticResource BadgeTextStyle}" />
-                                        </Border>
-                                    </Grid>
-                                </Border>
+                                    <Border Style="{StaticResource ListItemCardStyle}">
+                                        <Grid ColumnSpacing="12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <FontIcon Grid.Column="0" Glyph="&#xE9D5;" FontSize="16"
+                                                      Foreground="{ThemeResource PrimaryBrush}"
+                                                      VerticalAlignment="Center" />
+                                            <TextBlock Grid.Column="1" Text="{Binding Title}"
+                                                       Style="{StaticResource BodyStrongTextBlockStyle}"
+                                                       TextTrimming="CharacterEllipsis" />
+                                            <Border Grid.Column="2" Style="{StaticResource BadgeStyle}">
+                                                <TextBlock Text="{Binding Status}" Style="{StaticResource BadgeTextStyle}" />
+                                            </Border>
+                                        </Grid>
+                                    </Border>
+                                </Button>
                             </DataTemplate>
                         </ListView.ItemTemplate>
                     </ListView>

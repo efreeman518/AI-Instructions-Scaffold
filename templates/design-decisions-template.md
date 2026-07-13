@@ -30,9 +30,11 @@ flowchart TD
 
 ## Decisions
 
+Rationale states the constraint, tradeoff, or failure mode that makes the selected option fit. Do not restate the option, cite "best practice" alone, or record decision history.
+
 | ID | Branch | Decision | Selected Option | Depends On | Status | Rationale | Affects |
 |---|---|---|---|---|---|---|---|
-| D-001 | Purpose | _Decision being made._ | _Chosen option._ | none | confirmed | _Why this choice fits._ | Phase 1, Phase 2 |
+| D-001 | Purpose | _Decision being made._ | _Chosen option._ | none | confirmed | _Constraint, tradeoff, or failure avoided._ | Phase 1, Phase 2 |
 
 ## Deferred Decisions
 

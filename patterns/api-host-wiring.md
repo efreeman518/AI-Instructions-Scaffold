@@ -111,17 +111,53 @@ public static WebApplication ConfigurePipeline(this WebApplication app)
         });
     }
 
-    // Default Aspire endpoints
+    // Scaffold ServiceDefaults maps /healthz and /readyz here.
     app.MapDefaultEndpoints();
 
-    // Health + liveness
-    app.MapHealthChecks("/health");
-    app.MapGet("/alive", () => Results.Ok("Alive"));
+    // Map backward-compatible aliases once; do not combine with the stock Aspire /health + /alive body.
+    app.MapHealthChecks("/health", new() { Predicate = r => r.Tags.Contains("ready") }).AllowAnonymous();
+    app.MapHealthChecks("/alive", new() { Predicate = r => r.Tags.Contains("live") }).AllowAnonymous();
 
     // API endpoint groups
     SetupApiEndpoints(app);
 
     return app;
+}
+```
+
+**Why:** Security and correlation must envelope every response, exception handling must wrap downstream failures, CORS must answer preflight before authentication, and authentication must establish the principal before authorization. Therefore preserve this middleware order.
+
+---
+
+## Gateway Claim Relay Trust Boundary
+
+API may consume `X-Orig-Request` only after bearer authentication validates issuer, audience, and an allowlisted gateway application identity (`azp`/`appid`). A forwarded-claims transformer may then add context to the authenticated principal; `IRequestContext` reads that principal, never the raw header. Direct-user-token and other service-token paths ignore the envelope. The canonical trust boundary and forged-header cases live in [gateway.md](../skills/gateway.md#forwarded-claims-trust-boundary).
+
+When claim relay is used, bind `ForwardedClaims:TrustedGatewayClientIds` from validated configuration and fail startup when the allowlist is empty. Register the transformer only for that path. `IClaimsTransformation` runs during authentication, before authorization; the transformer itself must enforce the caller check before reading the header. It may run more than once, so forwarded-context application must be idempotent: clone one identity and add each allowlisted claim only when the same type/value is absent.
+
+```csharp
+private bool IsTrustedGatewayCaller(ClaimsPrincipal principal)
+{
+    if (principal.Identity?.IsAuthenticated != true) return false;
+
+    var callerAppId = principal.FindFirst("azp")?.Value
+        ?? principal.FindFirst("appid")?.Value; // v1 fallback only when azp is absent
+
+    return callerAppId is not null
+        && trustedGatewayClientIds.Contains(callerAppId, StringComparer.OrdinalIgnoreCase);
+}
+
+public Task<ClaimsPrincipal> TransformAsync(ClaimsPrincipal principal)
+{
+    if (!IsTrustedGatewayCaller(principal)) return Task.FromResult(principal);
+    var request = httpContextAccessor.HttpContext?.Request;
+    if (request is null || !request.Headers.TryGetValue("X-Orig-Request", out var envelope))
+        return Task.FromResult(principal);
+    if (envelope.Count != 1) return Task.FromResult(principal);
+
+    // Parse validated gateway context, clone one identity, and add missing allowlisted type/value pairs only.
+    // Never copy arbitrary claim names. AddForwardedContextAsync must be idempotent.
+    return AddForwardedContextAsync(principal, envelope);
 }
 ```
 
@@ -131,7 +167,7 @@ public static WebApplication ConfigurePipeline(this WebApplication app)
 
 **Source:** `Host/{App}.Bootstrapper/Registration/RegisterServices.RequestContext.cs`
 
-Scoped `IRequestContext<string, Guid?>` factory: correlation ID from `X-Correlation-ID` header, claim precedence (`oid` > `NameIdentifier` > `sub`), tenant from `userTenantId` claim, role extraction, background service fallback.
+Scoped `IRequestContext<string, Guid?>` factory: correlation ID from `X-Correlation-ID` header, claim precedence (`oid` > `NameIdentifier` > `sub`), tenant from the authenticated principal's `userTenantId` claim, role extraction, background service fallback.
 
 ```csharp
 private static void AddRequestContextServices(IServiceCollection services)
@@ -187,13 +223,16 @@ private static void AddRequestContextServices(IServiceCollection services)
 > dev-user GUID as `NameIdentifier` - see
 > [../skills/identity-management.md](../skills/identity-management.md) section Claim-type contract. The
 > reads above are the other half of that contract; a mismatch silently empties roles and tenant.
+> When claims originate at Gateway, a forwarded-claims transformer may add them only after validating the
+> allowlisted gateway service identity in [gateway.md](../skills/gateway.md#forwarded-claims-trust-boundary). The request-context factory reads the resulting
+> principal; it never parses `X-Orig-Request` itself.
 
 ### Dev-Mode Tenant Fallback (Auth Off)
 
 When the scaffold ships with auth off (`Auth:Enabled: false` or no `Auth` section), `userTenantId` claims are absent and the tenant resolves to `null`. The EF tenant query filter then matches nothing and the entire UI looks silently empty (zero rows on every list). Two acceptable mitigations - pick **one** and record it in `HANDOFF.md`:
 
 1. **Single-tenant scaffold** (preferred when only one tenant exists in dev): drop `ITenantEntity<TenantId>` from the entity, remove the tenant query filter, and skip this section.
-2. **Dev tenant header**: keep multi-tenancy on, register a `DevRequestContextMiddleware` that reads a tenant id from a project-scoped header (e.g., `X-{App}-Tenant`) **only when** `app.Environment.IsDevelopment()` and `Auth:Enabled` is false. The matching Blazor `TenantHeaderHandler` lives in [../skills/ui-blazor.md](../skills/ui-blazor.md) -> *Dev Tenant Header*.
+2. **Dev tenant header**: keep multi-tenancy on, register a `DevRequestContextMiddleware` that reads a tenant id from a project-scoped header (e.g., `X-{App}-Tenant`) **only when** `app.Environment.IsDevelopment()` and `Auth:Enabled` is false. This is an explicit local-only exception to the authenticated-claim boundary and must never activate in staging/production. The matching Blazor `TenantHeaderHandler` lives in [../skills/ui-blazor.md](../skills/ui-blazor.md) -> *Dev Tenant Header*.
 
 Wire the middleware before `UseAuthentication`:
 
@@ -224,27 +263,33 @@ Inside the `IRequestContext` factory, prefer `httpContext.Items["DevTenantId"]` 
 ### Dev-Mode Write Identity (owner/tenant stamping)
 
 The tenant fallback above fixes the **read** path (query-filter tenant). The **write** path needs the
-same treatment: UI-driven create DTOs arrive with an empty owner/created-by and (often) an empty
-`TenantId`, because the browser has no identity to populate them. If nothing stamps them server-side,
-every UI-driven create violates the user/tenant FK.
+same treatment: DTOs retain `TenantId` for response and round-trip compatibility, but the browser does
+not own that value. UI-driven creates may also carry a forged owner/created-by. If the server does not
+stamp both from trusted context, writes can violate user/tenant FKs or accept forged ownership.
 
-Stamp owner and tenant from `IRequestContext` on the create path when the inbound DTO leaves them empty.
-The application service is the natural seam - it already stamps tenant in its `CreateAsync` (see
+Stamp tenant from `IRequestContext` unconditionally before validation/mapping; never fall back to the
+caller-supplied DTO value. For server-owned creator/owner fields, overwrite from the audit identity even
+when the payload is non-empty. The application service is
+the natural seam - it already stamps tenant in its `CreateAsync` (see
 [../templates/service-template.md](../templates/service-template.md)):
 
 ```csharp
 // Application service CreateAsync, before the factory call:
-dto.TenantId = RequestTenantId ?? dto.TenantId;       // already present
-dto.OwnerId  = dto.OwnerId == Guid.Empty || dto.OwnerId is null
-    ? ParseAuditId(requestContext.AuditId)            // dev: SeedConstants.DevUserId via ScaffoldAuthHandler
-    : dto.OwnerId;
+var authoritativeTenantId = RequestTenantId ?? Guid.Empty;
+dto.TenantId = authoritativeTenantId;                 // overwrite untrusted payload
+dto.OwnerId = ParseAuditId(requestContext.AuditId);   // overwrite untrusted payload
 ```
+
+`Guid.Empty` deliberately fails structure validation when no request tenant exists. Do not recover with
+`dto.TenantId`; that would let a caller establish its own tenant boundary.
 
 For the owner FK to resolve, the audit id must be a real, seeded user GUID - hence the
 `ScaffoldAuthHandler` emits the fixed `SeedConstants.DevUserId` and the dev seeder inserts that user (see
 [../support/data-persistence-advanced.md](../support/data-persistence-advanced.md) section Startup Seeding). The
-client never sends tenant/owner; the server owns them in every mode. Production resolves both from
-claims; dev resolves them from the scaffold principal + seeded user.
+client may round-trip tenant/owner fields for contract compatibility, but the server owns them in every
+mode. Production resolves both from claims; dev resolves them from the scaffold principal + seeded user.
+If users may assign work to someone else, model a separate `AssigneeId` and authorize that operation;
+do not overload server-owned creator/owner identity.
 
 ---
 

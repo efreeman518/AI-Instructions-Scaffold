@@ -2,13 +2,13 @@
 
 ## Purpose
 
-Gateway is a YARP reverse proxy in front of API/backends. It handles user-facing auth, CORS, downstream token relay, and forwarding original user claims.
+Gateway is a YARP reverse proxy in front of API/backends. It handles user-facing auth, CORS, downstream token relay, and trusted forwarding of original user claims.
 
 ## Non-Negotiables
 
 1. Keep proxy routes/clusters in configuration and load through YARP.
 2. Relay service-to-service bearer token per cluster via `TokenService`.
-3. Forward original user claims metadata (`X-Orig-Request`) for downstream context.
+3. Treat `X-Orig-Request` as a gateway-owned header: strip any inbound value, regenerate it from the authenticated user principal, and let the API consume it only after validating the gateway service identity.
 4. Keep pipeline order deterministic (security -> routing/auth -> endpoints -> proxy).
 5. Normalize path prefixes consistently between UI, gateway transforms, and backend routes.
 
@@ -41,7 +41,8 @@ Host/{Gateway}.Gateway/
     "Routes": {
       "api-route": {
         "ClusterId": "api-cluster",
-        "Match": { "Path": "api/{**catch-all}" },
+        "AuthorizationPolicy": "Default",
+        "Match": { "Path": "/api/{**catch-all}" },
         "Transforms": [{ "PathRemovePrefix": "/api" }]
       }
     },
@@ -90,12 +91,38 @@ private static void ConfigureProxyTransforms(TransformBuilderContext context)
 {
     context.AddRequestTransform(async ctx =>
     {
+        const string originalUserHeader = "X-Orig-Request";
+
+        // Never forward a caller-supplied claims envelope. This transform runs only after
+        // gateway user authentication and rebuilds the header from HttpContext.User.
+        ctx.ProxyRequest.Headers.Remove(originalUserHeader);
         AddOriginalUserClaimsHeader(ctx);
+
         var token = await tokenService.GetAccessTokenAsync(clusterId);
         ctx.ProxyRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
     });
 }
 ```
+
+### Forwarded Claims Trust Boundary
+
+**Why:** Any client can forge an ordinary request header. Therefore `X-Orig-Request` carries context only; this exact boundary establishes trust:
+
+1. Every claim-relaying proxy route requires an authenticated-user authorization policy. Pipeline order alone does not reject anonymous callers.
+2. Gateway removes any inbound `X-Orig-Request` and regenerates one envelope only from the authenticated `HttpContext.User`.
+3. Gateway replaces the user token with its downstream service token.
+4. API bearer authentication validates issuer and audience, then an allowlisted gateway application identity (`azp` for v2 tokens, `appid` for v1) before any forwarded-claims transformer parses the envelope.
+5. Non-gateway service identities and direct-user-token paths ignore the header. `IRequestContext` reads only the resulting authenticated principal, never the raw envelope.
+
+Required verification:
+
+- `AnonymousClaimRelayRoute_IsRejectedBeforeProxy`: an anonymous caller never reaches the transform.
+- `ForgedInboundEnvelope_IsOverwritten`: a caller-supplied envelope sent through Gateway cannot supply roles or tenant.
+- `ForgedDirectEnvelope_WithoutTrustedGateway_IsIgnored`: a direct API call with no allowlisted gateway service identity returns 401/403 or leaves the principal unchanged.
+- `TrustedGatewayEnvelope_AddsExpectedClaims`: a valid gateway service token plus gateway-generated envelope produces only the expected user, role, and tenant claims.
+- `RepeatedTransformation_DoesNotDuplicateForwardedClaims`: repeated authentication transformation adds no duplicate identity or claim.
+
+Keep API-side wiring concise and point it back here; see [api-host-wiring.md](../patterns/api-host-wiring.md#gateway-claim-relay-trust-boundary).
 
 ---
 
@@ -155,7 +182,8 @@ Typical split:
 
 - Gateway authenticates user token (for example Entra External/B2C).
 - Gateway acquires service token for downstream API.
-- API receives gateway service token + forwarded user claims payload.
+- Gateway strips caller-supplied forwarded-claims headers and regenerates the payload from the authenticated user.
+- API authenticates and allowlists the gateway service identity before accepting the forwarded user claims payload.
 
 ```csharp
 private static void AddAuthentication(IServiceCollection services, IConfiguration config)
@@ -187,7 +215,7 @@ public static WebApplication ConfigurePipeline(this WebApplication app)
 }
 ```
 
-Order matters; proxy should execute after auth/routing middleware is ready.
+**Why:** Proxy execution must follow authentication so transforms serialize a verified user principal, not attacker-supplied headers or an anonymous identity. Therefore claim-relaying routes require authorization and map only after authentication/authorization middleware.
 
 ---
 
@@ -197,8 +225,8 @@ The `PathRemovePrefix` transform removes a prefix **before forwarding to the bac
 
 | Backend routes registered at | Gateway route match | Correct transform |
 |---|---|---|
-| `/v1/tasks`, `/v1/categories` | `api/{**catch-all}` | `PathRemovePrefix: "/api"` |
-| `/api/tasks`, `/api/categories` | `api/{**catch-all}` | *(no transform - keep the prefix)* |
+| `/v1/tasks`, `/v1/categories` | `/api/{**catch-all}` | `PathRemovePrefix: "/api"` |
+| `/api/tasks`, `/api/categories` | `/api/{**catch-all}` | *(no transform - keep the prefix)* |
 
 **Wrong (causes 404):** stripping `/api` when the downstream routes already include it:
 ```
@@ -210,7 +238,8 @@ client: /api/categories  -> gateway strips /api -> backend: /categories  -> 404
 "Routes": {
   "api-route": {
     "ClusterId": "api-cluster",
-    "Match": { "Path": "api/{**catch-all}" }
+    "AuthorizationPolicy": "Default",
+    "Match": { "Path": "/api/{**catch-all}" }
   }
 }
 ```
@@ -229,7 +258,9 @@ Pick one convention per project and apply it everywhere. Never use dual-prefix p
 ## Verification
 
 - [ ] YARP routes/clusters load from config
-- [ ] transform adds original-user header + downstream bearer token
+- [ ] transform removes caller-supplied `X-Orig-Request`, then adds a gateway-generated envelope + downstream bearer token
+- [ ] API validates an allowlisted gateway `azp`/`appid` before parsing forwarded claims
+- [ ] forged-header cases in Forwarded Claims Trust Boundary pass
 - [ ] `TokenService` caches cluster tokens with expiry buffer
 - [ ] gateway auth section matches intended identity provider config
 - [ ] pipeline order is security -> middleware -> endpoints -> reverse proxy

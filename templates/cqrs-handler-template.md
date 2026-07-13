@@ -26,17 +26,19 @@ internal sealed class Create{Entity}Handler(
         CancellationToken ct = default)
     {
         var dto = command.Request.Item;
-        dto.TenantId = requestContext.TenantId ?? Guid.Empty;
+        var authoritativeTenantId = requestContext.TenantId ?? Guid.Empty;
+        dto.TenantId = authoritativeTenantId; // overwrite untrusted payload; never fall back to dto.TenantId
 
         var validation = {Entity}StructureValidator.ValidateCreate(dto);
         if (validation.IsFailure) return Result<DefaultResponse<{Entity}Dto>>.Failure(validation.Errors);
 
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            logger, requestContext.TenantId, requestContext.Roles, dto.TenantId,
+            logger, requestContext.TenantId, requestContext.Roles, authoritativeTenantId,
             "{Entity}:Create", nameof({Entity}));
         if (boundary.IsFailure) return Result<DefaultResponse<{Entity}Dto>>.Failure(boundary.ErrorMessage!);
 
-        var entityResult = dto.ToEntity(dto.TenantId);
+        var entityResult = dto.ToEntity(authoritativeTenantId)
+            .Bind(e => repoTrxn.UpdateFromDto(e, dto));
         if (entityResult.IsFailure) return Result<DefaultResponse<{Entity}Dto>>.Failure(entityResult.ErrorMessage!);
 
         var entity = entityResult.Value!;
@@ -56,6 +58,8 @@ Rules:
 - Avoid central request dispatchers, request buses, and generic `Send()` entrypoints.
 - Reason: keep route -> request -> handler flow explicit and registered once.
 - One command/query maps to one handler registration.
+- Multi-tenant create/update handlers overwrite DTO `TenantId` from `IRequestContext` before validation/mapping. Keep the field for contract compatibility, but never use payload tenant as fallback when context is missing.
+- Create handlers apply `UpdateFromDto` after the factory so non-factory fields and aggregate children match service-style behavior.
 - Handler injects only repositories and collaborators it uses.
 - Reuse existing repository contracts; do not create CQRS-specific repositories unless the domain needs a genuinely different abstraction.
 - Keep DTOs in `Application.Models` and mappers in `Application.Mappers` for the default scaffold and TaskFlow reference app. For a CQRS-only or stricter vertical-slice implementation, move feature-specific models, mappers, projections, or adapters into the feature folder when the CQRS contract intentionally differs.

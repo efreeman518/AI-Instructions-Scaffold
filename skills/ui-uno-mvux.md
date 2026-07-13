@@ -208,6 +208,8 @@ To make ListView items navigable (e.g., clicking a task row opens its detail pag
 </ListView>
 ```
 
+**Why:** `Button` supplies the activation, keyboard, focus, and automation behavior a navigable row needs; navigation properties on a plain `Border` do not create an equivalent interactive surface. Do not nest action buttons inside the row button - use a non-navigating container with explicit buttons when a row has independent actions.
+
 **Do not** rely on `ListView.SelectionChanged` or `ItemClick` for navigation - these are less reliable with MVUX data binding than the declarative `uen:Navigation.Request` approach.
 
 ### MVUX Pitfalls

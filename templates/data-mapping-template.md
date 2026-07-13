@@ -16,6 +16,7 @@ namespace Application.Models.{Entity};
 public record {Entity}Dto : EntityBaseDto, ITenantEntityDto
 {
     [Required]
+    // Retained for response/round-trip compatibility. Write paths overwrite this from IRequestContext.
     public Guid TenantId { get; set; }
 
     [Required]
@@ -85,7 +86,7 @@ public interface ITenantEntityDto
 - DTOs are `record` types (value equality, `with` expressions)
 - DTOs live in `Application.Models/{Entity}/` -- separate project from contracts
 - `Id` is `Guid?` -- null on Create, required on Update (inherited from `EntityBaseDto`)
-- `TenantId` is `Guid` (non-nullable) -- always required
+- `TenantId` is `Guid` (non-nullable) and remains on the shared DTO for response/round-trip compatibility. On create/update it is untrusted input: service/CQRS code overwrites it from `IRequestContext` before validation/mapping and never falls back to the payload value.
 - Search filters are `record` types inheriting `DefaultSearchFilter` (provides `SearchTerm` and `TenantId`). Add only entity-specific filter properties.
 - Audit fields (CreatedDate, etc.) may be included as read-only properties on response DTOs via `IEntityBaseDto` -- the `AuditInterceptor` on the DbContext manages write-side audit data
 - Child collections default to empty list -- never null
@@ -137,6 +138,7 @@ public static class {Entity}Mapper
     // ===== DTO -> Entity (factory, returns DomainResult) =====
     public static DomainResult<{Entity}> ToEntity(this {Entity}Dto dto, Guid tenantId)
     {
+        // tenantId is the server-authoritative request-context value, never dto.TenantId fallback.
         // Create value objects from flattened DTO fields here, then pass successful values into the factory.
         return {Entity}.Create(tenantId, dto.Name);
     }
@@ -188,7 +190,7 @@ public static class {ChildEntity}Mapper
 - Mappers are **static classes** in `Application.Mappers/` -- separate project, no DI, no state
 - **`Projection`** -- Canonical full DTO shape. EF uses it with `.Select(Projection)`; `ToDto()` reuses its compiled delegate for in-memory mapping.
 - **`ToDto()`** -- Extension method on entity. Route through cached `Projection.Compile()` delegate, not a second hand-written mapping.
-- **`ToEntity()`** -- Extension method on DTO. Returns `DomainResult<T>` (delegates to domain factory).
+- **`ToEntity()`** -- Extension method on DTO. Returns `DomainResult<T>` (delegates to domain factory) and receives the server-authoritative tenant explicitly; it must not read or recover tenant ownership from `dto.TenantId`.
 - **Query-shape projectors** -- `ProjectorSearch` and `ProjectorStaticItems` are only for shapes with no `ToDto()` twin. Keep them EF-safe.
 - **Multiple projectors per entity** -- `Projection` is the canonical full shape. Add `ProjectorSearch` only when list/grid rows intentionally omit fields or children. Keep `ProjectorStaticItems` for lookup DTOs.
 - **No mapper registration** -- Static classes, no DI needed.
@@ -230,6 +232,6 @@ Child collections follow a consistent pattern across both DTOs and Mappers:
   ```
 
 ### Service Layer Integration
-- On **Create**: `dto.ToEntity(tenantId)` builds the parent, then `repoTrxn.UpdateFromDto(entity, dto)` syncs child collections
-- On **Update**: The existing entity is fetched with includes, then `repoTrxn.UpdateFromDto(entity, dto)` diffs and syncs children (adds new, updates existing, removes missing)
+- On **Create**: overwrite `dto.TenantId` from `IRequestContext`, call `dto.ToEntity(authoritativeTenantId)`, then `repoTrxn.UpdateFromDto(entity, dto)` to sync child collections
+- On **Update**: overwrite `dto.TenantId` from `IRequestContext` before validation, fetch the existing entity with includes, then call `repoTrxn.UpdateFromDto(entity, dto)` to diff and sync children (adds new, updates existing, removes missing)
 - The repository's `UpdateFromDto` handles the EF change-tracking for child add/update/remove -- mappers do not manage this

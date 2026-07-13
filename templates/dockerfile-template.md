@@ -106,7 +106,7 @@ Prefer `-chiseled` and set `<InvariantGlobalization>true</InvariantGlobalization
 - **Restore layer caching:** Copy `.csproj` files first, then `dotnet restore`, then copy source. This ensures source changes don't invalidate the restore cache.
 - **Port:** Default to `8080` for ASP.NET hosts (API/Gateway/Scheduler) on Container Apps. **Exception: Azure Functions isolated worker listens on 80** - see the Function App variant above.
 - **Non-root:** Chiseled images run as non-root by default.
-- **Health check:** Match the path configured in `Program.cs` (`/health` or `/alive`).
+- **Health probes:** Configure orchestrator liveness against `/healthz` and readiness against `/readyz`; do not swap their roles or use an all-check endpoint for liveness.
 - **No secrets in image:** Use Aspire/Container Apps environment injection for connection strings.
 - Adjust COPY lines to match your actual solution project structure - add or remove projects as needed.
 

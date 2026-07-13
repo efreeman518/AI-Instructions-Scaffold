@@ -9,7 +9,7 @@ Use this file for:
 
 Run-once operator setup and the Phase 3 pre-flight live in [operator-setup.md](operator-setup.md).
 
-If another file disagrees on validation gates or commands, this file wins. Session routing and load rules remain owned by [../START-AI.md](../START-AI.md) and [../ai/SKILL.md](../ai/SKILL.md). The 1-page binding-rule index (`GR-01`...`GR-17`) lives at [../GROUND-RULES.md](../GROUND-RULES.md); gates below cite the `GR-NN` they enforce.
+If another file disagrees on validation gates or commands, this file wins. Session routing and load rules remain owned by [../START-AI.md](../START-AI.md) and [../ai/SKILL.md](../ai/SKILL.md). The 1-page binding-rule index with stable `GR-NN` identifiers lives at [../GROUND-RULES.md](../GROUND-RULES.md); gates below cite the `GR-NN` they enforce.
 
 ---
 
@@ -162,7 +162,7 @@ Gate:
 - [ ] `dotnet run --project src/Host/Aspire/AppHost` starts resources
 - [ ] Dashboard reachable (URL from console output - do not reuse prior session URLs)
 - [ ] **All registered resources reach Running with no `Error`/`Critical` log entries from project-owned categories**
-- [ ] Health probes return 200: `/healthz` (liveness - all checks) and `/readyz` (readiness - only checks tagged `ready`) on every API/host project once that host declares itself ready (Aspire-registered UIs that don't expose health probes count as healthy when their root URL renders without exception). Gate readiness on `/readyz` plus Aspire `WaitForResourceHealthyAsync`, not on a resource merely reaching `Running` - `Running` precedes the host accepting requests.
+- [ ] Health probes return 200: `/healthz` (liveness - only checks tagged `live`) and `/readyz` (readiness - only dependency checks tagged `ready`) on every API/host project once that host declares itself ready (Aspire-registered UIs that don't expose health probes count as healthy when their root URL renders without exception). Gate readiness on `/readyz` plus Aspire `WaitForResourceHealthyAsync`, not on a resource merely reaching `Running` - `Running` precedes the host accepting requests. A dependency outage must fail readiness while liveness stays healthy.
 - [ ] Data-plane spot check: at least one backing store (SQL tables exist, Redis reachable, seed rows present) verified directly - not just via dashboard liveness
 - [ ] **Stub-mode external dependencies (`emulator`, `lazy-optional`, `no-op stub`, `deployment-only`) respond without throwing** - live cloud credentials are not required for this gate
 
@@ -186,6 +186,8 @@ After Aspire verification, write infrastructure tests (health checks, config loa
 Run only for enabled hosts.
 
 > **Scaffold vs Complete:** Mark 5c complete only when each enabled host has a validated build AND its host-specific gate result recorded below. Build-only success is recorded as `scaffolded` or `partially-validated`, never `validated` - the handoff must reflect per-host gate status.
+
+> **Why:** A successful compile proves project shape and references only; it does not prove trigger binding, platform toolchains, client generation, or host startup. Therefore build-only evidence cannot satisfy runtime validation for an enabled host.
 
 Function App:
 
@@ -533,7 +535,7 @@ For each scaffolded entity, verify the CRUD cycle per [final-scaffold-checklist.
 
 ### 4. Checklist
 - [ ] All hosts start without errors
-- [ ] Health endpoint returns 200
+- [ ] `/healthz` liveness and `/readyz` dependency readiness both return 200; a dependency outage fails only `/readyz`
 - [ ] At least one entity CRUD cycle completes successfully
 - [ ] OpenAPI/Scalar UI loads at `/scalar/v1`
 - [ ] No unresolved `// TODO: [CONFIGURE]` stubs remain in production paths (stubs in auth/external-API are expected until Phase 5e)

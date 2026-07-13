@@ -13,14 +13,15 @@ internal sealed class Create{Entity}CommandValidator(IRequestContext<string, Gui
     public Task<RequestValidationResult> ValidateAsync(Create{Entity}Command request, CancellationToken ct = default)
     {
         var dto = request.Request.Item;
-        dto.TenantId = requestContext.TenantId ?? Guid.Empty;
+        var authoritativeTenantId = requestContext.TenantId ?? Guid.Empty;
+        dto.TenantId = authoritativeTenantId; // overwrite untrusted payload before validation
         var validation = {Entity}StructureValidator.ValidateCreate(dto);
         return Task.FromResult(CqrsHandlerSupport.ToValidationResult(validation));
     }
 }
 ```
 
-Put cheap shape validation in validators when it removes repeated handler code. Keep aggregate/domain invariants in domain methods.
+Put cheap shape validation in validators when it removes repeated handler code. Keep aggregate/domain invariants in domain methods. Multi-tenant validators and handlers both stamp from `IRequestContext` so every execution path is server-authoritative; neither may use DTO tenant as fallback.
 
 Registration stays in `Registration/CqrsApplicationRegistration.cs`:
 

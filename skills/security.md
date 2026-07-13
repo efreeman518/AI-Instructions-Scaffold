@@ -64,7 +64,7 @@ Use [structure-validator-template](../templates/structure-validator-template.md)
 
 ### String Safety
 
-- HTML-encode user-generated content before storage if it will be rendered in UI: `System.Net.WebUtility.HtmlEncode(input)`.
+- Store canonical validated text. Prefer framework text bindings that encode for their sink; when raw output is unavoidable, use the encoder for that specific HTML, attribute, URL, or JavaScript context. **Why:** Storage-time HTML encoding causes double encoding and does not protect other output contexts. Therefore the actual sink owns encoding.
 - Enforce `MaxLength` at both DTO (StructureValidator) and EF (`HasMaxLength()`) levels - defense in depth.
 - Reject null bytes and control characters in text inputs.
 
@@ -132,24 +132,40 @@ services.AddCors(options =>
 
 ## Data Protection
 
-ASP.NET Core Data Protection handles encryption of cookies, anti-forgery tokens, and other sensitive payloads. In multi-instance deployments, keys must be shared and persisted externally.
+ASP.NET Core Data Protection handles encryption of cookies, anti-forgery tokens, and other sensitive payloads. In multi-instance deployments, keys must be shared and persisted externally. **Why:** Without one persisted key ring, another replica or a restarted host cannot decrypt existing payloads, causing intermittent authentication failures and mass session invalidation. Therefore every replica uses the same durable key ring and application name.
 
 ### Registration (Program.cs)
 
 ```csharp
-var credential = CreateAzureCredential(config);
-
-void ConfigureDataProtection()
+static void ConfigureDataProtection(
+    IServiceCollection services,
+    IConfiguration config,
+    IHostEnvironment environment)
 {
+    var credential = CreateAzureCredential(config);
+    var dataProtection = services.AddDataProtection()
+        .SetApplicationName($"{App}:{environment.EnvironmentName}");
     var keysFileUrl = config.GetValue<string?>("DataProtectionKeysFileUrl", null);
     var encryptionKeyUrl = config.GetValue<string?>("DataProtectionEncryptionKeyUrl", null);
-    if (!string.IsNullOrEmpty(keysFileUrl) && !string.IsNullOrEmpty(encryptionKeyUrl))
+    var hasKeysFile = !string.IsNullOrWhiteSpace(keysFileUrl);
+    var hasEncryptionKey = !string.IsNullOrWhiteSpace(encryptionKeyUrl);
+
+    if (hasKeysFile != hasEncryptionKey)
+        throw new InvalidOperationException("Configure both Data Protection key URLs or neither.");
+
+    if (!hasKeysFile)
     {
-        services.AddDataProtection()
-            .PersistKeysToAzureBlobStorage(new Uri(keysFileUrl), credential)
-            .ProtectKeysWithAzureKeyVault(new Uri(encryptionKeyUrl), credential);
+        if (!environment.IsDevelopment() && !environment.IsEnvironment("Testing"))
+            throw new InvalidOperationException("Both Data Protection key URLs are required outside Development and Testing.");
+        return;
     }
+
+    dataProtection
+        .PersistKeysToAzureBlobStorage(new Uri(keysFileUrl!), credential)
+        .ProtectKeysWithAzureKeyVault(new Uri(encryptionKeyUrl!), credential);
 }
+
+ConfigureDataProtection(builder.Services, builder.Configuration, builder.Environment);
 ```
 
 ### Config
@@ -167,8 +183,9 @@ void ConfigureDataProtection()
 
 ### Rules
 
-- Omit both config keys in development - Data Protection falls back to local file-based key storage.
+- Omit both config keys in development and isolated test hosts - Data Protection uses its local default key storage while retaining the application discriminator.
 - Use managed identity (`DefaultAzureCredential`) for both Blob and Key Vault access.
+- Use the same `SetApplicationName` value for every replica of one app; use a different value for unrelated apps sharing the key store.
 - The Blob container and Key Vault key must exist before first deployment.
 - Key Vault key should have a rotation policy configured.
 
@@ -238,6 +255,7 @@ Secrets must be stored in Azure Key Vault (see [configuration-secrets.md](config
 - [ ] Rate limiting registered with per-tenant and/or per-endpoint policies
 - [ ] Rate limiter disabled in `CustomApiFactory` for tests
 - [ ] `StructureValidator` enforces `MaxLength` matching EF configuration
+- [ ] User content stays canonical in storage and is context-encoded at the rendering boundary
 - [ ] Security headers middleware added (X-Content-Type-Options, X-Frame-Options)
 - [ ] CORS configured in Gateway only - API rejects direct browser requests
 - [ ] `dotnet nuget audit` included in CI pipeline

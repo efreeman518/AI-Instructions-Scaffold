@@ -87,6 +87,7 @@ CANARIES = {
     "Your mono runtime and class libraries are out of sync": "support/troubleshooting.md",  # WASM mono/class-lib mismatch symptom; ui-uno-platforms.md points here for the fix
     "so mesh coverage never duplicates infrastructure graphs": "skills/testing.md",  # one-AppHost-graph-per-mesh-run rule; test-templates-aspire.md + testing-quality.md point here, never restate
     "leftover manual snapshots": "support/context-tooling.md",  # graphify-out dated-snapshot cleanup rule; AGENTS.md (outside scan roots) carries only the concise end-of-session step + pointer
+    "Pipeline order alone does not reject anonymous callers": "skills/gateway.md",  # forwarded-claims trust boundary lives with Gateway; API wiring points here
 }
 roots = ["skills", "patterns", "ai", "support", "schemas", "profiles", "templates"]
 files = [p for r in roots for p in pathlib.Path(r).rglob("*.md")]
@@ -127,6 +128,8 @@ a pointer)? Use the backlog below as the standing work queue.
    ([support/reference-app.md](../support/reference-app.md)) over embedding large copyable snippets that cannot be
    compile-checked.
 5. **Data/schema docs: values + pointer**, not a re-explanation of the narrative.
+6. **Rationale stays selective.** Apply [Selective rationale](README.md#selective-rationale); do not replace
+   duplication with boilerplate why text.
 
 ### 5. Fix one topic
 

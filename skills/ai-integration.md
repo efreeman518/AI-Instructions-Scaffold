@@ -52,7 +52,7 @@ Notes:
 5. Use `DefaultAzureCredential` for Foundry/Search auth (no API keys in code). In production, prefer `ManagedIdentityCredential`.
 6. Configuration-driven model selection (appsettings, not hardcoded deployment names).
 7. Use **Microsoft Agent Framework** (`Microsoft.Agents.AI`) - the successor to Semantic Kernel and AutoGen. Do not scaffold with Semantic Kernel or AutoGen packages.
-8. Agent sessions (`AgentSession`) must be scoped per user/conversation - never share sessions across tenants.
+8. Scope each `AgentSession` by tenant, user, and conversation; never share across any boundary. **Why:** A session carries conversation and tool state, so reuse can expose prior-user context or interleave concurrent turns. Therefore session storage and lookup keys include all three dimensions.
 9. Start with one agent and a small tool set. Do not scaffold multi-agent orchestration until a single-agent path is proven insufficient.
 10. System prompts live in files, not inline string literals spread through services.
 11. **Read the DTO/response source before writing property access against it (GR-18).** The AI surface hits this often - assuming a property such as `snapshot.PreferredLanguage` that the type does not expose. `read_file` the DTO before generating tool wrappers or snapshot records.

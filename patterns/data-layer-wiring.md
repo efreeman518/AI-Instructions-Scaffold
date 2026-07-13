@@ -122,7 +122,7 @@ private static void ConfigureQueryDbContext(DbContextOptionsBuilder options, str
 
 **Source:** `Infrastructure.Data/{App}DbContextBase.cs`
 
-The base context inherits from `DbContextBase<string, Guid?>` (from EF.Data). `OnModelCreating` must follow this exact call order:
+The base context inherits from `DbContextBase<string, Guid?>` (from EF.Data). `OnModelCreating` must follow this exact call order. **Why:** Package metadata must exist before app configuration, while global naming, type, and tenant-filter passes require the complete entity model; reordering can overwrite app choices or make final passes miss entities. Therefore preserve the sequence below.
 
 ```csharp
 public abstract class {App}DbContextBase(DbContextOptions options)

@@ -9,7 +9,7 @@
 | **Depends on** | [repository-template](repository-template.md), [data-mapping-template](data-mapping-template.md), [structure-validator-template](structure-validator-template.md) |
 | **Referenced by** | [endpoint-template](endpoint-template.md), [bootstrapper.md](../skills/bootstrapper.md) |
 
-> **Multi-tenant toggle:** Lines marked `// [MULTI-TENANT]` apply only when the domain specification enables multi-tenancy. For single-tenant scaffolds, omit `ITenantBoundaryValidator` injection, tenant stamping, boundary checks, tenant filter enforcement, and `TenantInfoDto` in `DefaultResponse`. TaskFlow demonstrates multi-tenant patterns.
+> **Multi-tenant toggle:** Lines marked `// [MULTI-TENANT]` apply only when the domain specification enables multi-tenancy. DTOs retain `TenantId` for response/round-trip compatibility, but write services overwrite it from `IRequestContext` before validation/mapping; clients never select tenant ownership. For single-tenant scaffolds, omit `ITenantBoundaryValidator` injection, tenant stamping, boundary checks, tenant filter enforcement, and `TenantInfoDto` in `DefaultResponse`. TaskFlow demonstrates multi-tenant patterns.
 
 ## File: Application/Services/{Entity}Service.cs
 
@@ -77,14 +77,16 @@ internal class {Entity}Service(
     {
         var dto = request.Item;
 
-        // [MULTI-TENANT] Stamp tenant from request context - DTOs arrive without TenantId from API layer
-        dto.TenantId = RequestTenantId ?? Guid.Empty;
+        // [MULTI-TENANT] Overwrite untrusted payload tenant before validation/mapping.
+        // Guid.Empty deliberately fails when trusted tenant context is missing; never fall back to dto.TenantId.
+        var authoritativeTenantId = RequestTenantId ?? Guid.Empty;
+        dto.TenantId = authoritativeTenantId;
 
         // [IDENTITY] Stamp owner/created-by from request context when the entity has one - UI-driven
         // creates arrive with an empty owner and would otherwise violate the user FK. The audit id is a
         // real seeded user GUID in dev (ScaffoldAuthHandler -> DevSeedIds.UserId). See
         // ../patterns/api-host-wiring.md section Dev-Mode Write Identity. Omit for ownerless entities.
-        // dto.OwnerId = dto.OwnerId is null or default ? ParseAuditId(requestContext.AuditId) : dto.OwnerId;
+        // dto.OwnerId = ParseAuditId(requestContext.AuditId); // overwrite untrusted payload
 
         // Structure validation (delegates to StructureValidators for common checks)
         var validation = {Entity}StructureValidator.ValidateCreate(dto);
@@ -92,12 +94,12 @@ internal class {Entity}Service(
 
         // [MULTI-TENANT] Tenant boundary
         var boundary = tenantBoundaryValidator.EnsureTenantBoundary(
-            logger, RequestTenantId, RequestRoles, dto.TenantId,
+            logger, RequestTenantId, RequestRoles, authoritativeTenantId,
             "{Entity}:Create", nameof({Entity}));
         if (boundary.IsFailure) return Result<DefaultResponse<{Entity}Dto>>.Failure(boundary.ErrorMessage!);
 
         // Create domain entity via factory + UpdateFromDto for children
-        var entityResult = dto.ToEntity(dto.TenantId)
+        var entityResult = dto.ToEntity(authoritativeTenantId)
             .Bind(e => repoTrxn.UpdateFromDto(e, dto));
         if (entityResult.IsFailure)
             return Result<DefaultResponse<{Entity}Dto>>.Failure(entityResult.ErrorMessage);
@@ -137,8 +139,9 @@ internal class {Entity}Service(
     {
         var dto = request.Item;
 
-        // [MULTI-TENANT] Stamp tenant from request context
-        dto.TenantId = RequestTenantId ?? Guid.Empty;
+        // [MULTI-TENANT] Overwrite untrusted payload tenant before validation/mapping.
+        var authoritativeTenantId = RequestTenantId ?? Guid.Empty;
+        dto.TenantId = authoritativeTenantId;
 
         // Structure validation
         var validation = {Entity}StructureValidator.ValidateUpdate(dto);
@@ -157,7 +160,7 @@ internal class {Entity}Service(
 
         // [MULTI-TENANT] Prevent tenant change
         var tenantChange = tenantBoundaryValidator.PreventTenantChange(
-            logger, entity.TenantId, dto.TenantId, nameof({Entity}), entity.Id);
+            logger, entity.TenantId, authoritativeTenantId, nameof({Entity}), entity.Id);
         if (tenantChange.IsFailure) return Result<DefaultResponse<{Entity}Dto>>.Failure(tenantChange.ErrorMessage!);
 
         // Update domain entity via UpdateFromDto (handles children).
@@ -245,11 +248,11 @@ public interface I{Entity}Service
 3. **Wrong SaveChangesAsync** - `DbContextBase.SaveChangesAsync(CancellationToken)` throws `NotImplementedException` by design. Must use `SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, ct)`.
 4. **Post-mapping search results** - When the query repo uses `QueryPageProjectionAsync` and returns `PagedResponse<{Entity}Dto>`, the service MUST direct-return: `return await repoQuery.Search{Entity}Async(request, ct);`. Do NOT re-wrap into a new `PagedResponse` or call `.ToDto()` - the projection already happened at the SQL level.
 5. **Missing UpdateFromDto mock in tests** - `CreateAsync` uses `.Bind(e => repoTrxn.UpdateFromDto(e, dto))` and `UpdateAsync` calls `repoTrxn.UpdateFromDto(entity, dto, RelatedDeleteBehavior.RelationshipAndEntity)`. If tests don't mock `UpdateFromDto`, they get `NullReferenceException`. Always mock with `It.IsAny<RelatedDeleteBehavior>()` so both call shapes match: `_repoTrxnMock.Setup(r => r.UpdateFromDto(It.IsAny<{Entity}>(), It.IsAny<{Entity}Dto>(), It.IsAny<RelatedDeleteBehavior>())).Returns((Entity e, EntityDto _, RelatedDeleteBehavior _) => DomainResult<{Entity}>.Success(e));`
-6. **[Multi-tenant, client-supplied TenantId model only - see skills/multi-tenant.md Tenant Input Models] Missing TenantId stamp** - Services MUST stamp `dto.TenantId = RequestTenantId ?? Guid.Empty` on the DTO immediately after `var dto = request.Item;` in both `CreateAsync` and `UpdateAsync`. DTOs arrive from the API layer without TenantId populated. Without the stamp, `StructureValidators.ValidateCreate<T>` rejects `Guid.Empty` and every Create/Update test fails. Use `dto.TenantId` (not `RequestTenantId`) in subsequent boundary-validator and `ToEntity()` calls.
+6. **[Multi-tenant] Missing authoritative TenantId stamp** - Immediately after `var dto = request.Item;`, compute `var authoritativeTenantId = RequestTenantId ?? Guid.Empty`, overwrite `dto.TenantId`, then validate/map with `authoritativeTenantId`. Never use `RequestTenantId ?? dto.TenantId`; that lets a forged payload establish ownership when trusted context is absent.
 7. **Update not-found returns Failure** - Use `Result<DefaultResponse<{Entity}Dto>>.Failure($"{ErrorConstants.ERROR_ITEM_NOTFOUND}: {dto.Id}")`, not `Success` with `Item = null`.
 8. **Inline entity name strings** - Always use `nameof({Entity})` in boundary-validator calls and error messages, not hardcoded strings.
 9. **Missing BuildResponse** - All success paths should use the private static `BuildResponse` helper, not inline `new() { Item = ... }`.
-10. **[Multi-tenant, client-supplied TenantId model only] Missing PreventTenantChange in Update** - After boundary check, before domain update, call `tenantBoundaryValidator.PreventTenantChange(...)` to reject tenant reassignment.
+10. **[Multi-tenant] Missing PreventTenantChange in Update** - After boundary check, before domain update, compare the existing entity tenant with the stamped authoritative tenant as a defense-in-depth invariant.
 11. **Invented repository members (GR-14)** - Call only members that exist on the injected contract. Read the interface (or the first green service/handler in the codebase) before writing call sites. `IRepositoryQuery<TEntity, TId>` exposes `GetAsync(id)` / `ListAsync(predicate)`; paged search lives on the bespoke `I{Entity}RepositoryQuery.Search{Entity}Async`. There is no `QueryPageAsync` on the consumer-facing contracts - `QueryPageAsync` / `QueryPageProjectionAsync` are protected `RepositoryBase` helpers, callable only inside repository implementations.
 
 ## Policy Notes

@@ -54,7 +54,8 @@ GET    /v1/tenant/{tenantId}/{entity-route}/{id}   -> 200
 POST   /v1/tenant/{tenantId}/{entity-route}/search -> 200
 PUT    /v1/tenant/{tenantId}/{entity-route}/{id}   -> 200
 DELETE /v1/tenant/{tenantId}/{entity-route}/{id}   -> 204 or 200
-GET    /health                                     -> 200
+GET    /healthz                                    -> 200 (liveness)
+GET    /readyz                                     -> 200 (readiness)
 GET    /scalar/v1                                  -> 200
 ```
 
@@ -73,10 +74,10 @@ Use `curl`, HTTPie, REST Client, or Scalar. Record status codes and endpoint dis
 - [ ] `.scaffold/implementation-plan.md` open questions resolved or explicitly deferred with TODO.
 - [ ] Every enabled host has a recorded status in `HANDOFF.md`: `validated`, `partially-validated`, or `blocked` with reason.
 - [ ] At least one entity CRUD/search smoke cycle succeeds.
-- [ ] Health endpoint returns 200.
+- [ ] `/healthz` and `/readyz` both return 200 on every API/server host that exposes probes; a dependency-failure test makes only `/readyz` unhealthy. UI resources without probes pass when their root URL renders without exception.
 - [ ] OpenAPI/Scalar loads.
 - [ ] Human acceptance smoke was attempted for at least one primary workflow. Any gap is recorded in `HANDOFF.md` section UAT / Acceptance Gaps with source, current evidence, root cause, and closure plan.
-- [ ] **Aspire AppHost clean startup:** `dotnet run --project src/Host/Aspire/AppHost` reaches the dashboard with every registered resource in **Running** state, no exceptions in resource logs, and `/healthz` returning 200 on every host. Stub-mode external deps (`emulator`, `lazy-optional`, `no-op stub`, `deployment-only`) count as healthy when their stub/emulator path responds.
+- [ ] **Aspire AppHost clean startup:** `dotnet run --project src/Host/Aspire/AppHost` reaches the dashboard with every registered resource in **Running** state, no exceptions in resource logs, and `/healthz` plus `/readyz` returning 200 on every API/server host that exposes probes. UI resources without probes pass when their root URL renders without exception. Stub-mode external deps (`emulator`, `lazy-optional`, `no-op stub`, `deployment-only`) count as healthy when their stub/emulator path responds.
 - [ ] **AI provider lanes (when enabled):** `/api/v1/ai/status` reports Azure Foundry when configured, else Foundry Local when available, else no-op. `Test.Aspire` sets `AiServices:DisableFoundryLocal=true` and only proves Azure live smoke. `Test.FoundryLocal` sets `AiServices:RequireFoundryLocal=true`; missing runtime may be `Assert.Inconclusive`, but installed/discovered runtime with no-op fallback, timeout, or wrong status is failure.
 - [ ] **Every UI host starts cleanly - Aspire-registered AND standalone:**
   - Blazor (when enabled): standalone `dotnet run` reaches `Application started` + root URL renders; when added to AppHost, the resource reaches Running and a Refit call returns data (or typed empty state).

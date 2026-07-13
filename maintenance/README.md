@@ -37,6 +37,14 @@ For Claude Code these are skills under `.claude/skills/` (auto-discovered, sourc
 - Match the house voice: compressed, no em dash / emoji, `->` for arrows, no version numbers in baseline docs.
 - After any edit: `py -3 scripts/validate-instructions.py` must pass; reinstall affected apps with `--verify` (installs are content-aware and idempotent).
 
+### Selective rationale
+
+This source-repo authoring policy applies when maintaining canonical instructions. Add rationale only when it helps an agent choose correctly beyond the exact example: a non-obvious invariant, security/ownership/ordering boundary, tradeoff, exception, or hidden failure.
+
+Prefer `**Why:** <causal mechanism or hidden failure>. Therefore <invariant or decision boundary>.` Omit rule restatements, obvious syntax, history, and unsupported advocacy.
+
+Put full rationale in the file that already owns the decision. Skills and patterns usually own implementation rationale. Templates stay shape-first; add one line only where an agent might make a dangerous substitution. Routers, indexes, and checklists stay navigational. Phase-scoped copies keep only their required minimum + pointer.
+
 ## Python launcher
 
 Use a machine/user-global Python (the repo `.venv` is not a reliable launcher). `py -3` works on Windows where the launcher is installed; see [support/python-setup.md](../support/python-setup.md) for the full fallback chain. Run maintainer scripts from the repo root, and use the same launcher for every `scripts/*.py` and `tests/golden-path/*.py` invocation.
