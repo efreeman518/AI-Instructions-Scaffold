@@ -104,24 +104,7 @@ Call `AutoRegisterMessageHandlers()` after `Build()`. `AuditInterceptor` publish
 
 ## Endpoint Pattern
 
-```csharp
-private static void SetupApiVersionedEndpoints(WebApplication app)
-{
-    var group = app.MapGroup("v{apiVersion:apiVersion}/tenant/{tenantId}/{entity}")
-        .RequireAuthorization("TenantMatch");
-    group.Map{Entity}Endpoints(problemDetailsIncludeStackTrace);
-}
-```
-
-Common routes:
-
-| Operation | Method | Route |
-|---|---|---|
-| Search | `POST` | `/{entities}/search` |
-| Get | `GET` | `/{entities}/{id}` |
-| Create | `POST` | `/{entities}` |
-| Update | `PUT` | `/{entities}` |
-| Delete | `DELETE` | `/{entities}/{id}` |
+Canonical generated routes, handlers, and registration shape: [endpoint-template.md](../templates/endpoint-template.md). Host-owned versioning, group authorization, binding/error policy, and service/CQRS route switching: [api.md](../skills/api.md).
 
 ---
 

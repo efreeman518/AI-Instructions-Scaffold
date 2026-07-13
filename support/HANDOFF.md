@@ -181,7 +181,7 @@ For each enabled optional host, record its individual gate result. Use `validate
 
 ## Scaffold Acceptance
 
-Filled out at the end of the final enabled Phase 5 sub-phase, before closing the scaffold. Mirrors the Scaffold Definition of Done in `ai/SKILL.md`.
+Filled out at the end of the final enabled Phase 5 sub-phase, before closing the scaffold. Records evidence for [final-scaffold-checklist.md](final-scaffold-checklist.md); it does not redefine the criteria.
 
 | Gate | Command | Result | Notes |
 |------|---------|--------|-------|

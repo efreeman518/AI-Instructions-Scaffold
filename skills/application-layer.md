@@ -3,49 +3,11 @@
 > **When to read:** Phase 5b, when building application services, DTOs, static mappers, validation helpers, or internal message handlers - anything that orchestrates domain operations behind a `Result<T>` boundary.
 > **Skip if:** Phase 5a (domain) or Phase 5c (optional hosts) without service work; pure API endpoint shaping (see `api.md`).
 
-## Worked Example
+## Generated Service Shape
 
-This worked example follows the TaskFlow `TaskItemService.CreateAsync` shape (`../AI-Instructions-ReferenceApp/src/Application/TaskFlow.Application.Services/TaskItemService.cs`) and defines the server-authoritative multi-tenant baseline. It shows the full `Result<DefaultResponse<T>>` flow: stamp trusted context, validate, enforce tenant boundary, map DTO -> entity, persist, log, publish integration event.
+Use [service-template.md](../templates/service-template.md) as the canonical full service implementation and [multi-tenant.md](multi-tenant.md) as the canonical tenant trust-boundary guidance.
 
-```csharp
-public async Task<Result<DefaultResponse<TaskItemDto>>> CreateAsync(
-    DefaultRequest<TaskItemDto> request, CancellationToken ct = default)
-{
-    var dto = request.Item;
-    var authoritativeTenantId = RequestTenantId ?? Guid.Empty;
-    dto.TenantId = authoritativeTenantId;             // [MULTI-TENANT] overwrite untrusted payload
-
-    var validation = TaskItemStructureValidator.ValidateCreate(dto);
-    if (validation.IsFailure)
-        return Result<DefaultResponse<TaskItemDto>>.Failure(validation.Errors);
-
-    var boundary = tenantBoundaryValidator.EnsureTenantBoundary(    // [MULTI-TENANT]
-        logger, RequestTenantId, RequestRoles, authoritativeTenantId,
-        "TaskItem:Create", nameof(TaskItem));
-    if (boundary.IsFailure)
-        return Result<DefaultResponse<TaskItemDto>>.Failure(boundary.ErrorMessage!);
-
-    var entityResult = dto.ToEntity(authoritativeTenantId)
-        .Bind(e => repoTrxn.UpdateFromDto(e, dto));   // DomainResult chain
-    if (entityResult.IsFailure)
-        return Result<DefaultResponse<TaskItemDto>>.Failure(entityResult.ErrorMessage!);
-
-    var entity = entityResult.Value!;
-    repoTrxn.Create(ref entity);
-    await repoTrxn.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, ct);
-
-    return Result<DefaultResponse<TaskItemDto>>.Success(BuildResponse(entity.ToDto()));
-}
-```
-
-Things to notice:
-- Service is `internal` - callers go through `ITaskItemService`.
-- Primary constructor injection brings in repo split (`repoTrxn`/`repoQuery`), `IRequestContext` (audit + tenant), `ITenantBoundaryValidator`, cache, integration event publisher.
-- `BuildResponse` is a private static helper - every Success path uses it. Never inline `new DefaultResponse<T>`.
-- DTO -> entity mapping uses static mappers (`dto.ToEntity()`, `entity.ToDto()`); no AutoMapper.
-- Multi-tenant stamping happens *before* validation. DTOs retain `TenantId` for contract compatibility, but the service overwrites inbound values because tenant ownership comes only from `IRequestContext`. For single-tenant scaffolds, drop the `// [MULTI-TENANT]` lines and `TenantInfo` from `BuildResponse`.
-
-The principles below are commentary on this shape.
+Create orchestration stays explicit: extract DTO -> stamp trusted request-context tenant when multi-tenant -> validate structure -> enforce tenant boundary -> map through domain creation/update -> persist -> build response. DTOs retain `TenantId` for contract compatibility, but services overwrite inbound values before validation. Single-tenant scaffolds omit tenant stamping, boundary validation, and `TenantInfo`.
 
 ## Purpose
 

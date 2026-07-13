@@ -302,10 +302,8 @@ mobile:
 
 **`Test.FoundryLocal` (live AI smoke).** RID-bound native tier - the runner must install and
 bootstrap the Foundry Local runtime before the test loads the native
-`Microsoft.AI.Foundry.Local` SDK. The live lane is `Inconclusive` (never green) when no real
-provider is active because the runtime is missing/undiscoverable; installed/discovered runtime with no-op fallback, timeout, or wrong `/api/v1/ai/status` is failure. The lane decides the provider via `GET /api/v1/ai/status`, not a CLI probe.
-Owner doctrine: [ai-integration.md](ai-integration.md) -> *Provider Test Tiers* / *Deciding the
-Live Lane Without Probing the CLI*. Do not restate it here.
+`Microsoft.AI.Foundry.Local` SDK. The lane decides the provider via `GET /api/v1/ai/status`, not a CLI probe.
+Failure versus inconclusive classification belongs to [ai-integration.md](ai-integration.md) -> *Provider Test Tiers* / *Deciding the Live Lane Without Probing the CLI*.
 
 ```yaml
 foundry-local:

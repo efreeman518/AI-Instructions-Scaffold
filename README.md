@@ -107,7 +107,7 @@ Phase 1 also creates durable collaboration artifacts before code planning starts
 
 `.scaffold/domain-specification.yaml`, `.scaffold/UBIQUITOUS-LANGUAGE.md`, and `.scaffold/DESIGN-DECISIONS.md` are **living source of truth**, not snapshots. Every phase consumes them, so they must stay current as the project evolves - otherwise later AI sessions reason from a stale model and naming/decision drift creeps in.
 
-This rule is enforced at every session boundary: [START-AI.md](START-AI.md) section Phase-1 Artifact Lifecycle Rule, [ai/SKILL.md](ai/SKILL.md) section Non-Negotiables and section Scaffold Definition of Done, and the per-session check in [support/HANDOFF.md](support/HANDOFF.md) section Phase-1 Artifact Currency.
+This rule is enforced at every session boundary: [START-AI.md](START-AI.md) section Phase-1 Artifact Lifecycle Rule, [ai/SKILL.md](ai/SKILL.md) section Non-Negotiables, [support/final-scaffold-checklist.md](support/final-scaffold-checklist.md) section Completion Criteria, and the per-session check in [support/HANDOFF.md](support/HANDOFF.md) section Phase-1 Artifact Currency.
 
 **When to update each:**
 
@@ -137,7 +137,7 @@ Phase 1 is stack-agnostic; Phase 2+ is the C#/.NET/Azure profile. See [profiles/
 
 ## Ground Rules
 
-A 1-page index of the binding rules every scaffold session honors lives at [GROUND-RULES.md](GROUND-RULES.md). The rules carry stable `GR-NN` identifiers so phase gates, skills, and templates can cite the rule they enforce without restating it. Detail enforcement remains in [ai/SKILL.md](ai/SKILL.md) section Non-Negotiables and section Scaffold Definition of Done, [START-AI.md](START-AI.md) section Phase-1 Artifact Lifecycle Rule, and [support/execution-gates.md](support/execution-gates.md) - the index does not replace them.
+A 1-page index of the binding rules every scaffold session honors lives at [GROUND-RULES.md](GROUND-RULES.md). The rules carry stable `GR-NN` identifiers so phase gates, skills, and templates can cite the rule they enforce without restating it. Detail enforcement remains in [ai/SKILL.md](ai/SKILL.md) section Non-Negotiables, [support/final-scaffold-checklist.md](support/final-scaffold-checklist.md) for composite acceptance, [START-AI.md](START-AI.md) section Phase-1 Artifact Lifecycle Rule, and [support/execution-gates.md](support/execution-gates.md) for gate commands - the index does not replace them.
 
 ## Approach
 
@@ -170,7 +170,7 @@ If you want the shortest path from zero context to first scaffold:
 2. Run `python scripts/install-to-project.py --target /path/to/your-app-repo --verify` from this repo.
 3. Start through the harness table above: `AGENTS.md`, Copilot agent, Claude command, or a prompt that loads `.instructions/START-AI.md`.
 
-**First time?** Use the [Minimum Viable Scaffold (MVS)](support/minimum-viable-scaffold.md) - paste-ready prompts (one per phase, with Phase 5 split into 5a + 5b sessions) that produce an API-only app with one entity, no Gateway/UI/AI/messaging. You can promote to a richer profile once the loop feels familiar.
+**First time?** Use the [Minimum Viable Scaffold (MVS)](support/minimum-viable-scaffold.md) - concise overlays for the canonical phase prompts (with Phase 5 split into 5a + 5b sessions) that produce an API-only app with one entity, no Gateway/UI/AI/messaging. You can promote to a richer profile once the loop feels familiar.
 
 Read the rest of this guide when you need setup details, MCP recommendations, or troubleshooting rules.
 

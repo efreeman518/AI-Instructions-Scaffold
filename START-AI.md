@@ -29,7 +29,7 @@ Start each session with `START-AI.md` (this file) and `HANDOFF.md` in the target
 
 ## File Loading Rule
 
-Just-in-time. One phase per session; for Phase 5, one sub-phase per session. Load only the files listed for the current phase or sub-phase (see `ai/SKILL.md` section Phase 5 file table). Add on-demand files only when the current sub-phase clearly needs them. Close the session when the gate passes; the next session resumes from `START-AI.md` + `HANDOFF.md`.
+Load only files listed for the current phase or sub-phase (see `ai/SKILL.md` section Phase 5 file table). Add on-demand files only when the active work requires them. Session boundaries and resume files are owned by Session Model above.
 
 This rule is the same regardless of the model's context window. Lost-in-the-middle is real even at 200K - loading every skill hurts output quality. See [`support/OPERATIONS.md`](support/OPERATIONS.md) section Context Budgets.
 
@@ -63,7 +63,7 @@ Is HANDOFF.md present?
         Brownfield adoption   -> load ai/adopt-codebase.md (replaces Phase 1)
 ```
 
-First scaffold? The pruned API-only path with paste-ready prompts is [support/minimum-viable-scaffold.md](support/minimum-viable-scaffold.md).
+First scaffold? The pruned API-only path with canonical prompt overlays is [support/minimum-viable-scaffold.md](support/minimum-viable-scaffold.md).
 
 **Brownfield adoption (C#/.NET/Azure profile only).** When `src/` already contains a buildable C#/.NET solution and no `.scaffold/` artifacts exist (or they're stale), use the adoption flow instead of the Phase 1 interview. The adoption flow derives Phase-1 artifacts from code inspection, then hands off into the regular workflow at Phase 2. Detail: [`ai/adopt-codebase.md`](ai/adopt-codebase.md).
 
@@ -91,7 +91,7 @@ The only profile shipped today is **C#/.NET/Azure**, indexed at [`profiles/cshar
 
 ## Phase Router
 
-Each phase = one session. Load only the files listed for the current phase.
+Apply Session Model and File Loading Rule above, then route the active phase:
 
 - **Phase 1 (Domain Discovery - universal):** `ai/shared-understanding-interview.md`, `ai/domain-specification-schema.md`, `templates/ubiquitous-language-template.md`, `templates/design-decisions-template.md`. Walk every interview branch until the developer confirms, defaults, or defers each. Output: `.scaffold/domain-specification.yaml`, `.scaffold/UBIQUITOUS-LANGUAGE.md`, `.scaffold/DESIGN-DECISIONS.md` in target project (create the `.scaffold/` directory at project root if absent). Worked example: [support/phase-1-worked-example.md](support/phase-1-worked-example.md) (interview pacing, branch recaps, mid-interview corrections). Gate: developer reviews each artifact against its schema. -> `HANDOFF.md` (project root) -> close.
 - **Phase 2 (Resource Definition - C#/.NET/Azure profile):** `ai/resource-implementation-schema.md` + `.scaffold/DESIGN-DECISIONS.md`. Ask clarification questions for unresolved resource decisions, API surface, external integrations, scaling, caching, messaging, optional workloads. Output: `.scaffold/resource-implementation.yaml` with `applicationStyle` declared explicitly and `externalDependencyModes` declared for every external dep. Gate: developer review. -> `HANDOFF.md` -> close.

@@ -67,7 +67,14 @@ CANARIES = {
     "If another file disagrees on validation gates or commands, this file wins": "support/execution-gates.md",  # the gates-file SSOT authority declaration; no other file may claim gate authority
     "If you did not run it, it is not green": "support/execution-gates.md",  # verification-evidence rule (anti-false-green); others point, never restate
     "Fix warnings at the source - never hide them": "support/execution-gates.md",  # compiler-warning policy canonical wording
-    "the primary actor's main flow works end-to-end against the running stack with seeded data": "ai/SKILL.md",  # load-bearing clause of Scaffold Definition of Done (GR-11); pointed to widely
+    "Primary-actor vertical slice runs end-to-end with seeded data": "support/final-scaffold-checklist.md",  # final acceptance owner for the GR-11 primary-flow proof
+    "public static class {Entity}Endpoints": "templates/endpoint-template.md",  # generated service-style endpoint shape; api.md owns host policy
+    "internal class {Entity}Service(": "templates/service-template.md",  # generated application-service shape; application-layer.md owns orchestration policy
+    "public class {Entity}RepositoryTrxn({Project}DbContextTrxn dbContext)": "templates/repository-template.md",  # generated repository shape; data-persistence.md owns persistence policy
+    "internal sealed class {Agent}AgentService : I{Agent}Agent": "templates/agent-template.md",  # code-hosted agent shape; ai-integration.md owns provider and selection policy
+    "internal sealed class {Project}SearchService : I{Project}SearchService": "templates/ai-search-template.md",  # AI Search generated shape; ai-integration.md owns capability policy
+    "Start every Phase 5 sub-phase with:": "support/prompt-catalog.md",  # generic prompts live once; MVS carries profile overlays only
+    "dotnet build src/UI/{Project}.Uno/{Project}.Uno.csproj -p:TargetFrameworkOverride=$(LatestStableTfm)-ios --no-restore -m:1": "support/execution-gates.md",  # enabled-target Uno validation commands; skills retain project policy and hazards
     "public record DefaultResponse<T>": "ai/contract-scaffolding.md",  # Phase-4 response wrapper shape; sibling of DefaultRequest<T>, templates re-emit it
     "HeaderPropagationValues.Headers not initialized": "patterns/infrastructure-wiring.md",  # runtime error anchoring the "no AddHeaderPropagation in ServiceDefaults" rule; drifts when the body is re-copied
     "intentionally blocked to force use of the concurrency-safe path": "skills/data-persistence.md",  # SaveChangesAsync 1-param NotImplementedException rule; NotImplementedException is a scan hotspot
@@ -94,6 +101,9 @@ files = [p for r in roots for p in pathlib.Path(r).rglob("*.md")]
 bad = False
 for canary, owner in CANARIES.items():
     hits = [str(p).replace("\\", "/") for p in files if canary in p.read_text(encoding="utf-8")]
+    if owner not in hits:
+        bad = True
+        print(f"DRIFT: '{canary}' is missing from owner {owner}")
     extra = [h for h in hits if h != owner]
     if extra:
         bad = True
@@ -124,9 +134,9 @@ a pointer)? Use the backlog below as the standing work queue.
 2. **Volatile facts live once.** Version pins, known issues, migration steps go in the owner only; everyone
    else carries a one-line pointer, never a restatement.
 3. **Phase-scoped files keep only their phase's minimum** inline; depth lives in the owner.
-4. **Reference app is the canonical code.** Prefer pointing to compiled `TaskFlow` paths
-   ([support/reference-app.md](../support/reference-app.md)) over embedding large copyable snippets that cannot be
-   compile-checked.
+4. **Templates own generated shape; the reference app proves it.** Keep one copyable implementation in the
+   matching template and point to compiled `TaskFlow` paths ([support/reference-app.md](../support/reference-app.md))
+   as evidence. Skills retain policy, hazards, and selection rules.
 5. **Data/schema docs: values + pointer**, not a re-explanation of the narrative.
 6. **Rationale stays selective.** Apply [Selective rationale](README.md#selective-rationale); do not replace
    duplication with boilerplate why text.
@@ -159,37 +169,34 @@ are pointers.
   reachable from the Phase 5 table; golden-path YAML stays schema-valid; no whole-file code fences.
 - **No mid-scaffold edits to installed `.instructions/`** (GR-07): patch source here, then reinstall.
 
-## Backlog - known hotspots (work queue, ranked by frequency x volatility)
+## Consolidated owner map
 
-Done: **Foundry** (owner `skills/ai-integration.md`).
+- Foundry lifecycle/provider guidance: [skills/ai-integration.md](../skills/ai-integration.md).
+- AppHost graph, ServiceDefaults body, OpenTelemetry, and health wiring:
+  [patterns/infrastructure-wiring.md](../patterns/infrastructure-wiring.md). Host files keep call sites only.
+- FusionCache registration loop: [skills/caching.md](../skills/caching.md). Wiring files point to it.
+- No-op implementation shape and never-throw hazard:
+  [templates/no-op-stub-template.md](../templates/no-op-stub-template.md). Phase files keep mode policy.
+- CQRS generated shapes: the `templates/cqrs-*-template.md` set. Skills keep route/validation policy.
+- Scaffold/live auth toggle and `ScaffoldAuthHandler`:
+  [skills/identity-management.md](../skills/identity-management.md).
+- First-party DTO/property and constructor-shape verification: **GR-18** in
+  [GROUND-RULES.md](../GROUND-RULES.md).
+- Service-style endpoint, application service, repository, code-hosted agent, and AI Search generated shapes:
+  their matching files under `templates/`. Skills keep policy and hazards.
+- Composite final acceptance: [support/final-scaffold-checklist.md](../support/final-scaffold-checklist.md).
+  `support/execution-gates.md` owns per-sub-phase commands; `support/HANDOFF.md` records evidence.
+- Generic phase prompts: [support/prompt-catalog.md](../support/prompt-catalog.md). MVS keeps only API-only,
+  single-entity overlays.
+- Uno enabled-target validation commands: [support/execution-gates.md](../support/execution-gates.md) section 5c.
+  Uno skills keep project policy, asset-graph hazards, and diagnostics.
 
-1. **Aspire AppHost resource wiring** (HIGH) - SQL/Redis/project refs duplicated across
-   [patterns/infrastructure-wiring.md](../patterns/infrastructure-wiring.md) and [skills/aspire.md](../skills/aspire.md)
-   (also `support/quick-reference.md`, `support/troubleshooting.md`). Proposed owner:
-   `patterns/infrastructure-wiring.md`; `aspire.md` keeps its mode/decision tables and points (same 5b).
-2. **AddServiceDefaults / OpenTelemetry / health checks** (HIGH freq) - `infrastructure-wiring.md`,
-   [patterns/api-host-wiring.md](../patterns/api-host-wiring.md), `skills/api.md`, `skills/background-services.md`.
-   Owner: `patterns/infrastructure-wiring.md`.
-3. **FusionCache multi-cache config loop** (~60 lines) - `infrastructure-wiring.md` and
-   [skills/caching.md](../skills/caching.md). Owner: decide concept (`caching.md`) vs wiring
-   (`infrastructure-wiring.md`) - see Open decisions.
-4. **No-op stub / conditional-DI rule** (15+ files) - owner [templates/no-op-stub-template.md](../templates/no-op-stub-template.md);
-   replace restatements with a `GR`-style one-liner + pointer.
-5. **CQRS handler/validation/endpoint boilerplate** - owner: the `templates/cqrs-*-template.md` set; skills and
-   `ai/contract-scaffolding.md` point.
-6. **Identity auth toggle (scaffold vs live)** - owner [skills/identity-management.md](../skills/identity-management.md)
-   (verify `skills/gateway.md`, `patterns/api-host-wiring.md` refs first).
-7. **DefaultAzureCredential / ManagedIdentityCredential** one-liner - owner `skills/identity-management.md`
-   (verify first).
-8. **DTO-read / constructor-read non-negotiables** - promote to a `GR-NN` rule in
-   [GROUND-RULES.md](../GROUND-RULES.md), cite by id elsewhere.
+Credential construction remains trust-boundary-specific across AI, Gateway, secrets, and migration consumers;
+forcing every `DefaultAzureCredential` or `ManagedIdentityCredential` mention into identity management would hide
+different production constraints rather than remove competing authority.
 
-Work top-down, one per pass. Reassess after 1-3: if drift recurrences drop, the lighter items may not be worth
-the churn.
+## Current work queue
 
-## Open decisions (resolve before the relevant pass)
-
-- **Wiring authority vs concept owner** for items 1-3: do `patterns/*` own shared wiring snippets, or do the
-  concept `skills/*`? Pick one convention and apply consistently.
-- **How far to push reference-app-as-code:** thin embedded snippets to fragments + TaskFlow pointers, or keep
-  full snippets?
+No ranked hotspot remains from the 2026-07-13 audit. Keep step 3 mandatory and add a queue item only when a scan
+finds competing full owners or volatile facts copied across files. Phase-local call sites and cross-phase minimum
+guidance are intentional when fresh-session usability requires them.

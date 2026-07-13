@@ -26,6 +26,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -171,6 +172,48 @@ class InstallerTests(unittest.TestCase):
 
 
 class ValidatorHelperTests(unittest.TestCase):
+    def test_estimate_unique_tokens_deduplicates_across_loadset_groups(self):
+        with tempfile.TemporaryDirectory(prefix="tooling-loadset-") as tmp:
+            base = Path(tmp) / "base.md"
+            conditional = Path(tmp) / "conditional.md"
+            base.write_text("x" * 40, encoding="utf-8")
+            conditional.write_text("x" * 40, encoding="utf-8")
+
+            self.assertEqual(validator._estimate_unique_tokens([base], [base]), 10)
+            self.assertEqual(
+                validator._estimate_unique_tokens([base], {conditional: None}, {conditional: None}),
+                20,
+            )
+
+    def test_loadset_budget_deduplicates_base_required_and_on_demand(self):
+        with tempfile.TemporaryDirectory(prefix="tooling-loadset-") as tmp:
+            root = Path(tmp)
+            skill = root / "ai" / "SKILL.md"
+            shared = root / "shared" / "item.md"
+            skill.parent.mkdir(parents=True)
+            shared.parent.mkdir(parents=True)
+            skill.write_text(
+                "## Phase 5 file table\n"
+                "Base context: `ai/SKILL.md`\n"
+                "| Sub-phase | Skills | Templates | Load on demand |\n"
+                "|---|---|---|---|\n"
+                "| **5a** | `shared/item` | | `shared/item` |\n",
+                encoding="utf-8",
+            )
+            shared.write_text("x" * 40, encoding="utf-8")
+            unique_total = validator._estimate_unique_tokens([skill, shared])
+
+            with (
+                mock.patch.object(validator, "INSTRUCTIONS_ROOT", root),
+                mock.patch.object(validator, "LOADSET_SESSION_BASE", ["ai/SKILL.md"]),
+                mock.patch.object(validator, "LOADSET_REQUIRED_CEILINGS", {"5a": unique_total}),
+                mock.patch.object(validator, "LOADSET_FULL_CEILING", unique_total),
+            ):
+                findings = validator.Findings()
+                validator.check_loadset_token_budget(findings)
+
+            self.assertEqual(findings.errors, [])
+
     def test_strip_fenced_code_blocks_preserves_line_numbers(self):
         text = "before\n```python\ncode [link](x.md)\n```\nafter\n"
         stripped = validator.strip_fenced_code_blocks(text)

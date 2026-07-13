@@ -294,7 +294,7 @@ Uno UI startup (post-build, in addition to the platform-target checks above):
 - [ ] **Aspire-registered clean start (when an Uno host is added to AppHost):** AppHost registers the ASP.NET Core WASM wrapper host, not the Uno SDK project; the resource reaches Running and serves its entry point without exception
 - [ ] At least one entity list page loads against the Gateway/API (empty or seeded data - both valid), proving the Kiota/Refit client resolves the configured backend URL
 
-A scaffold may declare 5c complete with `[Ignore]` UI tests for unresolved external auth/AI deps, but **not** with a UI host that throws on startup. See [../ai/SKILL.md](../ai/SKILL.md) section Scaffold Definition of Done.
+A scaffold may declare 5c complete with `[Ignore]` UI tests for unresolved external auth/AI deps, but **not** with a UI host that throws on startup. Final acceptance owner: [final-scaffold-checklist.md](final-scaffold-checklist.md).
 
 Notifications (if `includeNotifications: true`):
 
@@ -379,7 +379,7 @@ If live Entra setup is not yet performed, log it in `HANDOFF.md` as a deployment
 
 **Scaffold mode is the default.** AI integration is complete when AI-backed interfaces compile, resolve from DI, and tests pass with stubs or no-op implementations. Live Foundry/AI Search endpoints are deployment-only dependencies and do not block scaffold completion.
 
-Provider contract: Azure Foundry when configured, else Foundry Local when available, else no-op. No-op is valid for non-live tests only. `Test.Aspire` sets `AiServices:DisableFoundryLocal=true` and proves Azure live smoke only when configured. `Test.FoundryLocal` sets `AiServices:RequireFoundryLocal=true`, starts the API host directly, checks `/api/v1/ai/status`, and is inconclusive only when Foundry Local runtime is missing/undiscoverable; no-op fallback, timeout, or wrong status is failure.
+Provider contract: Azure Foundry when configured, else Foundry Local when available, else no-op. No-op is valid for non-live tests only. `Test.Aspire` sets `AiServices:DisableFoundryLocal=true` and proves Azure live smoke only when configured. `Test.FoundryLocal` sets `AiServices:RequireFoundryLocal=true`, starts the API host directly, and checks `/api/v1/ai/status`. Missing/undiscoverable runtime or generation exceeding its request budget after healthy local status is inconclusive; startup failure after discovery, no-op fallback, bad HTTP/contract, or wrong status is failure. Classification owner: [../skills/ai-integration.md](../skills/ai-integration.md) section Provider Test Tiers.
 
 | Mode | Required |
 |---|---|
@@ -502,43 +502,4 @@ See [OPERATIONS.md](OPERATIONS.md) section Mid-Session Rollback Protocol.
 
 ## Post-Scaffold Smoke Test
 
-Run after all Phase 5 sub-phases complete (before the Pre-Merge Gate) to validate the scaffold works end-to-end:
-
-Load [final-scaffold-checklist.md](final-scaffold-checklist.md) for the canonical final acceptance checklist.
-
-### 1. Build & Test
-```powershell
-dotnet restore
-dotnet build
-dotnet test
-```
-
-### 2. Host Startup
-```powershell
-# API host (required)
-dotnet run --project src/Host/{Host}.Api -- --urls "http://localhost:5100"
-# Verify: GET http://localhost:5100/health -> 200 OK (Ctrl+C after)
-
-# Aspire (if enabled)
-dotnet run --project src/Host/Aspire/AppHost
-# Verify: Aspire dashboard loads, all resources show healthy
-
-# Scheduler (if enabled)
-dotnet run --project src/Host/{Host}.Scheduler
-
-# Function App (if enabled)
-func host start --port 7100
-```
-
-### 3. API Endpoint Smoke
-For each scaffolded entity, verify the CRUD cycle per [final-scaffold-checklist.md](final-scaffold-checklist.md) section API Smoke (canonical route list). Use `http` (HTTPie), `curl`, or the Scalar UI at `/scalar/v1`.
-
-### 4. Checklist
-- [ ] All hosts start without errors
-- [ ] `/healthz` liveness and `/readyz` dependency readiness both return 200; a dependency outage fails only `/readyz`
-- [ ] At least one entity CRUD cycle completes successfully
-- [ ] OpenAPI/Scalar UI loads at `/scalar/v1`
-- [ ] No unresolved `// TODO: [CONFIGURE]` stubs remain in production paths (stubs in auth/external-API are expected until Phase 5e)
-- [ ] Aspire dashboard shows all registered resources (if enabled)
-- [ ] Compiler-warning policy applied (see section Compiler-Warning Policy below)
-- [ ] Vulnerability audit run (see section Vulnerability Audit below)
+After all enabled Phase 5 sub-phases, load [final-scaffold-checklist.md](final-scaffold-checklist.md), run its Required Commands and API Smoke, complete every applicable criterion, and record results in `HANDOFF.md` section Scaffold Acceptance. This file remains the owner for per-sub-phase gates, compiler-warning policy, and vulnerability-audit policy; the final checklist composes them without a second command copy here.

@@ -3,63 +3,9 @@
 > **When to read:** Phase 5b, when building ASP.NET Core Minimal API endpoint groups, `ProblemDetails` exception handling, or the API host's middleware pipeline.
 > **Skip if:** No API host in scope (e.g., scheduler-only or function-app-only scaffold); UI work; gateway-only work (see `gateway.md`).
 
-## Worked Example
+## Generated Endpoint Shape
 
-This is `TaskItemEndpoints.cs` from TaskFlow (`../AI-Instructions-ReferenceApp/src/Host/TaskFlow.Api/Endpoints/TaskItemEndpoints.cs`) - full route group with one handler shown. Demonstrates `MapGroup`, `Produces`, `Result.Match`, and `ProblemDetailsHelper` usage.
-
-```csharp
-public static class TaskItemEndpoints
-{
-    private static bool _problemDetailsIncludeStackTrace;
-
-    public static IEndpointRouteBuilder MapTaskItemEndpoints(
-        this IEndpointRouteBuilder group, bool problemDetailsIncludeStackTrace)
-    {
-        _problemDetailsIncludeStackTrace = problemDetailsIncludeStackTrace;
-
-        var g = group.MapGroup("/api/task-items").WithTags("TaskItems");
-
-        g.MapPost("/search", Search)
-            .Produces<PagedResponse<TaskItemDto>>(StatusCodes.Status200OK)
-            .WithSummary("Search TaskItems with paging, filters, and sorts");
-
-        g.MapGet("/{id:guid}", GetById)
-            .Produces<DefaultResponse<TaskItemDto>>(StatusCodes.Status200OK)
-            .ProducesProblem(StatusCodes.Status404NotFound)
-            .WithSummary("Get a single TaskItem");
-
-        g.MapPost("/", Create)
-            .Produces<DefaultResponse<TaskItemDto>>(StatusCodes.Status201Created)
-            .ProducesValidationProblem()
-            .WithSummary("Create a new TaskItem");
-
-        // ... PUT, DELETE follow the same shape
-
-        return group;
-    }
-
-    private static async Task<IResult> GetById(
-        [FromServices] ITaskItemService service, Guid id, CancellationToken ct)
-    {
-        var result = await service.GetAsync(id, ct);
-        return result.Match<IResult>(
-            response => TypedResults.Ok(response),
-            errors => TypedResults.Problem(ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(
-                errors: errors, statusCodeOverride: StatusCodes.Status400BadRequest)),
-            () => TypedResults.NotFound(id));
-    }
-}
-```
-
-Things to notice:
-- Static class with extension method (`MapTaskItemEndpoints`) - no controllers, no instance state.
-- `MapGroup` carries the route prefix and `WithTags` for OpenAPI grouping. Authorization (`.RequireAuthorization(...)`) typically applies at the group level in the host's `Program.cs`.
-- Handlers are `private static` methods. Service is injected via `[FromServices]`. `CancellationToken` is the last parameter on every handler.
-- `result.Match<IResult>(success, failure, none)` maps `Result<T>` directly to `IResult` - three branches for the three terminal states.
-- `ProblemDetailsHelper.BuildProblemDetailsResponseMultiple(...)` is the canonical way to surface multi-error failures; single-error failures use the singular variant.
-- Stack trace inclusion is controlled by configuration (`_problemDetailsIncludeStackTrace`), not by environment checks.
-
-The principles below are commentary on this shape.
+Use [endpoint-template.md](../templates/endpoint-template.md) as the canonical service-style endpoint implementation. It owns generated CRUD/search routes, handler signatures, `Result.Match()` response mapping, OpenAPI metadata, and pipeline registration examples. This skill owns the surrounding API host, policy, binding-hazard, versioning, and service/CQRS route-switch rules.
 
 ## Overview
 
@@ -264,20 +210,7 @@ api.MapGroup("/categories")
 ## Endpoint Contract
 
 Each entity exposes one static mapper: `Map{Entity}Endpoints(this IEndpointRouteBuilder group, ...)`.
-
-```csharp
-public static class {Entity}Endpoints
-{
-    public static void Map{Entity}Endpoints(this IEndpointRouteBuilder group, bool problemDetailsIncludeStackTrace)
-    {
-        group.MapPost("/search", Search);
-        group.MapGet("/{id:guid}", GetById);
-        group.MapPost("/", Create);
-        group.MapPut("/{id:guid}", Update);
-        group.MapDelete("/{id:guid}", Delete);
-    }
-}
-```
+The canonical mapper, route set, metadata, and handler implementation live in [endpoint-template.md](../templates/endpoint-template.md).
 
 Required endpoint rules:
 

@@ -9,7 +9,7 @@ The shortest path from "empty repo" to "passing API with one entity" using this 
 - Every external dependency declared `lazy-optional` so the app boots locally without cloud setup.
 - Auth runs in scaffold mode (config-driven principal). Live identity provider is deferred.
 
-You should reach a green `dotnet build` + `dotnet test` and a working `GET /health` in under a day of focused work. Everything beyond that is incremental.
+You should reach a green `dotnet build` + `dotnet test` and working `/healthz` plus `/readyz` probes in under a day of focused work. Everything beyond that is incremental.
 
 ## When to use MVS vs the full workflow
 
@@ -38,41 +38,38 @@ py -3 scripts/install-to-project.py --target C:\path\to\your-app --verify
 
 The `--verify` flag confirms all entrypoints landed correctly. See [install-to-project.py](../scripts/install-to-project.py) for the full smoke-check list.
 
-## The MVS prompts
+## The MVS prompt overlays
 
 Six AI sessions: one per phase for Phases 1-4, plus separate sessions for Phase 5a and Phase 5b (Phase 5 always runs one sub-phase per session). MVS skips 5c, 5d, and 5e - see section Why this works.
 
-Paste each prompt verbatim, fill in the `{...}` placeholders, let the session run to its gate, then close the session. The next session starts fresh from `START-AI.md` + `HANDOFF.md`.
+Generic phase prompts live in [prompt-catalog.md](prompt-catalog.md). For each session, paste that phase's prompt, append the MVS overlay below, fill placeholders, run the gate, update `HANDOFF.md`, and close. This file owns only the API-only, single-entity deltas.
 
 ### Phase 1 - Domain Discovery (one entity)
 
+Paste the Phase 1 prompt from [prompt-catalog.md](prompt-catalog.md), then append:
+
 ```text
-Load .instructions/START-AI.md. This is a new project - no HANDOFF.md yet.
 Mode: minimum-viable-scaffold (API-only, one entity, no optional hosts).
-Generate domain artifacts for {ProjectName}.
-Business: {one-sentence business description}.
-Single entity for now: {EntityName} with fields: {field1: type, field2: type, ...}.
+Set the generic prompt's entity list to exactly one entity: {EntityName} with fields {field1: type, field2: type, ...}.
 Run shared-understanding-interview.md but skip branches that don't apply to a single-entity API
 (messaging, scheduling, multi-host, multi-tenant unless explicitly required).
-Produce .scaffold/domain-specification.yaml, .scaffold/UBIQUITOUS-LANGUAGE.md, .scaffold/DESIGN-DECISIONS.md (create the .scaffold/ directory at project root if absent).
-Write HANDOFF.md and close.
+Record the MVS profile in .scaffold/DESIGN-DECISIONS.md.
 ```
 
 **Done when:** `.scaffold/domain-specification.yaml` defines exactly one entity. `.scaffold/DESIGN-DECISIONS.md` records that this is an MVS profile.
 
 ### Phase 2 - Resource Definition (api-only)
 
+Paste the Phase 2 prompt from [prompt-catalog.md](prompt-catalog.md), then append:
+
 ```text
-Load .instructions/START-AI.md and HANDOFF.md.
-Generate .scaffold/resource-implementation.yaml per ai/resource-implementation-schema.md.
 First, resolve packageStrategy + packagePrefix (Discovery question #1):
   - feed: provide feed URL(s) + prefix (e.g., EF). Walk ef-packages-reference.md to confirm coverage; promote to hybrid if anything is missing.
   - local: provide prefix only; the scaffold generates src/Packages/<Prefix>.* for every layer in ef-packages-reference.md.
   - hybrid: feed URL(s) + prefix + localPackageLayers for layers the feed lacks.
-Then set scaffoldMode: api-only. Set testingProfile: minimal.
+Set scaffoldMode: api-only. Set testingProfile: minimal.
 Disable: gateway, uno-ui, blazor-ui, function-app, scheduler, aspire, multi-tenant, ai-services, messaging.
 Set every external dependency mode to lazy-optional.
-Update HANDOFF.md and close.
 ```
 
 **Done when:** `.scaffold/resource-implementation.yaml` has `scaffoldMode: api-only` and every optional flag is `false`. No external dep is in `deployment-only` or `emulator` mode.
@@ -85,7 +82,7 @@ Paste the Phase 3 prompt from [prompt-catalog.md](prompt-catalog.md), then appen
 Tooling section: list only CLIs needed for an api-only scaffold (dotnet, dotnet-ef). Skip MCP discovery beyond Microsoft Docs + Context7.
 ```
 
-**Done when:** `dotnet restore` exits 0. The plan's Tooling section has no unresolved items.
+**Done when:** the plan is reviewed, its Tooling section has no unresolved items, and the feed pre-flight passes for `feed`/`hybrid`. No solution exists to restore until Phase 4.
 
 ### Phase 4 - Contract Scaffolding
 
@@ -96,7 +93,7 @@ MVS scope: api-only. Skip projects for Gateway, Aspire AppHost, Function App, Un
 Expected solution: API host, Application/Domain/Infrastructure projects, Test.Support, Test.Unit, Test.Endpoints.
 ```
 
-**Done when:** `dotnet build` is green and the solution contains exactly: API host, Application/Domain/Infrastructure projects, and the three test projects. No optional hosts.
+**Done when:** `dotnet build` is green and the solution contains the API host, Application/Domain/Infrastructure projects, the three test projects, and any `src/Packages/<Prefix>.*` projects required by `packageStrategy`. No optional hosts.
 
 ### Phase 5 - Implementation (5a + 5b only for MVS)
 
@@ -120,7 +117,7 @@ Skip runtime concerns: gateway, multi-tenant, caching, aspire, observability, se
 Skip the Aspire portion of the 5b gate - Aspire is disabled in MVS.
 ```
 
-**Done when:** `dotnet build` green, `dotnet test --filter "TestCategory=Unit|TestCategory=Endpoint"` green, the API host starts and `GET /health` returns 200.
+**Done when:** `dotnet build` green, `dotnet test --filter "TestCategory=Unit|TestCategory=Endpoint"` green, the API host starts, and `/healthz` plus `/readyz` return 200.
 
 ## "You are done" check
 
@@ -131,7 +128,8 @@ dotnet build
 dotnet test --filter "TestCategory=Unit|TestCategory=Endpoint"
 dotnet run --project src\Host\{Host}.Api -- --urls "http://localhost:5100"
 # in another shell, or via your HTTP client:
-# GET http://localhost:5100/health -> 200 OK
+# GET http://localhost:5100/healthz -> 200 OK
+# GET http://localhost:5100/readyz -> 200 OK
 # POST http://localhost:5100/v1/{entity-route} -> 201 + Location header
 ```
 

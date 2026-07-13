@@ -383,7 +383,7 @@ The script is intentionally compact (~80 lines of JS, no dependencies). Drop it 
 
 ## When to Generate
 
-`docs/tech-design.md` is a Phase 5d deliverable. Generate it after `test-templates-quality` is in place and the scaffold has reached Definition of Done (see [../ai/SKILL.md](../ai/SKILL.md) section Scaffold Definition of Done). The doc reflects the *shipped* topology - sections whose backing code is not generated are dropped, not stubbed.
+`docs/tech-design.md` is a Phase 5d deliverable. Generate it after `test-templates-quality` is in place and the scaffold satisfies the applicable [final acceptance criteria](../support/final-scaffold-checklist.md). The doc reflects the *shipped* topology - sections whose backing code is not generated are dropped, not stubbed.
 
 Generation order per session:
 

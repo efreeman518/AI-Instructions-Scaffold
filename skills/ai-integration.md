@@ -147,45 +147,7 @@ src/Infrastructure/{Project}.Infrastructure.AI/
 
 This is the default agent pattern. Wrap an Azure OpenAI / Foundry model with a small number of function tools that delegate to existing application services.
 
-```csharp
-public sealed class SupportTriageAgentService : ISupportTriageAgent
-{
-    private readonly ChatClientAgent _agent;
-
-    public SupportTriageAgentService(
-        IChatClient chatClient,
-        ITicketService ticketService)
-    {
-        // Load system prompt from embedded resource
-        var assembly = Assembly.GetExecutingAssembly();
-        var resourceName = assembly.GetManifestResourceNames()
-            .First(n => n.EndsWith("SupportTriageAgent.system-prompt.txt"));
-        using var stream = assembly.GetManifestResourceStream(resourceName)!;
-        using var reader = new StreamReader(stream);
-        var systemPrompt = reader.ReadToEnd();
-
-        _agent = new ChatClientAgent(
-            chatClient,
-            instructions: systemPrompt,
-            name: "SupportTriageAgent",
-            tools:
-            [
-                AIFunctionFactory.Create(  // Microsoft.Extensions.AI
-                    (string ticketId) =>
-                        ticketService.GetTicketHistoryAsync(ticketId, CancellationToken.None),
-                    "GetTicketHistory",
-                    "Get the history of a support ticket")
-            ]);
-    }
-
-    public async Task<AgentChatResponse> TriageAsync(string userMessage, AgentSession? session = null, CancellationToken ct = default)
-    {
-        session ??= await _agent.CreateSessionAsync();
-        var response = await _agent.RunAsync(userMessage, session, cancellationToken: ct);
-        return new AgentChatResponse { Message = response.ToString() };
-    }
-}
-```
+Generate the code-hosted interface, request/response contracts, `ChatClientAgent` service, bounded application-service tools, prompt, scoped registration, and optional endpoint from [agent-template.md](../templates/agent-template.md) -> *Agent Interface*, *Default Agent Service*, *Prompt File*, *DI Registration*, and *API Endpoint*. That template owns the generated code shape, session creation, `UseTools` control, and cancellation propagation. Keep provider selection outside the agent: inject the `IChatClient` chosen by *DI Registration* and *Aspire Integration* below.
 
 ### Escalate Only When Needed
 
@@ -206,48 +168,9 @@ If you add one of these escalations, keep the first pass narrow: one middleware 
 2. Add vector search only if search-quality testing shows that lexical or semantic ranking is inadequate.
 3. Add hybrid search only after both lexical and vector behavior are individually understood.
 
-### Azure AI Search Client
+### Azure AI Search Shape
 
-```csharp
-public class ProjectSearchService : IProjectSearchService
-{
-    private readonly SearchClient _searchClient;
-
-    public async Task<IReadOnlyList<SearchResult<SearchDocument>>> SearchAsync(
-        string query, SearchMode mode, CancellationToken ct)
-    {
-        SearchOptions options = mode switch
-        {
-            SearchMode.Keyword => new() { QueryType = SearchQueryType.Simple },
-            SearchMode.Semantic => new()
-            {
-                QueryType = SearchQueryType.Semantic,
-                SemanticSearch = new() { SemanticConfigurationName = "default" }
-            },
-            SearchMode.Vector => new()
-            {
-                VectorSearch = new()
-                {
-                    Queries = { new VectorizableTextQuery(query) { KNearestNeighborsCount = 5, Fields = { "DescriptionVector" } } }
-                }
-            },
-            SearchMode.Hybrid => new()
-            {
-                QueryType = SearchQueryType.Semantic,
-                SemanticSearch = new() { SemanticConfigurationName = "default" },
-                VectorSearch = new()
-                {
-                    Queries = { new VectorizableTextQuery(query) { KNearestNeighborsCount = 5, Fields = { "DescriptionVector" } } }
-                }
-            },
-            _ => throw new ArgumentOutOfRangeException(nameof(mode))
-        };
-
-        var response = await _searchClient.SearchAsync<SearchDocument>(query, options, ct);
-        return [.. response.Value.GetResults()];
-    }
-}
-```
+Generate the search interface/mode, projection and result models, `SearchClient` implementation, settings, and index setup from [ai-search-template.md](../templates/ai-search-template.md) -> *Search Service Interface*, *Search Document Model*, *Search Result Model*, *Default Search Service*, *Relevant Settings*, and *Index Setup*. That template owns the generated query-option shapes. Keep registration and optional configuration semantics in *DI Registration* and *Configuration (appsettings)* below. Do not generate vector fields, vector queries, or vector index configuration until search-quality evidence justifies embeddings.
 
 ### Vectorization Pipeline
 

@@ -3,50 +3,9 @@
 > **When to read:** Phase 5a, when building EF Core DbContexts, entity configurations, repositories (Trxn/Query split), or updater helpers for SQL Server / Azure SQL.
 > **Skip if:** Cosmos/Table/Blob-only persistence (use `azure-data-storage.md` instead); pure domain work; phases 5b+ where data access is already wired.
 
-## Worked Example
+## Repository Shape Ownership
 
-This is the actual `TaskItemRepositoryTrxn` from TaskFlow (`../AI-Instructions-ReferenceApp/src/Infrastructure/TaskFlow.Infrastructure.Repositories/TaskItemRepositoryTrxn.cs`):
-
-```csharp
-public class TaskItemRepositoryTrxn(TaskFlowDbContextTrxn db)
-    : RepositoryBase<TaskFlowDbContextTrxn, string, Guid?>(db), ITaskItemRepositoryTrxn
-{
-    public async Task<TaskItem?> GetTaskItemAsync(Guid id, bool inclChildren = true, CancellationToken ct = default)
-    {
-        var includesList = new List<Expression<Func<IQueryable<TaskItem>, IIncludableQueryable<TaskItem, object?>>>>
-        {
-            q => q.Include(t => t.Category)
-        };
-
-        if (inclChildren)
-        {
-            includesList.Add(q => q.Include(t => t.Comments));
-            includesList.Add(q => q.Include(t => t.ChecklistItems));
-            includesList.Add(q => q.Include(t => t.TaskItemTags).ThenInclude(tt => tt.Tag));
-            includesList.Add(q => q.Include(t => t.SubTasks));
-        }
-
-        return await GetEntityAsync(
-            true,
-            filter: t => t.Id == id,
-            splitQueryThresholdOptions: SplitQueryThresholdOptions.Default,
-            includes: [.. includesList],
-            cancellationToken: ct
-        ).ConfigureAwait(ConfigureAwaitOptions.None);
-    }
-
-    public DomainResult<TaskItem> UpdateFromDto(TaskItem entity, TaskItemDto dto, RelatedDeleteBehavior relatedDeleteBehavior = RelatedDeleteBehavior.None)
-        => DB.UpdateFromDto(entity, dto, relatedDeleteBehavior);
-}
-```
-
-Things to notice:
-- Inherits from `RepositoryBase<TContext, TAuditId, TTenantId>` from EF.Packages - the entity-specific class only adds *what's different* (entity-specific includes, `UpdateFromDto` delegation).
-- `GetEntityAsync` does the heavy lifting; this class composes includes conditionally and delegates.
-- `ConfigureAwait(ConfigureAwaitOptions.None)` on every async call (library code).
-- The Query repository is a separate class with NoTracking semantics - see `TaskItemRepositoryQuery.cs` in the same folder.
-
-The principles below are commentary on this shape - they tell you why each piece exists and when to deviate.
+[Repository Template](../templates/repository-template.md) owns generated bespoke Trxn/query classes and contracts. Start with [Generic Repository Pair](../templates/repository-template.md#generic-repository-pair-repositorycontractstyle-hybrid--generic-only). This skill owns `repositoryContractStyle` selection plus shared DbContext, audit, updater, concurrency, deletion, and persistence policy; keep implementation shapes in the template.
 
 ## Overview
 
@@ -146,6 +105,7 @@ Key rules:
 - Query repo: `{Entity}RepositoryQuery` with paged search using EF-safe projector expressions; under `hybrid`/`generic-only` it extends `IRepositoryQuery<{Entity}, {Entity}Id>` so generic get/list stay inherited.
 - Query predicates over converted columns compare the whole typed property to a typed constant built outside the expression (`e.TenantId == tenantId`, `u.Email == email`). Never use `.Value` or other member access on a value-converted property inside `Where`, `Any`, `ListAsync`, `QuerySpec`, or message-handler predicates.
 - Use transactional repo for writes, query repo for read/projection.
+- Repository code is library code; use `ConfigureAwait(ConfigureAwaitOptions.None)` on every awaited call.
 
 ### Updater Pattern
 

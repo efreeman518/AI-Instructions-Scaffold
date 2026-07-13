@@ -58,6 +58,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from collections.abc import Iterable
 from pathlib import Path
 
 # Force UTF-8 stdout/stderr so ASCII-converted diagnostics stay stable on
@@ -657,29 +658,29 @@ def check_phase5_template_coverage(findings: Findings) -> None:
 
 
 # --- Phase 5 load-set token budget --------------------------------------------
-# Turns the OPERATIONS.md "Context Budgets" guidance into a tripwire: the
-# required load set of each Phase 5 sub-phase (session base + skills + templates
-# columns) must stay under a ceiling, and the full set (+ on-demand column) must
-# stay clearly below the point where lost-in-the-middle degrades output.
+# Tracks curated raw-source load-set growth alongside the OPERATIONS.md
+# "Context Budgets" advisory. The required set (session base + skills +
+# templates columns) stays under its measured ceiling, and the full set
+# (+ on-demand column) stays below a shared ceiling.
 # Tokens are estimated as chars/4. Ceilings are ~15% above the measured
-# 2026-07-01 baselines; if this check fires, prefer trimming or splitting the
+# 2026-07-13 unique-file baselines; if this check fires, prefer trimming or splitting the
 # offending files over raising the ceiling.
 
 # Session base: files every Phase 5 session loads before the load set.
 LOADSET_SESSION_BASE = ["START-AI.md", "GROUND-RULES.md", "ai/SKILL.md"]
 
 # Required set (session base + skills + templates columns + base-context line).
-# Measured baselines: 5a ~77k, 5b ~111k, 5c ~92k, 5d ~68k, 5e ~58k tokens.
+# Measured baselines: 5a ~70k, 5b ~106k, 5c ~84k, 5d ~61k, 5e ~49k tokens.
 LOADSET_REQUIRED_CEILINGS = {
-    "5a": 88_000,
-    "5b": 128_000,
-    "5c": 105_000,
-    "5d": 78_000,
-    "5e": 67_000,
+    "5a": 80_000,
+    "5b": 122_000,
+    "5c": 97_000,
+    "5d": 70_000,
+    "5e": 57_000,
 }
 
-# Full set (required + on-demand column). Measured worst: 5b ~148k tokens.
-LOADSET_FULL_CEILING = 170_000
+# Full set (required + on-demand column). Measured worst: 5b ~139k tokens.
+LOADSET_FULL_CEILING = 160_000
 
 
 def _estimate_tokens(path: Path) -> int:
@@ -687,6 +688,11 @@ def _estimate_tokens(path: Path) -> int:
         return len(path.read_text(encoding="utf-8")) // 4
     except (OSError, UnicodeDecodeError):
         return 0
+
+
+def _estimate_unique_tokens(*path_groups: Iterable[Path]) -> int:
+    paths = {path for group in path_groups for path in group}
+    return sum(_estimate_tokens(path) for path in paths if path.exists())
 
 
 def check_loadset_token_budget(findings: Findings) -> None:
@@ -706,8 +712,6 @@ def check_loadset_token_budget(findings: Findings) -> None:
                 span = span.strip()
                 if span.endswith(".md") and "/" in span and " " not in span:
                     base_files.append(INSTRUCTIONS_ROOT / span)
-    base_tokens = sum(_estimate_tokens(p) for p in base_files if p.exists())
-
     for line in lines[start:end]:
         stripped = line.strip()
         if not stripped.startswith("|"):
@@ -731,8 +735,8 @@ def check_loadset_token_budget(findings: Findings) -> None:
                         bucket[cand] = None
                         break
 
-        required_tokens = base_tokens + sum(_estimate_tokens(p) for p in required)
-        full_tokens = required_tokens + sum(_estimate_tokens(p) for p in on_demand)
+        required_tokens = _estimate_unique_tokens(base_files, required)
+        full_tokens = _estimate_unique_tokens(base_files, required, on_demand)
         ceiling = LOADSET_REQUIRED_CEILINGS.get(sub)
         if ceiling is not None and required_tokens > ceiling:
             worst = sorted(required, key=_estimate_tokens, reverse=True)[:3]

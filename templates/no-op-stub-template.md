@@ -84,4 +84,4 @@ For `lazy-optional` mode, register conditionally on config presence: bind the se
 
 - Phase 4 stub generation context (service vs cqrs handler stub surface, bespoke vs generic repositories): the No-Op DI Stubs step in [../ai/contract-scaffolding.md](../ai/contract-scaffolding.md).
 - External API stub walkthrough: [../skills/external-api.md](../skills/external-api.md) section Stubbing Unresolved External APIs.
-- Deferral recording rules: [../ai/SKILL.md](../ai/SKILL.md) section Scaffold Definition of Done, item 6.
+- Deferral recording rules and evidence sink: [../support/HANDOFF.md](../support/HANDOFF.md) section Scaffold Acceptance.
