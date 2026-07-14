@@ -22,7 +22,7 @@ High-signal lookup for structure, dependencies, DI patterns, and common routes/c
 | `Application.*` | `Application.*` | `src/Application/` |
 | `Infrastructure.*` | `Infrastructure.*` | `src/Infrastructure/` |
 | `Aspire.*` | `Aspire.*` | `src/Host/Aspire/` |
-| `Test.*` | `Test.*` | `src/Test/` |
+| `Test.*` | `Test.*` | `tests/` |
 
 ---
 

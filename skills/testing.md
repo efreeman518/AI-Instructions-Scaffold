@@ -35,7 +35,7 @@ Every `[TestClass]` carries a 3-6 line class-level `<summary>` answering:
 1. **What is exercised** (one line).
 2. **Tooling tier + why this tier** (what a lighter tier would miss).
 3. **Non-obvious quirks** (only when applicable - retry loops, warm-up waits, fixture reuse).
-4. **Manual run command** (required for infra-dependent tiers - `Aspire`, `WasmUI`, `MobileUI`, `Integration`, `E2E`): the exact `dotnet test ... --filter ...` line for non-mobile tiers, or `src/Test/Test.Mobile/run-mobile-tests.ps1` for `MobileUI`, plus any opt-out var or prerequisite (start Docker, run `eng/test/start-local-test-stack.ps1`), so a developer reproduces the run without hunting docs.
+4. **Manual run command** (required for infra-dependent tiers - `Aspire`, `WasmUI`, `MobileUI`, `Integration`, `E2E`): the exact `dotnet test ... --filter ...` line for non-mobile tiers, or `tests/Test.Mobile/run-mobile-tests.ps1` for `MobileUI`, plus any opt-out var or prerequisite (start Docker, run `eng/test/start-local-test-stack.ps1`), so a developer reproduces the run without hunting docs.
 
 Method-level docs are **not** the convention - Given/When/Then names encode scenarios. Add per-method comments only for non-obvious quirks.
 
@@ -108,7 +108,7 @@ The early Phase 2 capability pick - `scaffoldMode` plus the `include*UI` / `useA
 | UI model/presentation coverage exists | `Test.UI` / `UI` or `Presentation` (headless) | none | none |
 | `includeBlazorUI` / `includeReactUI` (+ comprehensive or `includePlaywrightUITests`) | `Test.PlaywrightUI` / `PlaywrightUI` (DOM) | none (generation-gated) | Playwright install |
 | `includeUnoUI`, Skia renderer (+ comprehensive or `includePlaywrightUITests`) | `Test.PlaywrightUI` / `WasmUI` (canvas bridge) | `{APP}_WASM_TESTS_ENABLED` (opt-out; default on) | Build WASM, Playwright install; tasks: Build WASM, Test: WASM |
-| `includeUnoUI` (+ balanced or `includeMobileTests`) | `Test.Mobile` / `MobileUI` (Appium) | `{APP}_MOBILE_TESTS_ENABLED` (opt-IN; default off) | `src/Test/Test.Mobile/run-mobile-tests.ps1`; tasks: Test: Mobile |
+| `includeUnoUI` (+ balanced or `includeMobileTests`) | `Test.Mobile` / `MobileUI` (Appium) | `{APP}_MOBILE_TESTS_ENABLED` (opt-IN; default off) | `tests/Test.Mobile/run-mobile-tests.ps1`; tasks: Test: Mobile |
 | `useAspire: true` (+ comprehensive or `includeAspireTests`) | `Test.Aspire` / `Aspire` (mesh) | `{APP}_RUN_ASPIRE_TESTS` (opt-out; default on) | AppHost start; task: Test: Aspire |
 
 This table is the single source of truth. Phase 2 records the selected tiers (Question 9), [../ai/contract-scaffolding.md](../ai/contract-scaffolding.md) generates exactly those projects, and the [local test stack](../templates/local-test-stack-template.md) script / VS Code tasks expose only their branches.
@@ -117,7 +117,7 @@ This table is the single source of truth. Phase 2 records the selected tiers (Qu
 
 - **Runs by default (Aspire + WasmUI).** Each is discoverable in Test Explorer and runs under `--filter "TestCategory!=Load"`. Its `{APP}_*_TESTS` var is a **local convenience** to silence it (treat any value other than a case-insensitive `false` as "run") - not an enable flag the developer must know to turn the tier on.
 - **Exception - `Test.Mobile` is opt-IN, default off.** Mobile needs an emulator/device, Appium + UiAutomator2, and a built platform APK - too heavy for the canonical lane. Treat `{APP}_MOBILE_TESTS_ENABLED` as an **enable** flag: only a case-insensitive `true` (or `1`/`yes`) activates the tier; unset/false makes each test self-mark `Assert.Inconclusive` with a message saying the tier is opt-in and how to enable it - **never a silent pass.** A skipped-as-passed mobile test reads as green coverage that never ran. MSTest serializes `Inconclusive` to TRX as `outcome="NotExecuted"`, so the expected healthy default-off result is **0 passed / N not-executed, each carrying an Inconclusive message** - success, not failure. Keep `[TestCategory("MobileUI")]` on every test so a lane can also exclude it by filter. This is the one tier that defaults off; Aspire and WasmUI stay default-on per the bullet above.
-- **Explicit mobile lane fails fast.** `src/Test/Test.Mobile/run-mobile-tests.ps1` owns Android restore/build, emulator readiness, Appium readiness, `{APP}_MOBILE_TESTS_ENABLED=true`, and TRX output. Once that runner activates the tier, missing/broken APK, emulator/device, Appium, or UiAutomator2 is red, not `Assert.Inconclusive`. Default `dotnet test` without the enable flag remains dependency-free inconclusive.
+- **Explicit mobile lane fails fast.** `tests/Test.Mobile/run-mobile-tests.ps1` owns Android restore/build, emulator readiness, Appium readiness, `{APP}_MOBILE_TESTS_ENABLED=true`, and TRX output. Once that runner activates the tier, missing/broken APK, emulator/device, Appium, or UiAutomator2 is red, not `Assert.Inconclusive`. Default `dotnet test` without the enable flag remains dependency-free inconclusive.
 - **Self-skips, never red - and never silently green** (see [Never Silently Pass](#never-silently-pass-applies-to-every-tier)). Degrade to `Assert.Inconclusive` for default-lane prerequisite gaps - Docker/AppHost, WASM host/browser, opt-in flag unset, base URL unresolved, or fixture startup failed. The message names the cause and the fix (start Docker, run `eng/test/start-local-test-stack.ps1`, use the mobile runner, or set the opt-out). No vague "skipped", and never an assertion-free early return that passes.
 - **CI lanes set the opt-out.** Fast lanes that must not pay Docker/emulator cost set `{APP}_RUN_ASPIRE_TESTS=false` (etc.). `--filter "TestCategory!=Load"` stays safe because absent-infra default tiers self-skip; explicit mobile workflow_dispatch uses the runner and fails fast.
 - The mesh preflight helper shape is in [../templates/test-templates-aspire.md](../templates/test-templates-aspire.md) (Opt-out + preflight). Mirror it for `WasmUI`; mobile uses generated runner plus method-level default-off preflight.
@@ -138,22 +138,25 @@ Suspect container resource pressure before editing test logic when health checks
 ## Project Layout
 
 ```text
-Test/
+tests/
   Test.Support/
   Test.Unit/
   Test.UI/
   Test.Integration/      # component: one class vs one real store (standalone Testcontainers)
+  Test.Integration.{Project}.FlowEngine/ # optional workflow-definition validation
   Test.Aspire/           # mesh: full AppHost graph over HTTP (lazy-started)
+  Test.FoundryLocal/     # optional RID-bound local AI lane
   Test.Endpoints/
   Test.E2E/
   Test.Architecture/
   Test.PlaywrightUI/
+  Test.Mobile/           # optional Appium native lane
   Test.Load/
   Test.Benchmarks/
   Test.Mutation/
 ```
 
-When any of `Test.Aspire`, the `WasmUI` bridge tier, or `Test.Mobile` is in scope, generate re-runnable operator tooling: `eng/test/start-local-test-stack.ps1` (process-env only - no permanent PATH edits), `.vscode/tasks.json`, and `src/Test/Test.Mobile/run-mobile-tests.ps1` when mobile exists. The stack script builds WASM, installs Playwright browsers, starts Aspire AppHost, waits endpoints, and prints rerun commands. The mobile runner owns Android build, emulator/Appium readiness, enable flag, `dotnet test`, and TRX output. Full shape: [../templates/local-test-stack-template.md](../templates/local-test-stack-template.md). Default heavy tiers self-skip (`Inconclusive`) when prerequisites are missing; explicit mobile runner fails fast on broken mobile prerequisites.
+When any of `Test.Aspire`, the `WasmUI` bridge tier, or `Test.Mobile` is in scope, generate re-runnable operator tooling: `eng/test/start-local-test-stack.ps1` (process-env only - no permanent PATH edits), `.vscode/tasks.json`, and `tests/Test.Mobile/run-mobile-tests.ps1` when mobile exists. The stack script builds WASM, installs Playwright browsers, starts Aspire AppHost, waits endpoints, and prints rerun commands. The mobile runner owns Android build, emulator/Appium readiness, enable flag, `dotnet test`, and TRX output. Full shape: [../templates/local-test-stack-template.md](../templates/local-test-stack-template.md). Default heavy tiers self-skip (`Inconclusive`) when prerequisites are missing; explicit mobile runner fails fast on broken mobile prerequisites.
 
 > A nested `Test.Integration.{Project}.FlowEngine` project also exists when `includeFlowEngine: true` - a deliberate exception to the flat `Test.<X>` peer naming, because it is a distinct workflow-definition guard suite with its own template ([flowengine-test-template.md](../templates/flowengine-test-template.md)) and no shared fixtures.
 
@@ -236,7 +239,7 @@ Allowed options:
 | Shouldly | `Shouldly` | MIT |
 | `AssertionExtensions` in Test.Support | none | n/a |
 
-The project-local `AssertionExtensions` class (in `Test.Support/AssertionExtensions.cs`) provides `.Should()` syntax via `global using` in `Test.Unit/GlobalUsings.cs`. Use it; do not import FluentAssertions to get the same syntax.
+The project-local `AssertionExtensions` class (in `tests/Test.Support/AssertionExtensions.cs`) provides `.Should()` syntax via `global using` in `tests/Test.Unit/GlobalUsings.cs`. Use it; do not import FluentAssertions to get the same syntax.
 
 Prefer specific MSTest asserts over generic `Assert.IsTrue`.
 
@@ -268,7 +271,7 @@ dotnet test --filter "TestCategory=PlaywrightUI"
 dotnet test --filter "TestCategory=WasmUI"
 dotnet test --filter "TestCategory=MobileUI"
 dotnet test --filter "TestCategory=LiveAI"        # active-provider AI smoke; Inconclusive when no real provider
-dotnet test src/Test/Test.Mutation/Test.Mutation.csproj --filter "TestCategory=Mutation"
+dotnet test tests/Test.Mutation/Test.Mutation.csproj --filter "TestCategory=Mutation"
 ```
 
 > `Test.Benchmarks` uses BenchmarkDotNet `[Benchmark]`, not `[TestMethod]`, so `dotnet test` discovers nothing there - it never pollutes the `TestCategory!=Load` run. `Test.Mutation` samples are ordinary fast MSTest and may run under the canonical filter; Stryker itself is the separate runner.
@@ -357,7 +360,7 @@ public void Projection_And_ToDto_Agree()
 
 ### Uno MVUX Presentation UI Tests
 
-When `includeUnoUI: true`, test MVUX presentation records from `src/UI/{Project}.Uno.Presentation/Presentation` in `Test.UI/Presentation`. The test project references `{Project}.Uno.Core` and `{Project}.Uno.Presentation` only, never the `{Project}.Uno` `Uno.Sdk` app head. Use [../templates/test-templates-presentation.md](../templates/test-templates-presentation.md) for the `SourceContext` harness, stub `HttpMessageHandler`, and local nullable-warning suppressions. Tag classes `UI`; tag presentation-specific methods `Presentation`.
+When `includeUnoUI: true`, test MVUX presentation records from `src/UI/{Project}.Uno.Presentation/Presentation` in `tests/Test.UI/Presentation`. The test project references `{Project}.Uno.Core` and `{Project}.Uno.Presentation` only, never the `{Project}.Uno` `Uno.Sdk` app head. Use [../templates/test-templates-presentation.md](../templates/test-templates-presentation.md) for the `SourceContext` harness, stub `HttpMessageHandler`, and local nullable-warning suppressions. Tag classes `UI`; tag presentation-specific methods `Presentation`.
 
 ### Endpoint (Test.Endpoints)
 
@@ -371,15 +374,15 @@ Use WAF + real SQL (often Testcontainers) for create->search->update->delete bus
 
 When `includeBlazorUI: true`, scaffold three tiers so failures localize:
 
-1. **In-isolation host smoke** (`Test.Endpoints/BlazorHostSmokeTests`) - `WebApplicationFactory<{Project}.Blazor.Program>` builds the host with no Refit backend. Catches DI / Refit registration / MudBlazor service-provider failures at startup. Fast (no Aspire, no SQL).
-2. **Aspire-mesh smoke** (`Test.Aspire/BlazorMeshSmokeTests`) - Blazor opt-in via `{APP}_INCLUDE_BLAZOR=true`; verifies the full graph (Gateway routing + Refit + tenant header) by hitting one page that round-trips through the API. Calls `AspireTestHost.EnsureStartedAsync` from `[ClassInitialize]`.
-3. **Hosted Playwright** (`Test.PlaywrightUI/BlazorSmokeTests`) - real browser against a hosted stack; comprehensive profile only.
+1. **In-isolation host smoke** (`tests/Test.Endpoints/BlazorHostSmokeTests`) - `WebApplicationFactory<{Project}.Blazor.Program>` builds the host with no Refit backend. Catches DI / Refit registration / MudBlazor service-provider failures at startup. Fast (no Aspire, no SQL).
+2. **Aspire-mesh smoke** (`tests/Test.Aspire/BlazorMeshSmokeTests`) - Blazor opt-in via `{APP}_INCLUDE_BLAZOR=true`; verifies the full graph (Gateway routing + Refit + tenant header) by hitting one page that round-trips through the API. Calls `AspireTestHost.EnsureStartedAsync` from `[ClassInitialize]`.
+3. **Hosted Playwright** (`tests/Test.PlaywrightUI/BlazorSmokeTests`) - real browser against a hosted stack; comprehensive profile only.
 
 Each tier owns a different failure mode. Without tier 1, MudBlazor DI breakage is invisible until tier 2 / tier 3 fails with a misleading "page didn't load" symptom.
 
 ## Test Data Builders
 
-Place fluent builders in `Test.Support/Builders/`.
+Place fluent builders in `tests/Test.Support/Builders/`.
 
 - One builder per entity and per DTO.
 - Defaults must be valid by domain rules.

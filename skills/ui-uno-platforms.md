@@ -208,7 +208,7 @@ appium --address 127.0.0.1 --port 4723 --allow-insecure=uiautomator2:adb_shell
 
 **Visible vs headless emulator.** An agent often boots the emulator with `-no-window` (headless) to save resources; a human watching expects a visible window. State which you are launching, because they fail differently: headless still drives via Appium but produces no on-screen view, and some software-GPU crashes only reproduce in one mode. For an interactive/human run launch a visible emulator (no `-no-window`); for unattended/agent runs `-no-window` is fine - just record it in the run notes so a blank screen is not mistaken for a hung app.
 
-**Runner readiness checks before explicit mobile lane.** `src/Test/Test.Mobile/run-mobile-tests.ps1` owns these checks and fails fast after it sets `{APP}_MOBILE_TESTS_ENABLED=true` if any fail:
+**Runner readiness checks before explicit mobile lane.** `tests/Test.Mobile/run-mobile-tests.ps1` owns these checks and fails fast after it sets `{APP}_MOBILE_TESTS_ENABLED=true` if any fail:
 
 ```powershell
 adb devices -l                                              # device present and not "offline"
@@ -216,7 +216,7 @@ adb -s emulator-5554 shell getprop sys.boot_completed       # must print 1
 curl http://127.0.0.1:4723/status                           # Appium server reachable
 ```
 
-`Test.Mobile` exists only when `includeUnoUI` was selected in Phase 2 (see [Capability-Gated Test Tiers](testing.md#capability-gated-test-tiers-the-early-decision-drives-the-rest)). The mobile tier is **opt-in**: default `dotnet test` with `{APP}_MOBILE_TESTS_ENABLED` unset/false makes each test self-mark `Assert.Inconclusive` without starting Appium, starting an emulator, or building an APK. Explicit mobile runs use `src/Test/Test.Mobile/run-mobile-tests.ps1`; once that runner sets `{APP}_MOBILE_TESTS_ENABLED=true`, missing/broken APK, emulator/device, Appium, or UiAutomator2 is a red failure. Keep `[TestCategory("MobileUI")]` on every test so normal lanes can exclude it by filter (`--filter TestCategory!=MobileUI`).
+`Test.Mobile` exists only when `includeUnoUI` was selected in Phase 2 (see [Capability-Gated Test Tiers](testing.md#capability-gated-test-tiers-the-early-decision-drives-the-rest)). The mobile tier is **opt-in**: default `dotnet test` with `{APP}_MOBILE_TESTS_ENABLED` unset/false makes each test self-mark `Assert.Inconclusive` without starting Appium, starting an emulator, or building an APK. Explicit mobile runs use `tests/Test.Mobile/run-mobile-tests.ps1`; once that runner sets `{APP}_MOBILE_TESTS_ENABLED=true`, missing/broken APK, emulator/device, Appium, or UiAutomator2 is a red failure. Keep `[TestCategory("MobileUI")]` on every test so normal lanes can exclude it by filter (`--filter TestCategory!=MobileUI`).
 
 Generate one native mobile lane:
 
@@ -225,14 +225,14 @@ Generate one native mobile lane:
 
 **Make env paths robust - the test process working directory is not the repo root.** Resolve `{APP}_ANDROID_APP_PATH` and any path env var by accepting both an absolute path and a repo-root-relative path like `src/UI/{Project}.Uno/...`: probe the path as-given, then re-probe against the resolved repo root (walk up for the `.slnx`/`.git` marker). Do not assume `Directory.GetCurrentDirectory()` is the repo root.
 
-**On constrained machines, run one mobile test first through the runner** (`powershell -NoProfile -File src/Test/Test.Mobile/run-mobile-tests.ps1 -SkipBuild -Filter "FullyQualifiedName~<OneTest>"`) before running the whole `MobileUI` category. Per-test runs make failure mode legible.
+**On constrained machines, run one mobile test first through the runner** (`powershell -NoProfile -File tests/Test.Mobile/run-mobile-tests.ps1 -SkipBuild -Filter "FullyQualifiedName~<OneTest>"`) before running the whole `MobileUI` category. Per-test runs make failure mode legible.
 
 **Preserve diagnostics by default, not only on a debug switch.** On every mobile run write the screenshot, Appium `PageSource`, and the Appium server log to a test-output artifacts folder. These artifacts are what separates "this Cloud PC cannot handle it" from "selector/scroll/Appium-config problem" - without them the two are indistinguishable.
 
 ```powershell
-powershell -NoProfile -File src/Test/Test.Mobile/run-mobile-tests.ps1
-powershell -NoProfile -File src/Test/Test.Mobile/run-mobile-tests.ps1 -SkipBuild
-powershell -NoProfile -File src/Test/Test.Mobile/run-mobile-tests.ps1 -SkipBuild -Filter "FullyQualifiedName~<OneTest>"
+powershell -NoProfile -File tests/Test.Mobile/run-mobile-tests.ps1
+powershell -NoProfile -File tests/Test.Mobile/run-mobile-tests.ps1 -SkipBuild
+powershell -NoProfile -File tests/Test.Mobile/run-mobile-tests.ps1 -SkipBuild -Filter "FullyQualifiedName~<OneTest>"
 ```
 
 ### Appium Selector Rules (Uno on Android)
@@ -265,7 +265,7 @@ The selector rules above assume the app is already up and driveable. Getting the
 - **Suppress and tap through ANR overlays during warmup.** Cold boot throws "System UI isn't responding" / "<app> isn't responding" overlays that hijack taps and poison screenshots. Belt-and-suspenders: `adb shell settings put global hide_error_dialogs 1` once per run (it suppresses app dialogs, NOT reliably the SystemUI ANR), AND in the shared boot-wait loop detect the dialog (`android:id/aerr_wait` / `aerr_close`) and tap "Wait" each iteration until the app surface renders. Never auto-dismiss a dialog that names the app under test - that is a real failure to surface.
 - **Software GPU + cold boot.** The host/default GPU can crash the emulator (e.g. access violation in the Intel iGPU driver) after extended runs. Launch with `-gpu swiftshader_indirect`, and cold-boot with `-no-snapshot` after a crash. Software GPU is CPU-heavy and worsens cold-start ANRs - budget a long startup timeout (`{APP}_MOBILE_STARTUP_TIMEOUT_SECONDS=180`, reused as the Appium command timeout) and run the mobile suite isolated, not parallel with WASM, to avoid CPU contention.
 - **Centralize boot-wait + dialog dismissal in one shared session helper.** When each suite carries its own near-identical boot-wait, only the one that dismisses dialogs is reliable and the rest flake behind overlays. Routing every suite through one helper makes "all UIs exercised through the same startup workflow" a maintenance property, not a copy-paste checklist.
-- **Runner owns operator preconditions.** `src/Test/Test.Mobile/run-mobile-tests.ps1` discovers Android SDK, prepares process env, builds/restores the APK, starts or verifies the emulator, starts or verifies Appium, verifies UiAutomator2, sets `{APP}_MOBILE_TESTS_ENABLED=true`, runs `dotnet test`, and writes TRX. Test methods connect to prepared state and fail fast when that state is broken.
+- **Runner owns operator preconditions.** `tests/Test.Mobile/run-mobile-tests.ps1` discovers Android SDK, prepares process env, builds/restores the APK, starts or verifies the emulator, starts or verifies Appium, verifies UiAutomator2, sets `{APP}_MOBILE_TESTS_ENABLED=true`, runs `dotnet test`, and writes TRX. Test methods connect to prepared state and fail fast when that state is broken.
 
 ---
 

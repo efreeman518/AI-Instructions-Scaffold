@@ -4,7 +4,7 @@ Fast headless UI tests for Uno MVUX presentation models and UI services. Use in 
 
 | | |
 |---|---|
-| **Files** | `src/Test/Test.UI/Presentation/{Entity}PresentationModelTests.cs` |
+| **Files** | `tests/Test.UI/Presentation/{Entity}PresentationModelTests.cs` |
 | **Production target** | `src/UI/{Project}.Uno.Presentation/Presentation/*.cs` |
 | **References** | `Test.UI` references `{Project}.Uno.Core` and `{Project}.Uno.Presentation`, never `{Project}.Uno` |
 | **Required packages** | Main `Uno.Extensions.Reactive` only when `SourceContext` is not available transitively; do not add `Uno.Extensions.Reactive.Testing` |
@@ -34,15 +34,15 @@ Use `SourceContext.GetOrCreate(model).AsCurrent()` from namespace `Uno.Extension
 
 ```xml
 <ItemGroup>
-  <ProjectReference Include="..\..\UI\{Project}.Uno.Core\{Project}.Uno.Core.csproj" />
-  <ProjectReference Include="..\..\UI\{Project}.Uno.Presentation\{Project}.Uno.Presentation.csproj" />
+  <ProjectReference Include="..\..\src\UI\{Project}.Uno.Core\{Project}.Uno.Core.csproj" />
+  <ProjectReference Include="..\..\src\UI\{Project}.Uno.Presentation\{Project}.Uno.Presentation.csproj" />
 </ItemGroup>
 ```
 
 Do not reference:
 
 ```xml
-<ProjectReference Include="..\..\UI\{Project}.Uno\{Project}.Uno.csproj" />
+<ProjectReference Include="..\..\src\UI\{Project}.Uno\{Project}.Uno.csproj" />
 <PackageReference Include="Uno.Extensions.Reactive.Testing" />
 ```
 

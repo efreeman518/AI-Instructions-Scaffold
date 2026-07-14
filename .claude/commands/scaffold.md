@@ -20,7 +20,7 @@ You are executing the phased scaffolding workflow. Follow these steps exactly:
 
 ## Rules
 
-- Generate code in `src/` (which contains `src/Test/...` for test projects) and project root. Never modify files under `.instructions/`.
+- Generate production code in `src/`, test code in sibling `tests/`, and solution/config files at project root. Never modify files under `.instructions/`.
 - Conflict precedence: see `.instructions/ai/SKILL.md` section Non-Negotiables (canonical).
 - Checkpoint after 15+ generated files or 3+ build/fix cycles - update `HANDOFF.md` (project root).
 - After each phase gate passes, update `HANDOFF.md` and stop.

@@ -44,7 +44,7 @@ Measure two sums, excluding generated/transient files (bin, obj, node_modules,
 package-lock.json, *.Designer.cs, ModelSnapshot.cs, rendered *.html docs):
 
 - KNOWLEDGE = LOC of `.scaffold/` + `docs/*.md`
-- CODE = LOC of application `src/` (*.cs, *.razor, *.ts, *.tsx, *.xaml)
+- CODE = LOC of application `src/` plus `tests/` (*.cs, *.razor, *.ts, *.tsx, *.xaml)
 
 `.instructions/` is excluded from both the measurement and the graph corpus: it is the
 generic scaffold payload, identical across installed apps, not app-specific knowledge.
@@ -80,7 +80,7 @@ function Sum-Loc($paths) {
     Measure-Object -Sum).Sum
 }
 $knowledge = Sum-Loc @('.scaffold','docs')
-$code = (Get-ChildItem src -Recurse -File -Include *.cs,*.razor,*.ts,*.tsx,*.xaml -EA SilentlyContinue |
+$code = (Get-ChildItem -Path @('src','tests') -Recurse -File -Include *.cs,*.razor,*.ts,*.tsx,*.xaml -EA SilentlyContinue |
          Where-Object { $_.FullName -notmatch $prune -and $_.Name -notmatch $skip } |
          ForEach-Object { (Get-Content -LiteralPath $_.FullName | Measure-Object -Line).Lines } |
          Measure-Object -Sum).Sum
@@ -191,7 +191,7 @@ src/Infrastructure/**/Migrations/
 .instructions/
 HANDOFF.md
 
-Keep `.scaffold/`, `docs/*.md`, and all of `src/` including tests (impact-radius queries
+Keep `.scaffold/`, `docs/*.md`, and all of `src/` and `tests/` (impact-radius queries
 benefit from test edges). `.instructions/` and `HANDOFF.md` stay ignored per the
 decision-rule note above.
 

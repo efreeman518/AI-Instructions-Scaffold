@@ -43,6 +43,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -59,6 +60,7 @@ REPORT_ROOT = REPO_ROOT / ".tmp" / "golden-path-runs"
 
 PHASE_ORDER = ["3", "4", "5a", "5b", "slice"]
 DEFAULT_MAX_TURNS = {"3": 60, "4": 200, "5a": 250, "5b": 300, "slice": 150}
+GOLDEN_SOLUTION = "WorkBoard.slnx"
 
 # Vertical-slice regression: add a new independent aggregate root to the
 # completed 5b workspace. GR-14 names Tag as the canonical independent-aggregate
@@ -325,13 +327,95 @@ def run_gate_cmd(cmd: list[str], cwd: Path) -> tuple[bool, str]:
 
 
 def find_solution(target: Path) -> Path | None:
-    """Find .slnx or .sln; solution lives under src/ (canonical) with root as fallback."""
-    for search_root in [target / "src", target]:
+    """Find the canonical root solution, with the former src/ layout as fallback."""
+    preferred = target / GOLDEN_SOLUTION
+    if preferred.is_file():
+        return preferred
+    for search_root in [target, target / "src"]:
         for pattern in ["*.slnx", "*.sln"]:
             matches = sorted(search_root.glob(pattern))
             if matches:
                 return matches[0]
     return None
+
+
+def canonical_layout_issues(target: Path) -> list[str]:
+    """Return generated-app layout violations introduced before the root layout."""
+    issues: list[str] = []
+    root_solution = target / GOLDEN_SOLUTION
+    if not root_solution.is_file():
+        issues.append(f"MISSING root {GOLDEN_SOLUTION}")
+    else:
+        try:
+            solution_xml = ET.parse(root_solution).getroot()
+        except (ET.ParseError, OSError) as exc:
+            issues.append(f"INVALID root {GOLDEN_SOLUTION}: {exc}")
+        else:
+            project_paths: list[str] = []
+            for element in solution_xml.iter():
+                if element.tag.rsplit("}", 1)[-1] != "Project" or not (path := element.get("Path")):
+                    continue
+                project_paths.append(path.replace("\\", "/").removeprefix("./"))
+            if not any(path.startswith("src/") for path in project_paths):
+                issues.append(f"MISSING production project path in {GOLDEN_SOLUTION}")
+            if not any(path.startswith("tests/") for path in project_paths):
+                issues.append(f"MISSING test project path in {GOLDEN_SOLUTION}")
+            noncanonical_paths = sorted(
+                path for path in project_paths if not path.startswith(("src/", "tests/"))
+            )
+            if noncanonical_paths:
+                issues.append(
+                    f"NONCANONICAL project path(s) in {GOLDEN_SOLUTION}: {', '.join(noncanonical_paths)}"
+                )
+    unexpected_solutions = sorted(path for path in target.glob("*.slnx") if path.name != GOLDEN_SOLUTION)
+    if unexpected_solutions:
+        paths = ", ".join(path.relative_to(target).as_posix() for path in unexpected_solutions)
+        issues.append(f"UNEXPECTED root .slnx: {paths}")
+    root_config = ("Directory.Build.props", "Directory.Packages.props", "global.json")
+    for name in root_config:
+        if not (target / name).is_file():
+            issues.append(f"MISSING root {name}")
+    for folder, tree_label, project_label in (
+        ("src", "production tree", "production project"),
+        ("tests", "test tree", "test project"),
+    ):
+        root = target / folder
+        if not root.is_dir():
+            issues.append(f"MISSING {tree_label} {folder}/")
+        elif not any(
+            path.is_file() and not any(part in ("bin", "obj") for part in path.relative_to(root).parts)
+            for path in root.rglob("*.csproj")
+        ):
+            issues.append(f"MISSING {project_label} under {folder}/")
+    misplaced_projects = sorted(
+        path for path in target.rglob("*.csproj")
+        if not any(part in ("bin", "obj") for part in path.relative_to(target).parts)
+        and path.relative_to(target).parts[0] not in ("src", "tests")
+    )
+    if misplaced_projects:
+        paths = ", ".join(path.relative_to(target).as_posix() for path in misplaced_projects)
+        issues.append(f"MISPLACED project outside src/ or tests/: {paths}")
+    nested_solutions = sorted(
+        path for pattern in ("*.slnx", "*.sln") for path in target.rglob(pattern)
+        if path.parent != target and not any(part in ("bin", "obj") for part in path.relative_to(target).parts)
+    )
+    if nested_solutions:
+        paths = ", ".join(path.relative_to(target).as_posix() for path in nested_solutions)
+        issues.append(f"LEGACY nested solution outside repo root: {paths}")
+    root_legacy_solutions = sorted(target.glob("*.sln"))
+    if root_legacy_solutions:
+        paths = ", ".join(path.relative_to(target).as_posix() for path in root_legacy_solutions)
+        issues.append(f"LEGACY root .sln exists beside .slnx: {paths}")
+    movable_config = root_config + ("nuget.config",)
+    legacy_config = [target / "src" / name for name in movable_config if (target / "src" / name).exists()]
+    if legacy_config:
+        paths = ", ".join(path.relative_to(target).as_posix() for path in legacy_config)
+        issues.append(f"LEGACY root configuration under src/: {paths}")
+    if (target / "src" / "Test").exists():
+        issues.append("LEGACY test tree src/Test/ exists; use tests/")
+    if (target / "Test").exists():
+        issues.append("LEGACY test tree Test/ exists; use tests/")
+    return issues
 
 
 def snapshot_migrations(target: Path) -> set[str]:
@@ -368,6 +452,10 @@ def gate(phase: str, target: Path, pre_migrations: set[str] | None = None) -> tu
     ok = build_ok
 
     if phase == "4":
+        layout_issues = canonical_layout_issues(target)
+        if layout_issues:
+            ok = False
+            notes.extend(layout_issues)
         if not re.search(r"contractsScaffolded:\s*true", handoff):
             ok = False
             notes.append("HANDOFF contractsScaffolded is not true")
@@ -499,7 +587,7 @@ def main() -> int:
             print(prompts[phase])
         print("\n--- gates ---")
         print("3: implementation-plan.md exists + HANDOFF currentPhase=4")
-        print("4: dotnet build + HANDOFF contractsScaffolded=true")
+        print("4: canonical root solution/config + src/tests projects + dotnet build + HANDOFF contractsScaffolded=true")
         print("5a: dotnet build + dotnet test --filter TestCategory=Unit")
         print('5b: dotnet build + dotnet test --filter "TestCategory=Unit|TestCategory=Endpoint"')
         print(f'slice: dotnet build + dotnet test --filter "TestCategory=Unit|TestCategory=Endpoint" '

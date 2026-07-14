@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Generates** | `src/UI/{Project}.Uno/Testing/{Project}TestBridge.cs`, `Test/Test.PlaywrightUI/Uno/WasmAppHost.cs`, `WasmTestHarness.cs`, `WasmTestSettings.cs`, `AssemblyInfo.cs`, `Test/Test.PlaywrightUI/Uno/{Entity}CanvasTests.cs` (or `.ts` for Node Playwright) |
+| **Generates** | `src/UI/{Project}.Uno/Testing/{Project}TestBridge.cs`, `tests/Test.PlaywrightUI/Uno/WasmAppHost.cs`, `WasmTestHarness.cs`, `WasmTestSettings.cs`, `AssemblyInfo.cs`, `tests/Test.PlaywrightUI/Uno/{Entity}CanvasTests.cs` (or `.ts` for Node Playwright) |
 | **Requires** | An Uno WASM target that renders through the **Skia canvas** renderer (single `<canvas>`, no per-control DOM), a Gateway for real local auth, an Aspire AppHost when the app needs API/resources, [testing-quality.md](../skills/testing-quality.md) (Hosted Browser UI) |
 | **Phase** | Bridge added with the Uno host (5c); canvas tests authored in 5d |
 | **Protocol** | Tests-after. The bridge is a browser-only diagnostic surface, never a production code path. |
@@ -181,7 +181,7 @@ Required fixture behavior:
 Generated assembly:
 
 ```csharp
-// Test/Test.PlaywrightUI/AssemblyInfo.cs
+// tests/Test.PlaywrightUI/AssemblyInfo.cs
 [assembly: DoNotParallelize]
 ```
 
@@ -229,7 +229,7 @@ Node/TypeScript runner rules:
 
 ## Playwright: wait on state, not DOM
 
-### File: `Test/Test.PlaywrightUI/Uno/{Entity}CanvasTests.cs`
+### File: `tests/Test.PlaywrightUI/Uno/{Entity}CanvasTests.cs`
 
 ```csharp
 /// <summary>
@@ -238,7 +238,7 @@ Node/TypeScript runner rules:
 /// The shared WasmAppHost fixture starts Aspire, restores/builds browserwasm, and resolves
 /// dynamic endpoints. The test asserts on published state and saves a screenshot artifact.
 /// Manual run (Docker must be running; local stack script is optional):
-///   dotnet test src/Test/Test.PlaywrightUI/Test.PlaywrightUI.csproj --filter TestCategory=WasmUI
+///   dotnet test tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj --filter TestCategory=WasmUI
 /// </summary>
 [TestClass]
 [TestCategory("WasmUI")]

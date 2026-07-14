@@ -79,7 +79,7 @@ exist; do not emit dead toggles for absent projects.
 Run on PRs to `main`/`develop`:
 
 - checkout
-- setup .NET from `src/global.json`
+- setup .NET from `global.json`
 - `dotnet restore`
 - `dotnet build --no-restore`
 - targeted test runs by category (Endpoint path by default, broader Integration path optionally gated)
@@ -141,7 +141,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
-          global-json-file: src/global.json
+          global-json-file: global.json
 
       # Install extra workloads if solution includes WASM/Uno projects
       # - run: dotnet workload install wasm-tools
@@ -155,45 +155,45 @@ jobs:
           dotnet nuget update source "{FeedName}"
           --username "ci" --password "$NUGET_PAT"
           --store-password-in-clear-text
-          --configfile src/nuget.config
+          --configfile nuget.config
 
-      - run: dotnet restore src/{SolutionName}.slnx
+      - run: dotnet restore {SolutionName}.slnx
 
       # Vulnerability audit per support/execution-gates.md section Vulnerability Audit
       # High severity must be fixed or recorded in .scaffold/INSTRUCTION-GAPS.md
       - name: Vulnerability audit
         run: |
-          dotnet list src/{SolutionName}.slnx package --vulnerable --include-transitive 2>&1 | tee vuln.log
+          dotnet list {SolutionName}.slnx package --vulnerable --include-transitive 2>&1 | tee vuln.log
           if grep -E '\bHigh\b' vuln.log; then
             echo "::warning::High-severity vulnerable packages detected. Verify each is documented in .scaffold/INSTRUCTION-GAPS.md."
           fi
 
-      - run: dotnet build src/{SolutionName}.slnx --no-restore --configuration Release
+      - run: dotnet build {SolutionName}.slnx --no-restore --configuration Release
 
       # Fast tiers: always run, no Docker, no gate.
       # Target specific test projects to avoid "No test matches" noise from unrelated projects
-      - run: dotnet test src/Test/Test.Unit/Test.Unit.csproj --no-build --configuration Release
-      - run: dotnet test src/Test/Test.Endpoints/Test.Endpoints.csproj --no-build --configuration Release
-      - run: dotnet test src/Test/Test.Architecture/Test.Architecture.csproj --no-build --configuration Release
+      - run: dotnet test tests/Test.Unit/Test.Unit.csproj --no-build --configuration Release
+      - run: dotnet test tests/Test.Endpoints/Test.Endpoints.csproj --no-build --configuration Release
+      - run: dotnet test tests/Test.Architecture/Test.Architecture.csproj --no-build --configuration Release
 
       # Docker-backed tiers: manual dispatch only.
       - if: ${{ github.event_name == 'workflow_dispatch' && inputs.includeIntegration == true }}
-        run: dotnet test src/Test/Test.Integration/Test.Integration.csproj --no-build --configuration Release
+        run: dotnet test tests/Test.Integration/Test.Integration.csproj --no-build --configuration Release
       - if: ${{ github.event_name == 'workflow_dispatch' && inputs.includeAspireMesh == true }}
-        run: dotnet test src/Test/Test.Aspire/Test.Aspire.csproj --no-build --configuration Release
+        run: dotnet test tests/Test.Aspire/Test.Aspire.csproj --no-build --configuration Release
       - if: ${{ github.event_name == 'workflow_dispatch' && inputs.includeE2E == true }}
-        run: dotnet test src/Test/Test.E2E/Test.E2E.csproj --no-build --configuration Release
+        run: dotnet test tests/Test.E2E/Test.E2E.csproj --no-build --configuration Release
 
       # Perf / quality tiers: manual dispatch only. NOTE the runner per tier.
       - if: ${{ github.event_name == 'workflow_dispatch' && inputs.includeLoad == true }}
-        run: dotnet test src/Test/Test.Load/Test.Load.csproj --no-build --configuration Release --filter "TestCategory=Load"
+        run: dotnet test tests/Test.Load/Test.Load.csproj --no-build --configuration Release --filter "TestCategory=Load"
       # Test.Benchmarks uses BenchmarkDotNet [Benchmark], not [TestMethod] - `dotnet test`
       # discovers nothing (silent no-op). Run the console host instead.
       - if: ${{ github.event_name == 'workflow_dispatch' && inputs.includeBenchmarks == true }}
-        run: dotnet run --project src/Test/Test.Benchmarks/Test.Benchmarks.csproj --configuration Release
+        run: dotnet run --project tests/Test.Benchmarks/Test.Benchmarks.csproj --configuration Release
       # Test.Mutation runs via the Stryker local tool, not `dotnet test`.
       - if: ${{ github.event_name == 'workflow_dispatch' && inputs.includeMutation == true }}
-        run: dotnet stryker --project src/Test/Test.Mutation/Test.Mutation.csproj
+        run: dotnet stryker --project tests/Test.Mutation/Test.Mutation.csproj
       # Test.PlaywrightUI / Test.Mobile / Test.FoundryLocal each need runner setup the main
       # job should not carry - see the separate jobs below.
 ```
@@ -234,7 +234,7 @@ category to its `inputs.*` switch.
 | `Aspire` | Manual (`includeAspireMesh`) | Docker (full AppHost mesh; disk reclaim) |
 | `E2E` | Manual (`includeE2E`) | Docker (multi-endpoint chains, Testcontainers SQL) |
 | `PlaywrightUI` | Manual (`includePlaywright`) | hosted stack + browser install (own job) |
-| `MobileUI` | Manual (`includeMobile`) | `src/Test/Test.Mobile/run-mobile-tests.ps1`; Android SDK + emulator + Appium + UiAutomator2; fail-fast prerequisites (own job) |
+| `MobileUI` | Manual (`includeMobile`) | `tests/Test.Mobile/run-mobile-tests.ps1`; Android SDK + emulator + Appium + UiAutomator2; fail-fast prerequisites (own job) |
 | Foundry Local (`LiveAI`) | Manual (`includeFoundryLocal`) | native Foundry Local runtime, RID-bound (own job) |
 | `Load` | Manual (`includeLoad`) | heavy; NBomber via `dotnet test --filter TestCategory=Load` |
 | `Benchmark` | Manual (`includeBenchmarks`) | heavy; BenchmarkDotNet via `dotnet run` (NOT `dotnet test`) |
@@ -252,7 +252,7 @@ playwright:
   steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-dotnet@v4
-    - run: dotnet build src/{SolutionName}.slnx --configuration Release
+    - run: dotnet build {SolutionName}.slnx --configuration Release
     - name: Start Aspire AppHost
       run: |
         dotnet run --project src/Host/Aspire/AppHost --configuration Release &
@@ -265,11 +265,11 @@ playwright:
         done
         exit 1
     - name: Install Playwright browsers
-      run: pwsh src/Test/Test.PlaywrightUI/bin/Release/$(TargetFramework)/playwright.ps1 install --with-deps
+      run: pwsh tests/Test.PlaywrightUI/bin/Release/$(TargetFramework)/playwright.ps1 install --with-deps
     - name: Run Playwright tests
       env:
         PLAYWRIGHT_BASE_URL: http://localhost:5100
-      run: dotnet test src/Test/Test.PlaywrightUI/Test.PlaywrightUI.csproj --no-build --configuration Release
+      run: dotnet test tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj --no-build --configuration Release
     - name: Stop AppHost
       if: always()
       run: kill $APPHOST_PID || true
@@ -284,7 +284,7 @@ If `Test.PlaywrightUI` is a Node Playwright suite for React/Vite, replace the br
 These two tiers need a runtime the main job must not carry, so each is its own
 `workflow_dispatch`-gated job, emitted only when the tier was generated.
 
-**`Test.Mobile` (`MobileUI`, Appium).** Needs Android SDK + running emulator + Appium + UiAutomator2. Default `dotnet test` with no enable flag self-marks `Inconclusive` without touching mobile dependencies. Explicit CI mobile lane must call `src/Test/Test.Mobile/run-mobile-tests.ps1`; that runner sets `{APP}_MOBILE_TESTS_ENABLED=true`, produces TRX, and fails fast red when APK, emulator/device, Appium, or UiAutomator2 is missing/broken. Use generated runner logic, or `reactivecircus/android-emulator-runner` as the emulator provider and still call the runner inside it.
+**`Test.Mobile` (`MobileUI`, Appium).** Needs Android SDK + running emulator + Appium + UiAutomator2. Default `dotnet test` with no enable flag self-marks `Inconclusive` without touching mobile dependencies. Explicit CI mobile lane must call `tests/Test.Mobile/run-mobile-tests.ps1`; that runner sets `{APP}_MOBILE_TESTS_ENABLED=true`, produces TRX, and fails fast red when APK, emulator/device, Appium, or UiAutomator2 is missing/broken. Use generated runner logic, or `reactivecircus/android-emulator-runner` as the emulator provider and still call the runner inside it.
 ```yaml
 mobile:
   runs-on: ubuntu-latest        # the emulator action provides KVM acceleration
@@ -292,12 +292,12 @@ mobile:
   steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-dotnet@v4
-      with: { global-json-file: src/global.json }
+      with: { global-json-file: global.json }
  - name: Run Mobile UI tests on emulator
    uses: reactivecircus/android-emulator-runner@v2
    with:
      api-level: 34
-     script: pwsh -NoProfile -File src/Test/Test.Mobile/run-mobile-tests.ps1
+     script: pwsh -NoProfile -File tests/Test.Mobile/run-mobile-tests.ps1
 ```
 
 **`Test.FoundryLocal` (live AI smoke).** RID-bound native tier - the runner must install and
@@ -312,13 +312,13 @@ foundry-local:
   steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-dotnet@v4
-      with: { global-json-file: src/global.json }
+      with: { global-json-file: global.json }
     - name: Install + bootstrap Foundry Local runtime
       run: |
         # Install the Foundry Local runtime per its docs, then warm the model.
         # foundry model run <model>   # bootstrap before the RID-bound test loads the native SDK
     - name: Run live AI smoke (RID-bound)
-      run: dotnet test src/Test/Test.FoundryLocal/Test.FoundryLocal.csproj --configuration Release --filter "TestCategory=LiveAI"
+      run: dotnet test tests/Test.FoundryLocal/Test.FoundryLocal.csproj --configuration Release --filter "TestCategory=LiveAI"
 ```
 
 ---

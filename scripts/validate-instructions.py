@@ -25,6 +25,8 @@ Checks:
     (x.y.z) in payload markdown. IP addresses are excluded; the quarantined
     version-pin owner (skills/ai-integration.md) and reasoned constraints are
     allowlisted in VERSION_PROSE_ALLOWLIST.
+  - Deprecated-layout guard: generated solutions/config stay at the repo root,
+    production projects stay under src/, and test projects stay under tests/.
   - Section-anchor existence: when prose says ``[label](file.md) section Section Name``
     or ``file.md -> Section Name`` (with the path in backticks), verify the named
     section exists as a heading in the target file. Catches refs left dangling
@@ -99,6 +101,24 @@ INSTRUCTIONS_TOP_LEVEL_MD = ["README.md", "START-AI.md", "AGENTS.md", "GROUND-RU
 APP_TOP_LEVEL_MD = ["AGENTS.md", "CLAUDE.md"]
 
 EXCLUDE_PARTS = {"__pycache__", ".git", ".venv", ".tmp", ".vscode", ".githooks", "tests", "bin", "obj", "node_modules"}
+
+DEPRECATED_LAYOUT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"(?<![A-Za-z0-9_.-])src[\\/]Test(?:[\\/]|(?=[`'\"\s|)]|$))"), "use the root `tests/` tree"),
+    (re.compile(r"(?<![A-Za-z0-9_.-])Test[\\/]Test\."), "use `tests/Test.*`"),
+    (re.compile(r"(?<=`)Test\.[A-Za-z0-9.*{}-]+[\\/]"), "prefix repo-relative test paths with `tests/`"),
+    (
+        re.compile(r"(?<![A-Za-z0-9_.-])src[\\/][^`'\"\s|)]+\.slnx?(?=[`'\"\s|),;:]|$|\.(?:\s|$))"),
+        "place the `.slnx` at the repo root and do not generate `.sln`",
+    ),
+    (
+        re.compile(r"(?<![A-Za-z0-9_*{.-])(?:\{SolutionName\}|[A-Za-z0-9_][A-Za-z0-9_.-]*)\.sln(?=[`'\"\s|),;:]|$|\.(?:\s|$))"),
+        "use the root `.slnx` format for generated solutions",
+    ),
+    (
+        re.compile(r"(?<![A-Za-z0-9_.-])src[\\/](?:Directory\.(?:Build|Packages)\.props|global\.json|nuget\.config)\b"),
+        "place root configuration beside the root `.slnx`",
+    ),
+]
 
 # Recognized phase tokens. Anything matching the pattern but not on this list is flagged.
 CANONICAL_PHASES = {"Phase 1", "Phase 2", "Phase 3", "Phase 4", "Phase 5", "Phase 5a", "Phase 5b", "Phase 5c", "Phase 5d", "Phase 5e"}
@@ -503,6 +523,19 @@ def check_version_prose(path: Path, findings: Findings) -> None:
                     f"line {line_no}: bare version '{m.group(0)}' in payload prose (GR-08) - "
                     "use <latest-stable>/$(LatestStableTfm), or allowlist it in VERSION_PROSE_ALLOWLIST with an inline reason",
                 )
+
+
+def check_deprecated_layout(path: Path, findings: Findings) -> None:
+    """Reject paths from the former src-rooted solution and test layout."""
+    for line_no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        for pattern, replacement in DEPRECATED_LAYOUT_PATTERNS:
+            match = pattern.search(line)
+            if match:
+                findings.err(
+                    path,
+                    f"line {line_no}: deprecated layout path '{match.group(0)}' - {replacement}",
+                )
+                break
 
 
 # --- Phase 5 load-set table (GAP-003) ---------------------------------------
@@ -1012,6 +1045,7 @@ def main() -> int:
         check_section_anchors(path, findings, headings_cache)
         check_refapp_count_claims(path, findings)
         check_version_prose(path, findings)
+        check_deprecated_layout(path, findings)
 
     check_command_shape(findings)
     check_maintenance_guards(findings)

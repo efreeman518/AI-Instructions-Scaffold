@@ -105,7 +105,7 @@ The goal is a small, owned dependency surface - every package added is one the t
 
 ### When `packageStrategy: local` or `hybrid` (locally-generated layers only)
 
-1. No `nuget.config` private-feed entry is required for layers in `localPackageLayers`. `nuget.org` is still mandatory.
+1. No `nuget.config` private-feed entry is required for layers in `localPackageLayers`. `nuget.org` access is still mandatory, but the repo-root file may be absent when NuGet's default source is sufficient.
 2. Each generated project under `src/Packages/<packagePrefix>.<Layer>/` sets `IsPackable=true`, `<PackageId>=<packagePrefix>.<Layer>`, `<Version>=0.1.0` (overridable).
 3. Application/domain/host projects consume locally-generated layers via `<ProjectReference Include="..\..\Packages\<packagePrefix>.<Layer>\<packagePrefix>.<Layer>.csproj" />` - no `<PackageVersion>` entry in `Directory.Packages.props`.
 4. Transitive NuGet dependencies of the generated projects (e.g., `Microsoft.EntityFrameworkCore`) still go through `Directory.Packages.props` central versions.
@@ -368,7 +368,7 @@ Pattern reference: [external-api.md](external-api.md)
 
 ## Generation Checklist
 
-- [ ] `nuget.config` includes `nuget.org`; for `packageStrategy: feed`/`hybrid` it also includes every entry in `customNugetFeeds`
+- [ ] For `packageStrategy: feed`/`hybrid`, repo-root `nuget.config` includes `nuget.org` and every entry in `customNugetFeeds`; for `local`, the file may be absent when NuGet's default source is sufficient
 - [ ] For `packageStrategy: feed`/`hybrid`: local `NUGET_AUTH_TOKEN` or approved credential provider is configured for the private feed
 - [ ] For `packageStrategy: feed`/`hybrid`: `python .instructions/scripts/configure-ef-packages-feed.py --root . --feed-url <feed-url> --username <github-user> --prefix <packagePrefix>` has been run or equivalent config has been manually verified
 - [ ] For `packageStrategy: local`/`hybrid`: every layer in `localPackageLayers` has a corresponding `src/Packages/<packagePrefix>.<Layer>` project planned with `IsPackable=true` and `<PackageId>=<packagePrefix>.<Layer>`

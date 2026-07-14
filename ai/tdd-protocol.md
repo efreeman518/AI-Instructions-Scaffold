@@ -75,8 +75,8 @@ Rules:
 
 Process each entity in the dependency order established in Phase 4 (parents first, then children).
 
-1. **Write domain entity tests** in `Test/Test.Unit/Domain/{Entity}Tests.cs` from `test-templates-domain.md`.
-2. **Write domain rule tests** in `Test/Test.Unit/Domain/{Entity}RulesTests.cs`.
+1. **Write domain entity tests** in `tests/Test.Unit/Domain/{Entity}Tests.cs` from `test-templates-domain.md`.
+2. **Write domain rule tests** in `tests/Test.Unit/Domain/{Entity}RulesTests.cs`.
 3. **Run RED**:
 
 ```powershell
@@ -122,7 +122,7 @@ Git checkpoint after gate passes.
 
 ## Phase 5b - App Core TDD (Per Entity Slice)
 
-1. **Write service tests** in `Test/Test.Unit/Services/{Entity}ServiceTests.cs` from `test-templates-service.md`.
+1. **Write service tests** in `tests/Test.Unit/Services/{Entity}ServiceTests.cs` from `test-templates-service.md`.
 2. **Run RED**:
 
 ```powershell
@@ -137,7 +137,7 @@ dotnet test --filter "TestCategory=Unit"
 dotnet test --filter "TestCategory=Unit"
 ```
 
-5. **Write endpoint tests** in `Test/Test.Endpoints/Endpoints/{Entity}EndpointsTests.cs` from `test-templates-endpoint.md`.
+5. **Write endpoint tests** in `tests/Test.Endpoints/Endpoints/{Entity}EndpointsTests.cs` from `test-templates-endpoint.md`.
 6. **Implement endpoints** and wire endpoint registration.
 7. **Run GREEN (Endpoint)**:
 

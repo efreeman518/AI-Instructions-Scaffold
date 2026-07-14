@@ -16,7 +16,9 @@ FROM mcr.microsoft.com/dotnet/sdk:latest AS restore
 WORKDIR /src
 
 # Copy only project files + central package management for restore cache
+COPY Directory.Build.props .
 COPY Directory.Packages.props .
+# Emit this line only when the scaffold generated repo-root nuget.config.
 COPY nuget.config .
 COPY global.json .
 COPY {SolutionName}.slnx .
@@ -81,7 +83,7 @@ EXPOSE 80
 
 ## Build Context
 
-This template's `COPY` paths reference both repo-root files (`Directory.Packages.props`, `{SolutionName}.slnx`) and `src/...` paths, so it is built with the **repo root** as context:
+This template's `COPY` paths reference both repo-root files (`Directory.Build.props`, `Directory.Packages.props`, `{SolutionName}.slnx`) and `src/...` paths, so it is built with the **repo root** as context:
 
 ```bash
 docker build -f src/Host/{Host}.Api/Dockerfile .
@@ -113,7 +115,7 @@ Prefer `-chiseled` and set `<InvariantGlobalization>true</InvariantGlobalization
 ## Verification Checklist
 
 - [ ] Restore stage copies all `.csproj` files needed by the target host
-- [ ] `Directory.Packages.props`, `nuget.config`, and `global.json` are copied before restore
+- [ ] `{SolutionName}.slnx`, `Directory.Build.props`, `Directory.Packages.props`, and `global.json` are copied before restore; `nuget.config` is copied only when generated
 - [ ] Publish uses `--no-restore` (relies on cached restore layer)
 - [ ] Runtime uses the smallest chiseled non-root variant the app needs (`-chiseled` unless globalization/tzdata/`libstdc++` forces `-chiseled-extra`)
 - [ ] `EXPOSE` port matches Container Apps / Aspire configuration

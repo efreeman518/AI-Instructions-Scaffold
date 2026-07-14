@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Generates** | `Test/Test.Architecture/**`, `Test/Test.PlaywrightUI/**`, `Test/Test.Mobile/**` (when Uno native mobile testing is enabled), `Test/Test.Load/**`, `Test/Test.Benchmarks/**`, `Test/Test.Mutation/**` |
+| **Generates** | `tests/Test.Architecture/**`, `tests/Test.PlaywrightUI/**`, `tests/Test.Mobile/**` (when Uno native mobile testing is enabled), `tests/Test.Load/**`, `tests/Test.Benchmarks/**`, `tests/Test.Mutation/**` |
 | **Requires** | Core implementation phases complete (5a-5c) |
 | **Phase** | 5d (Quality + Delivery) |
 | **Protocol** | These tests are written AFTER implementation. Unit/endpoint/integration tests already exist from 5a/5b/5c. Phase 5d adds quality gates and runs a full regression. |
@@ -11,7 +11,7 @@
 
 ## Architecture Tests (NetArchTest)
 
-### File: `Test/Test.Architecture/BaseTest.cs`
+### File: `tests/Test.Architecture/BaseTest.cs`
 
 ```csharp
 public abstract class BaseTest
@@ -24,9 +24,9 @@ public abstract class BaseTest
 ```
 
 ### Files:
-- `Test/Test.Architecture/DomainDependencyTests.cs`
-- `Test/Test.Architecture/ApplicationDependencyTests.cs`
-- `Test/Test.Architecture/ApiDependencyTests.cs`
+- `tests/Test.Architecture/DomainDependencyTests.cs`
+- `tests/Test.Architecture/ApplicationDependencyTests.cs`
+- `tests/Test.Architecture/ApiDependencyTests.cs`
 
 ```csharp
 [TestClass]
@@ -60,7 +60,7 @@ public class ApplicationDependencyTests : BaseTest
 }
 ```
 
-### File: `Test/Test.Architecture/AggregateBoundaryTests.cs` (GR-15)
+### File: `tests/Test.Architecture/AggregateBoundaryTests.cs` (GR-15)
 
 Enforces the aggregate boundary: an **owned child** (1:N owned entity or M:N junction with no life outside its root - e.g. a comment or checklist item on a task, or the join entity) gets **no** standalone Create/Update/Delete CQRS command/handler, no transactional repository contract, and no write method on its read service. This is the automated gate behind [../skills/domain-model.md](../skills/domain-model.md) section Aggregate Roots vs Internal Children - it catches the anemic-child anti-pattern (a `Create{Child}Handler` that never loads its root) that prose alone does not.
 
@@ -150,7 +150,7 @@ public sealed class AggregateBoundaryTests : BaseTest
 
 > Requires `ApplicationContractsAssembly` and `ApplicationCqrsAssembly` on `BaseTest` (the CQRS assembly exists when `applicationStyle` is `cqrs` or `switch`). For a pure `service`-style scaffold with no CQRS layer, drop `OwnedChildren_HaveNoStandaloneWriteCommandsOrHandlers` and keep the repository-contract and service-surface assertions, which are style-independent.
 
-**TaskFlow proof (local):** `../AI-Instructions-ReferenceApp/src/Test/Test.Architecture/AggregateBoundaryTests.cs`
+**TaskFlow proof (local):** `../AI-Instructions-ReferenceApp/tests/Test.Architecture/AggregateBoundaryTests.cs`
 
 ---
 
@@ -166,7 +166,7 @@ public sealed class AggregateBoundaryTests : BaseTest
 >
 > **Base URL:** Aspire assigns dynamic ports to UI hosts, especially React/Vite apps. Resolve the base URL at run time via `PlaywrightStackFixture` below - env var when an externally hosted stack is provided, otherwise self-host the AppHost and read the UI resource's actual endpoint. **Never generate a hard-coded URL fallback, and never generate `[Ignore]`d tests pointed at a guessed URL** - a Playwright suite that cannot find its stack degrades to `Assert.Inconclusive` with a precise message (GR-11), same as the Docker-gated tiers. For Uno WASM, also pass the dynamically resolved Gateway endpoint into the app through the test-mode query string so the browser client does not fall back to a fixed dev port.
 
-### File: `Test/Test.PlaywrightUI/PlaywrightStackFixture.cs`
+### File: `tests/Test.PlaywrightUI/PlaywrightStackFixture.cs`
 
 When `useAspire: true`, the suite hosts the stack itself with `DistributedApplicationTestingBuilder` (package `Aspire.Hosting.Testing` + a project reference to the AppHost), waits for the UI resource, and reads its dynamic URL from a named endpoint. `{ui-resource}` is the AppHost resource name of the UI under test (e.g. the React/Vite or Blazor resource). An explicit `{APP}_UI_BASE_URL` always wins, so CI can target a docker-compose stack or preview deployment without booting Aspire.
 
@@ -223,7 +223,7 @@ public class PlaywrightStackFixture
 }
 ```
 
-### File: `Test/Test.PlaywrightUI/Tests/{Entity}CrudTests.cs`
+### File: `tests/Test.PlaywrightUI/Tests/{Entity}CrudTests.cs`
 
 ```csharp
 [assembly: Parallelize(Workers = 4, Scope = ExecutionScope.MethodLevel)]
@@ -281,7 +281,7 @@ public class {Entity}CrudTests : PageTest
 
 ### Page Objects
 
-### File: `Test/Test.PlaywrightUI/PageObjects/{Entity}PageObject.cs`
+### File: `tests/Test.PlaywrightUI/PageObjects/{Entity}PageObject.cs`
 
 ```csharp
 public class {Entity}PageObject(IPage page)
@@ -317,13 +317,13 @@ public class {Entity}PageObject(IPage page)
 
 ## Mobile UI Tests (MSTest + Appium, optional)
 
-Generate `Test/Test.Mobile` and `src/Test/Test.Mobile/run-mobile-tests.ps1` only when Uno native mobile testing is in scope. Keep test methods opt-in so normal `dotnet test` does not require an emulator, device, APK build, or Appium server.
+Generate `tests/Test.Mobile` and `tests/Test.Mobile/run-mobile-tests.ps1` only when Uno native mobile testing is in scope. Keep test methods opt-in so normal `dotnet test` does not require an emulator, device, APK build, or Appium server.
 
 Rules:
 
 - Use MSTest if the scaffold's test stack is MSTest. Do not introduce NUnit only for mobile smoke tests.
 - Test methods must not start Appium, start an Android Emulator, or build APKs. They only connect to the prepared device/server.
-- Default `dotnet test src/Test/Test.Mobile/Test.Mobile.csproj --filter TestCategory=MobileUI` with `{APP}_MOBILE_TESTS_ENABLED` unset/false must return `Assert.Inconclusive` without touching Appium or emulator.
+- Default `dotnet test tests/Test.Mobile/Test.Mobile.csproj --filter TestCategory=MobileUI` with `{APP}_MOBILE_TESTS_ENABLED` unset/false must return `Assert.Inconclusive` without touching Appium or emulator.
 - `run-mobile-tests.ps1` owns Android restore/build, emulator readiness, Appium readiness, `{APP}_MOBILE_TESTS_ENABLED=true`, `dotnet test`, and TRX output. Explicit runner lanes fail fast red if APK, emulator/device, Appium, or UiAutomator2 is missing/broken.
 - Android local runs require Appium CLI/server and the UiAutomator2 driver.
 - The runner builds the Android package from a full Uno restore graph:
@@ -361,19 +361,19 @@ public static class MobileTestHelpers
 Runner commands to scaffold:
 
 ```powershell
-powershell -NoProfile -File src/Test/Test.Mobile/run-mobile-tests.ps1
-powershell -NoProfile -File src/Test/Test.Mobile/run-mobile-tests.ps1 -SkipBuild
-powershell -NoProfile -File src/Test/Test.Mobile/run-mobile-tests.ps1 -VisibleEmulator
-powershell -NoProfile -File src/Test/Test.Mobile/run-mobile-tests.ps1 -VisibleEmulator -AvdName Android_Emulator_35
-powershell -NoProfile -File src/Test/Test.Mobile/run-mobile-tests.ps1 -SkipBuild -Filter "FullyQualifiedName~{Project}Mobile_AppLaunches_AndRendersNativeSurface"
-powershell -NoProfile -File src/Test/Test.Mobile/run-mobile-tests.ps1 -AndroidSdk "C:\Program Files (x86)\Android\android-sdk" -AppiumServerUrl "http://127.0.0.1:4723/"
+powershell -NoProfile -File tests/Test.Mobile/run-mobile-tests.ps1
+powershell -NoProfile -File tests/Test.Mobile/run-mobile-tests.ps1 -SkipBuild
+powershell -NoProfile -File tests/Test.Mobile/run-mobile-tests.ps1 -VisibleEmulator
+powershell -NoProfile -File tests/Test.Mobile/run-mobile-tests.ps1 -VisibleEmulator -AvdName Android_Emulator_35
+powershell -NoProfile -File tests/Test.Mobile/run-mobile-tests.ps1 -SkipBuild -Filter "FullyQualifiedName~{Project}Mobile_AppLaunches_AndRendersNativeSurface"
+powershell -NoProfile -File tests/Test.Mobile/run-mobile-tests.ps1 -AndroidSdk "C:\Program Files (x86)\Android\android-sdk" -AppiumServerUrl "http://127.0.0.1:4723/"
 ```
 
 ---
 
 ## Load Tests (NBomber)
 
-### File: `Test/Test.Load/{Entity}LoadTests.cs`
+### File: `tests/Test.Load/{Entity}LoadTests.cs`
 
 ```csharp
 [TestClass]
@@ -399,7 +399,7 @@ public class {Entity}LoadTests
 
 ## Benchmarks (BenchmarkDotNet)
 
-### File: `Test/Test.Benchmarks/{Entity}Benchmarks.cs`
+### File: `tests/Test.Benchmarks/{Entity}Benchmarks.cs`
 
 ```csharp
 [MemoryDiagnoser]
@@ -430,7 +430,7 @@ dotnet tool install dotnet-stryker
 dotnet tool restore
 ```
 
-### File: `Test/Test.Mutation/Test.Mutation.csproj`
+### File: `tests/Test.Mutation/Test.Mutation.csproj`
 
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
@@ -448,14 +448,14 @@ dotnet tool restore
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\Domain\{Project}.Domain.Model\{Project}.Domain.Model.csproj" />
+    <ProjectReference Include="..\..\src\Domain\{Project}.Domain.Model\{Project}.Domain.Model.csproj" />
     <ProjectReference Include="..\Test.Support\Test.Support.csproj" />
   </ItemGroup>
 
 </Project>
 ```
 
-### File: `Test/Test.Mutation/stryker-config.json`
+### File: `tests/Test.Mutation/stryker-config.json`
 
 Replace `{TargetFramework}` with the concrete TFM generated for the solution.
 
@@ -486,7 +486,7 @@ Replace `{TargetFramework}` with the concrete TFM generated for the solution.
 }
 ```
 
-### File: `Test/Test.Mutation/Domain/{Entity}MutationSamples.cs`
+### File: `tests/Test.Mutation/Domain/{Entity}MutationSamples.cs`
 
 ```csharp
 using {Project}.Domain.Model;
@@ -501,9 +501,9 @@ namespace Test.Mutation.Domain;
 /// Run the suite from repo root:
 /// <code>
 /// dotnet tool restore
-/// dotnet test src/Test/Test.Mutation/Test.Mutation.csproj
+/// dotnet test tests/Test.Mutation/Test.Mutation.csproj
 /// </code>
-/// Then run Stryker from src/Test/Test.Mutation:
+/// Then run Stryker from tests/Test.Mutation:
 /// <code>
 /// dotnet tool run dotnet-stryker
 /// </code>
@@ -542,10 +542,10 @@ public class {Entity}MutationSamples
 Run commands:
 
 ```powershell
-dotnet test src/Test/Test.Mutation/Test.Mutation.csproj
+dotnet test tests/Test.Mutation/Test.Mutation.csproj
 ```
 
-From `src/Test/Test.Mutation`:
+From `tests/Test.Mutation`:
 
 ```powershell
 dotnet tool run dotnet-stryker

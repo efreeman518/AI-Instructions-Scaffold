@@ -101,7 +101,7 @@ If any of the three drifts, requests fail with `JsonException` on the host (stri
 The endpoint test base must publish the shared options:
 
 ```csharp
-// Test/Test.Support/JsonTestOptions.cs
+// tests/Test.Support/JsonTestOptions.cs
 public static class JsonTestOptions
 {
     public static readonly JsonSerializerOptions Default = new()

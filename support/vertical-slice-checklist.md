@@ -149,19 +149,19 @@ dotnet ef migrations add Add{Entity} --project src/Infrastructure/{Project}.Infr
 
 | File Path | Template | Profile |
 |---|---|---|
-| `src/Test/Test.Unit/Domain/{Entity}Tests.cs` | [test-templates-domain.md](../templates/test-templates-domain.md) | all |
-| `src/Test/Test.Unit/Domain/{Entity}RulesTests.cs` (when rules exist) | [test-templates-domain.md](../templates/test-templates-domain.md) | all |
-| `src/Test/Test.Unit/Services/{Entity}ServiceTests.cs` | [test-templates-service.md](../templates/test-templates-service.md) | all |
-| `src/Test/Test.Unit/Repositories/{Entity}RepositoryTrxnTests.cs` | [test-templates-repository.md](../templates/test-templates-repository.md) | all |
-| `src/Test/Test.Unit/Repositories/{Entity}RepositoryQueryTests.cs` | [test-templates-repository.md](../templates/test-templates-repository.md) | all |
-| `src/Test/Test.Unit/Mappers/{Entity}MapperTests.cs` | [test-templates-service.md](../templates/test-templates-service.md) | all |
-| `src/Test/Test.Unit/Mappers/MapperProjectionParityTests.cs` (add a method per entity) | [test-templates-service.md](../templates/test-templates-service.md) | all |
-| `src/Test/Test.UI/Presentation/{Entity}PresentationModelTests.cs` | [test-templates-presentation.md](../templates/test-templates-presentation.md) | if UI model/presentation coverage exists |
-| `src/Test/Test.Endpoints/Endpoints/{Entity}EndpointsTests.cs` | [test-templates-endpoint.md](../templates/test-templates-endpoint.md) | all |
-| `src/Test/Test.Unit/Cqrs/{Entity}CqrsValidationTests.cs` | [test-templates-cqrs.md](../templates/test-templates-cqrs.md) | if cqrs or switch |
-| `src/Test/Test.Integration/{Entity}RepositoryIntegrationTests.cs` | [test-templates-integration.md](../templates/test-templates-integration.md) | balanced+ |
-| `src/Test/Test.E2E/{Entity}WorkflowTests.cs` | [test-templates-e2e.md](../templates/test-templates-e2e.md) | balanced+ |
-| `src/Test/Test.Architecture/` updates | [test-templates-quality.md](../templates/test-templates-quality.md) | balanced+ |
+| `tests/Test.Unit/Domain/{Entity}Tests.cs` | [test-templates-domain.md](../templates/test-templates-domain.md) | all |
+| `tests/Test.Unit/Domain/{Entity}RulesTests.cs` (when rules exist) | [test-templates-domain.md](../templates/test-templates-domain.md) | all |
+| `tests/Test.Unit/Services/{Entity}ServiceTests.cs` | [test-templates-service.md](../templates/test-templates-service.md) | all |
+| `tests/Test.Unit/Repositories/{Entity}RepositoryTrxnTests.cs` | [test-templates-repository.md](../templates/test-templates-repository.md) | all |
+| `tests/Test.Unit/Repositories/{Entity}RepositoryQueryTests.cs` | [test-templates-repository.md](../templates/test-templates-repository.md) | all |
+| `tests/Test.Unit/Mappers/{Entity}MapperTests.cs` | [test-templates-service.md](../templates/test-templates-service.md) | all |
+| `tests/Test.Unit/Mappers/MapperProjectionParityTests.cs` (add a method per entity) | [test-templates-service.md](../templates/test-templates-service.md) | all |
+| `tests/Test.UI/Presentation/{Entity}PresentationModelTests.cs` | [test-templates-presentation.md](../templates/test-templates-presentation.md) | if UI model/presentation coverage exists |
+| `tests/Test.Endpoints/Endpoints/{Entity}EndpointsTests.cs` | [test-templates-endpoint.md](../templates/test-templates-endpoint.md) | all |
+| `tests/Test.Unit/Cqrs/{Entity}CqrsValidationTests.cs` | [test-templates-cqrs.md](../templates/test-templates-cqrs.md) | if cqrs or switch |
+| `tests/Test.Integration/{Entity}RepositoryIntegrationTests.cs` | [test-templates-integration.md](../templates/test-templates-integration.md) | balanced+ |
+| `tests/Test.E2E/{Entity}WorkflowTests.cs` | [test-templates-e2e.md](../templates/test-templates-e2e.md) | balanced+ |
+| `tests/Test.Architecture/` updates | [test-templates-quality.md](../templates/test-templates-quality.md) | balanced+ |
 
 ### Required Test Gate by Profile
 
@@ -184,7 +184,7 @@ Required UI artifacts:
 - `src/UI/{Project}.Uno.Presentation/Presentation/{Entity}PageModel.cs`
 - `src/UI/{Project}.Uno/Views/{Entity}ListPage.xaml` + `.xaml.cs`
 - `src/UI/{Project}.Uno/Views/{Entity}Page.xaml` + `.xaml.cs`
-- `src/Test/Test.UI/Presentation/{Entity}PresentationModelTests.cs`
+- `tests/Test.UI/Presentation/{Entity}PresentationModelTests.cs`
 
 Also update `App.xaml.host.cs`:
 

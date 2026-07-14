@@ -412,6 +412,7 @@ Then walk through `support/final-scaffold-checklist.md`.
 
 ## Expected Final Shape
 
+- `{SolutionName}.slnx` and shared .NET configuration live at the app root; production projects live under `src/`; test projects live under sibling `tests/`.
 - `Project` and `WorkItem` have complete domain models, EF configurations, repositories, DTOs, mappers, services, endpoints, builders, service tests, and endpoint tests.
 - Shared base types live in `<packagePrefix>.*` only (feed packages and/or `src/Packages/<packagePrefix>.*` projects per `packageStrategy`), never reimplemented in application/domain/host layers.
 - `Directory.Packages.props` owns all NuGet versions (feed-supplied `<packagePrefix>.*` packages plus transitive deps).

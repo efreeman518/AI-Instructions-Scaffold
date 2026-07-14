@@ -34,7 +34,7 @@ Run this check before writing Phase 4 tasks. Fix source artifacts first, not gen
 ## Implementation Steps
 
 ### Phase 4 - Contract Scaffolding
-- [ ] Solution structure (.slnx, Directory.Packages.props, global.json, nuget.config)
+- [ ] Solution structure (repo-root `.slnx`, `Directory.Build.props`, `Directory.Packages.props`, and `global.json`; repo-root `nuget.config` for feed/hybrid or when otherwise needed)
 - [ ] All project files with correct references
 - [ ] Interfaces: I{Entity}Service, I{Entity}RepositoryTrxn, I{Entity}RepositoryQuery (per entity)
 - [ ] DTOs: {Entity}Dto, {Entity}SearchFilter (per entity)
@@ -258,7 +258,7 @@ _During Phase 3, search for CLIs, MCP servers, and online resources matching pro
 
 Before starting Phase 4 (contract scaffolding), verify all of the following:
 
-- [ ] `nuget.config` validated (`configure-ef-packages-feed.py --check-only` exits 0) - applies in `feed` and `hybrid`; no solution exists at Phase 3, so full `dotnet restore` proof lands with the Phase 4 build gate; in `local`, `nuget.config` only needs `nuget.org`
+- [ ] `nuget.config` validated (`configure-ef-packages-feed.py --check-only` exits 0) for `feed` and `hybrid`; no solution exists at Phase 3, so full `dotnet restore` proof lands with the Phase 4 build gate; in `local`, the file may be absent and NuGet's default `nuget.org` source applies
 - [ ] All open questions resolved or explicitly deferred with TODO
 - [ ] `scaffoldMode`, `testingProfile`, and all host flags confirmed
 - [ ] `packageStrategy`, `packagePrefix`, `customNugetFeeds`, and `localPackageLayers` confirmed in `.scaffold/resource-implementation.yaml`

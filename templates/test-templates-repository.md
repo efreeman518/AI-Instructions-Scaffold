@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Generates** | `Test/Test.Unit/Repositories/{Entity}RepositoryTrxnTests.cs`, `Test/Test.Unit/Repositories/{Entity}RepositoryQueryTests.cs` |
+| **Generates** | `tests/Test.Unit/Repositories/{Entity}RepositoryTrxnTests.cs`, `tests/Test.Unit/Repositories/{Entity}RepositoryQueryTests.cs` |
 | **Requires** | [repository-template](repository-template.md), entity (implemented in 5a), InMemoryDbBuilder (from Phase 4) |
 | **Phase** | 5a (Foundation TDD) |
 | **Protocol** | Write these tests AFTER entity is implemented (green). See [../ai/tdd-protocol.md](../ai/tdd-protocol.md). |
@@ -19,7 +19,7 @@ public async Task Given_ValidEntity_When_Created_Then_CanBeRetrieved() { }
 
 ## Repository Trxn Tests
 
-### File: `Test/Test.Unit/Repositories/{Entity}RepositoryTrxnTests.cs`
+### File: `tests/Test.Unit/Repositories/{Entity}RepositoryTrxnTests.cs`
 
 ```csharp
 [TestClass]
@@ -69,7 +69,7 @@ public class {Entity}RepositoryTrxnTests
 
 ## Repository Query Tests
 
-### File: `Test/Test.Unit/Repositories/{Entity}RepositoryQueryTests.cs`
+### File: `tests/Test.Unit/Repositories/{Entity}RepositoryQueryTests.cs`
 
 ```csharp
 [TestClass]

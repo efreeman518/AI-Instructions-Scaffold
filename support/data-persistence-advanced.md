@@ -183,7 +183,7 @@ Orchestration:
 
 Tests (proportional to blast radius): unit tests for target ordering and fail-fast (later targets skipped after a failure); SQL integration tests applying all targets to a fresh database and running the migrator twice for idempotency; third-party schema validation failing when the schema is missing; an Aspire topology test proving runtime hosts wait on migrator completion. SQL-container tests report `Assert.Inconclusive(...)` when the container cannot start - never silently pass. Integration/E2E fixtures prepare the database explicitly (direct `MigrateAsync` in test setup) before booting runtime hosts.
 
-**TaskFlow proof:** `src/Host/TaskFlow.DatabaseMigrator/Program.cs` (ordered targets, migrator-only timeouts, per-target history tables), `src/Host/Aspire/AppHost/AppHost.cs` (`WaitForCompletion`), `infra/modules/container-app-job.bicep` + `.github/workflows/deploy.yml` (one-shot job gating runtime rollout), `src/Test/Test.Unit/Infrastructure/DatabaseMigrationRunnerTests.cs`.
+**TaskFlow proof:** `src/Host/TaskFlow.DatabaseMigrator/Program.cs` (ordered targets, migrator-only timeouts, per-target history tables), `src/Host/Aspire/AppHost/AppHost.cs` (`WaitForCompletion`), `infra/modules/container-app-job.bicep` + `.github/workflows/deploy.yml` (one-shot job gating runtime rollout), `tests/Test.Unit/Infrastructure/DatabaseMigrationRunnerTests.cs`.
 
 ### Third-Party Operational Store Schemas
 
@@ -323,7 +323,7 @@ Full encrypt/decrypt E2E needs a real AKV key and **cannot run locally** (no emu
 
 CMK/CEK rotation is an operational task on top of the secret-rotation workflow in [../skills/security.md](../skills/security.md). Rotate the CMK in Key Vault, re-wrap the CEK, then retire the old CMK version; record the rotation owner in the Security-branch decision.
 
-**TaskFlow proof:** `src/Infrastructure/TaskFlow.Infrastructure.Data/Migrations/*_InitialCreate.cs` (`ConfigureAlwaysEncrypted`), `Configurations/TaskItemConfiguration.cs` (varbinary + UTF8 converter), `src/Host/TaskFlow.Bootstrapper/Registration/RegisterServices.Database.cs` (provider registration, `Column Encryption Setting`), `src/Host/Aspire/AppHost/AppHost.cs` (opt-in gate, `AKVCMKURL`), `infra/main.bicep` (CMK key, purge protection, Crypto User RBAC), `src/Test/Test.Unit/Domain/TaskItemTests.cs` (domain length test). Decision recorded as D-019 (Branch Security).
+**TaskFlow proof:** `src/Infrastructure/TaskFlow.Infrastructure.Data/Migrations/*_InitialCreate.cs` (`ConfigureAlwaysEncrypted`), `Configurations/TaskItemConfiguration.cs` (varbinary + UTF8 converter), `src/Host/TaskFlow.Bootstrapper/Registration/RegisterServices.Database.cs` (provider registration, `Column Encryption Setting`), `src/Host/Aspire/AppHost/AppHost.cs` (opt-in gate, `AKVCMKURL`), `infra/main.bicep` (CMK key, purge protection, Crypto User RBAC), `tests/Test.Unit/Domain/TaskItemTests.cs` (domain length test). Decision recorded as D-019 (Branch Security).
 
 ---
 

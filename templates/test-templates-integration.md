@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Generates** | `Test/Test.Integration/Infrastructure/SqlContainerFixture.cs`, `Test/Test.Integration/Infrastructure/AzuriteContainerFixture.cs` (+ `RedisContainerFixture.cs` when the app uses Redis), `Test/Test.Integration/Infrastructure/IntegrationTestSetup.cs`, `Test/Test.Integration/{Entity}RepositoryIntegrationTests.cs`, `Test/Test.Integration/AuditLogRepositoryAzuriteTests.cs`, `Test/Test.Integration/DomainEventPipelineTests.cs` |
+| **Generates** | `tests/Test.Integration/Infrastructure/SqlContainerFixture.cs`, `tests/Test.Integration/Infrastructure/AzuriteContainerFixture.cs` (+ `RedisContainerFixture.cs` when the app uses Redis), `tests/Test.Integration/Infrastructure/IntegrationTestSetup.cs`, `tests/Test.Integration/{Entity}RepositoryIntegrationTests.cs`, `tests/Test.Integration/AuditLogRepositoryAzuriteTests.cs`, `tests/Test.Integration/DomainEventPipelineTests.cs` |
 | **Requires** | [repository-template](repository-template.md), [updater-template](updater-template.md), `EF.IntegrationTesting` (Testcontainers fixtures), Testcontainers packages for each store the app uses |
 | **Phase** | Fixtures generated in Phase 4 (component shells); tests filled in during Phase 5a (`*RepositoryIntegrationTests`) and Phase 5b (`AuditLogRepositoryAzuriteTests`, `DomainEventPipelineTests`) |
 | **Protocol** | Tests-after for this tier - TDD lives in `Test.Unit` and `Test.Endpoints`. Integration verifies wiring against real infrastructure (SQL/Azurite/Redis), so write the tests once the unit + endpoint tests pin behavior. |
@@ -23,7 +23,7 @@
 
 ## Fixture model
 
-Each store the app uses gets a **standalone Testcontainer fixture** under `Test/Test.Integration/Infrastructure/`. A single `IntegrationTestSetup` starts the needed fixtures in parallel from `[AssemblyInitialize]` and disposes them in `[AssemblyCleanup]`. Each fixture **captures its `StartupError` rather than throwing**, and each test marks itself `Inconclusive` when its store failed to start (assembly-init safety - a container failure must not flip the whole assembly red). Generate only the fixtures the app needs (SQL always; Azurite when audit/table storage is in scope; Redis when a distributed cache is in scope).
+Each store the app uses gets a **standalone Testcontainer fixture** under `tests/Test.Integration/Infrastructure/`. A single `IntegrationTestSetup` starts the needed fixtures in parallel from `[AssemblyInitialize]` and disposes them in `[AssemblyCleanup]`. Each fixture **captures its `StartupError` rather than throwing**, and each test marks itself `Inconclusive` when its store failed to start (assembly-init safety - a container failure must not flip the whole assembly red). Generate only the fixtures the app needs (SQL always; Azurite when audit/table storage is in scope; Redis when a distributed cache is in scope).
 
 > **Naming:** name each fixture for the store it owns (`SqlContainerFixture`, `AzuriteContainerFixture`, `RedisContainerFixture`). They are standalone - they do **not** wrap or depend on the Aspire host.
 
@@ -31,7 +31,7 @@ Each store the app uses gets a **standalone Testcontainer fixture** under `Test/
 
 ---
 
-### File: `Test/Test.Integration/Infrastructure/SqlContainerFixture.cs`
+### File: `tests/Test.Integration/Infrastructure/SqlContainerFixture.cs`
 
 ```csharp
 using EF.IntegrationTesting.Testcontainers;
@@ -91,7 +91,7 @@ internal static class SqlContainerFixture
 
 ---
 
-### File: `Test/Test.Integration/Infrastructure/AzuriteContainerFixture.cs`
+### File: `tests/Test.Integration/Infrastructure/AzuriteContainerFixture.cs`
 
 Generate when the app persists to Azure Table/Blob/Queue storage (audit log, attachments).
 
@@ -134,7 +134,7 @@ internal static class AzuriteContainerFixture
 
 ---
 
-### File: `Test/Test.Integration/Infrastructure/IntegrationTestSetup.cs`
+### File: `tests/Test.Integration/Infrastructure/IntegrationTestSetup.cs`
 
 ```csharp
 namespace Test.Integration.Infrastructure;
@@ -201,7 +201,7 @@ Cover **migration apply** + **CRUD against real SQL** + **child includes** + **u
 > section SqlAggregateSeeder - conditional, generate on first need) rather than re-inlining
 > tenant+user inserts per test.
 
-### File: `Test/Test.Integration/{Entity}RepositoryIntegrationTests.cs`
+### File: `tests/Test.Integration/{Entity}RepositoryIntegrationTests.cs`
 
 ```csharp
 using EF.Data.Contracts;
@@ -455,7 +455,7 @@ public class {Entity}RepositoryIntegrationTests
 
 Validates `AuditLogRepository.AppendAsync` against real Azurite Table Storage (partition key, row key shape, round-trip metadata). Component tier - it exercises only Azurite via `AzuriteContainerFixture`, no API and no Function.
 
-### File: `Test/Test.Integration/AuditLogRepositoryAzuriteTests.cs`
+### File: `tests/Test.Integration/AuditLogRepositoryAzuriteTests.cs`
 
 ```csharp
 using Azure.Data.Tables;
@@ -568,7 +568,7 @@ public class AuditLogRepositoryAzuriteTests
 
 ## Domain Event Projection Pipeline
 
-### File: `Test/Test.Integration/DomainEventPipelineTests.cs`
+### File: `tests/Test.Integration/DomainEventPipelineTests.cs`
 
 ```csharp
 using System.Text.Json;
@@ -674,7 +674,7 @@ Skip this template when the project does not have a projection service / read-mo
 
 ## Project file
 
-### File: `Test/Test.Integration/Test.Integration.csproj`
+### File: `tests/Test.Integration/Test.Integration.csproj`
 
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
@@ -694,11 +694,11 @@ Skip this template when the project does not have a projection service / read-mo
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Test.Support\Test.Support.csproj" />
-    <ProjectReference Include="..\..\Application\{Project}.Application.Contracts\{Project}.Application.Contracts.csproj" />
-    <ProjectReference Include="..\..\Application\{Project}.Application.Services\{Project}.Application.Services.csproj" />
-    <ProjectReference Include="..\..\Infrastructure\{Project}.Infrastructure.Data\{Project}.Infrastructure.Data.csproj" />
-    <ProjectReference Include="..\..\Infrastructure\{Project}.Infrastructure.Repositories\{Project}.Infrastructure.Repositories.csproj" />
-    <ProjectReference Include="..\..\Infrastructure\{Project}.Infrastructure.Storage\{Project}.Infrastructure.Storage.csproj" />
+    <ProjectReference Include="..\..\src\Application\{Project}.Application.Contracts\{Project}.Application.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Application\{Project}.Application.Services\{Project}.Application.Services.csproj" />
+    <ProjectReference Include="..\..\src\Infrastructure\{Project}.Infrastructure.Data\{Project}.Infrastructure.Data.csproj" />
+    <ProjectReference Include="..\..\src\Infrastructure\{Project}.Infrastructure.Repositories\{Project}.Infrastructure.Repositories.csproj" />
+    <ProjectReference Include="..\..\src\Infrastructure\{Project}.Infrastructure.Storage\{Project}.Infrastructure.Storage.csproj" />
   </ItemGroup>
 </Project>
 ```
@@ -723,12 +723,12 @@ Skip this template when the project does not have a projection service / read-mo
 ---
 
 **TaskFlow proof (local):**
-- `../AI-Instructions-ReferenceApp/src/Test/Test.Integration/Infrastructure/SqlContainerFixture.cs`
-- `../AI-Instructions-ReferenceApp/src/Test/Test.Integration/Infrastructure/AzuriteContainerFixture.cs`
-- `../AI-Instructions-ReferenceApp/src/Test/Test.Integration/Infrastructure/IntegrationTestSetup.cs`
-- `../AI-Instructions-ReferenceApp/src/Test/Test.Integration/MigrationAndRepositoryTests.cs`
-- `../AI-Instructions-ReferenceApp/src/Test/Test.Integration/AuditLogRepositoryAzuriteTests.cs`
-- `../AI-Instructions-ReferenceApp/src/Test/Test.Integration/DomainEventPipelineTests.cs`
+- `../AI-Instructions-ReferenceApp/tests/Test.Integration/Infrastructure/SqlContainerFixture.cs`
+- `../AI-Instructions-ReferenceApp/tests/Test.Integration/Infrastructure/AzuriteContainerFixture.cs`
+- `../AI-Instructions-ReferenceApp/tests/Test.Integration/Infrastructure/IntegrationTestSetup.cs`
+- `../AI-Instructions-ReferenceApp/tests/Test.Integration/MigrationAndRepositoryTests.cs`
+- `../AI-Instructions-ReferenceApp/tests/Test.Integration/AuditLogRepositoryAzuriteTests.cs`
+- `../AI-Instructions-ReferenceApp/tests/Test.Integration/DomainEventPipelineTests.cs`
 
 **TaskFlow proof (remote fallback):**
-<https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/src/Test/Test.Integration>
+<https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/tests/Test.Integration>

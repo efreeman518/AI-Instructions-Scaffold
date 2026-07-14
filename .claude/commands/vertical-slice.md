@@ -30,7 +30,7 @@ Follow the canonical Slice Execution Order in `.instructions/support/vertical-sl
 
 ## Rules
 
-- Generate code in `src/` (which contains `src/Test/...` for test projects) and project root. Never modify files under `.instructions/`.
+- Generate production code in `src/`, test code in sibling `tests/`, and required solution/config changes at project root. Never modify files under `.instructions/`.
 - Do not modify shared infrastructure - only add entity-specific files.
 - Do not skip DI registration or endpoint mapping.
 - Follow existing code patterns for consistency.

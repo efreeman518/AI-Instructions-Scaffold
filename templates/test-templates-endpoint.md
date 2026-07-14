@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Generates** | `Test/Test.Endpoints/Endpoints/{Entity}EndpointsTests.cs` |
+| **Generates** | `tests/Test.Endpoints/Endpoints/{Entity}EndpointsTests.cs` |
 | **Requires** | [endpoint-template](endpoint-template.md), CustomApiFactory from Phase 4, DTOs from Phase 4 |
 | **Phase** | 5b (App Core TDD) |
 | **Protocol** | Write these tests BEFORE implementing endpoints. See [../ai/tdd-protocol.md](../ai/tdd-protocol.md). |
@@ -39,7 +39,7 @@ The plumbing for swapping the production DbContext + interceptors + pooled facto
 
 > **Phase 4 generates this file.** The adapter is part of the contract-scaffolding output (see [../ai/contract-scaffolding.md](../ai/contract-scaffolding.md), `### 4. Test Infrastructure`) so the solution builds and both `Test.Endpoints` and `Test.E2E` compile before Phase 5 begins. The package base's descriptor removal no-ops when a descriptor is absent - at Phase 4 the host registers no DbContext yet; the swap takes effect in 5b.
 
-`Test/Test.Support/WebApplicationFactoryBase.cs`:
+`tests/Test.Support/WebApplicationFactoryBase.cs`:
 
 ```csharp
 using EF.Data;
@@ -87,13 +87,13 @@ public abstract class WebApplicationFactoryBase<TProgram, TTrxnContext, TQueryCo
 
 **Conditional - generate on first need, not by default.** When the API can create every row a test acts
 on (dev-seam auth supplies user/tenant), seed through the API - that is the reference pattern, and this
-file is not generated. Builders (`Test.Support/Builders/{Entity}Builder.cs`) construct **domain objects
+file is not generated. Builders (`tests/Test.Support/Builders/{Entity}Builder.cs`) construct **domain objects
 in memory**; they do not persist a valid FK chain. When tests need prerequisite rows the API never
 creates (a real user in a real tenant owning the aggregate), do not duplicate that insert inline - it
 drifts per-test and reintroduces the user/tenant FK bugs the dev seam fixes. Provide this one shared
 seeder in `Test.Support` that persists the full FK chain in dependency order through the live DbContext.
 
-`Test/Test.Support/SqlAggregateSeeder.cs`:
+`tests/Test.Support/SqlAggregateSeeder.cs`:
 
 ```csharp
 namespace Test.Support;
@@ -140,7 +140,7 @@ integration tier ([test-templates-integration.md](test-templates-integration.md)
 
 ## Test.Endpoints derived factory (in-memory)
 
-`Test/Test.Endpoints/CustomApiFactory.cs`:
+`tests/Test.Endpoints/CustomApiFactory.cs`:
 
 ```csharp
 public sealed class CustomApiFactory : WebApplicationFactoryBase<Program, {App}DbContextTrxn, {App}DbContextQuery>
@@ -159,7 +159,7 @@ That's the entire file. The pooled-context swap, interceptor removal, factory pl
 
 ## Test.E2E derived factory (Testcontainers SQL)
 
-`Test/Test.E2E/SqlApiFactory.cs` is identical except the options use `UseSqlServer(connectionString, sql => sql.UseCompatibilityLevel(170))` and the class manages a static Testcontainers SQL lifecycle (`StartContainerAsync` / `StopContainerAsync`). Full template: [test-templates-e2e.md](test-templates-e2e.md) section SqlApiFactory.
+`tests/Test.E2E/SqlApiFactory.cs` is identical except the options use `UseSqlServer(connectionString, sql => sql.UseCompatibilityLevel(170))` and the class manages a static Testcontainers SQL lifecycle (`StartContainerAsync` / `StopContainerAsync`). Full template: [test-templates-e2e.md](test-templates-e2e.md) section SqlApiFactory.
 
 ## Multi-resource Integration tier
 
@@ -169,7 +169,7 @@ When a test needs the **full distributed app over HTTP** (the API + audit pipeli
 
 ## Endpoint Tests
 
-### File: `Test/Test.Endpoints/Endpoints/{Entity}EndpointsTests.cs`
+### File: `tests/Test.Endpoints/Endpoints/{Entity}EndpointsTests.cs`
 
 ```csharp
 [TestClass]
@@ -322,7 +322,7 @@ public class {Entity}EndpointsTests : EndpointTestBase
 
 ## Test Configuration
 
-### File: `Test/Test.Endpoints/appsettings-test.json`
+### File: `tests/Test.Endpoints/appsettings-test.json`
 
 ```json
 {

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Generates** | `Test/Test.Aspire/AspireTestHost.cs`, `Test/Test.Aspire/AspireMeshLifecycle.cs`, `Test/Test.Aspire/AssemblyInfo.cs`, `Test/Test.Aspire/ApiAuditPipelineTests.cs`, `Test/Test.Aspire/FunctionAuditPipelineTests.cs` (when a Functions host is enabled), Blazor-mesh smoke (when `includeBlazorUI`), `Test/Test.Aspire/Test.Aspire.csproj` |
+| **Generates** | `tests/Test.Aspire/AspireTestHost.cs`, `tests/Test.Aspire/AspireMeshLifecycle.cs`, `tests/Test.Aspire/AssemblyInfo.cs`, `tests/Test.Aspire/ApiAuditPipelineTests.cs`, `tests/Test.Aspire/FunctionAuditPipelineTests.cs` (when a Functions host is enabled), Blazor-mesh smoke (when `includeBlazorUI`), `tests/Test.Aspire/Test.Aspire.csproj` |
 | **Requires** | an Aspire AppHost project, [test-templates-integration.md](test-templates-integration.md) (the component tier this splits from), `Aspire.Hosting.Testing`, `EF.IntegrationTesting` (Aspire + Environment helpers) |
 | **Phase** | Host + lifecycle shells in Phase 4; mesh tests filled in Phase 5b (and Phase 5c for opt-in hosts: Functions, Blazor, Service Bus) |
 | **Protocol** | Tests-after - the mesh tier verifies the production AppHost graph end-to-end once the component and endpoint tiers pin behavior. |
@@ -33,7 +33,7 @@ Canonical rule: [../skills/testing.md](../skills/testing.md#heavy-aspire-mesh-gr
 
 ## AspireTestHost
 
-### File: `Test/Test.Aspire/AspireTestHost.cs`
+### File: `tests/Test.Aspire/AspireTestHost.cs`
 
 ```csharp
 using Aspire.Hosting;
@@ -197,7 +197,7 @@ internal static class AspireTestHost
 }
 ```
 
-### File: `Test/Test.Aspire/AspireMeshLifecycle.cs`
+### File: `tests/Test.Aspire/AspireMeshLifecycle.cs`
 
 ```csharp
 namespace Test.Aspire;
@@ -219,7 +219,7 @@ public class AspireMeshLifecycle
 }
 ```
 
-### File: `Test/Test.Aspire/AssemblyInfo.cs`
+### File: `tests/Test.Aspire/AssemblyInfo.cs`
 
 ```csharp
 [assembly: DoNotParallelize]
@@ -350,7 +350,7 @@ public static async Task ClassInit(TestContext context)
 
 End-to-end: `POST /api/{entities}` -> API request handling -> audit middleware -> Azurite Table Storage, with polling read-back. Two Aspire resources participate (`{app}api`, `TableStorage1`); both must be Healthy.
 
-### File: `Test/Test.Aspire/ApiAuditPipelineTests.cs`
+### File: `tests/Test.Aspire/ApiAuditPipelineTests.cs`
 
 ```csharp
 using System.Net;
@@ -372,7 +372,7 @@ namespace Test.Aspire;
 /// visibility.
 /// Manual run (Docker Desktop must be running; start the local stack first - see
 /// eng/test/start-local-test-stack.ps1):
-///   dotnet test src/Test/Test.Aspire/Test.Aspire.csproj --filter TestCategory=Aspire
+///   dotnet test tests/Test.Aspire/Test.Aspire.csproj --filter TestCategory=Aspire
 /// Set {APP}_RUN_ASPIRE_TESTS=false to skip the mesh tier (e.g. in fast CI lanes).
 /// </summary>
 [TestClass]
@@ -486,14 +486,14 @@ Aspire's emulators (Service Bus, Azurite) are best-effort under `DistributedAppl
 ## Other mesh tests (generate when the host is enabled)
 
 - **`FunctionAuditPipelineTests`** (`includeFunctions`): same shape against the `{app}functions` resource; gate on `AspireTestHost.EnsureFuncToolAvailable()` and `Assert.Inconclusive` when `func.exe` is absent. Functions has the longest cold-start - keep the 300 s `[Timeout]`.
-- **Blazor-mesh smoke** (`includeBlazorUI`): `Test.Aspire/BlazorMeshSmokeTests`. Opt the Blazor resource into the graph via `{APP}_INCLUDE_BLAZOR=true` and hit one page that round-trips through the API (Gateway routing + Refit + tenant header). Calls `AspireTestHost.EnsureStartedAsync` from `[ClassInitialize]`.
+- **Blazor-mesh smoke** (`includeBlazorUI`): `tests/Test.Aspire/BlazorMeshSmokeTests`. Opt the Blazor resource into the graph via `{APP}_INCLUDE_BLAZOR=true` and hit one page that round-trips through the API (Gateway routing + Refit + tenant header). Calls `AspireTestHost.EnsureStartedAsync` from `[ClassInitialize]`.
 - **Service Bus -> Function -> projection**: assert on the projection store's downstream document, never the topic/queue.
 
 ---
 
 ## Project file
 
-### File: `Test/Test.Aspire/Test.Aspire.csproj`
+### File: `tests/Test.Aspire/Test.Aspire.csproj`
 
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
@@ -512,10 +512,10 @@ Aspire's emulators (Service Bus, Azurite) are best-effort under `DistributedAppl
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Test.Support\Test.Support.csproj" />
-    <ProjectReference Include="..\..\Host\{Host}.Api\{Host}.Api.csproj" />
-    <ProjectReference Include="..\..\Application\{Project}.Application.Models\{Project}.Application.Models.csproj" />
-    <ProjectReference Include="..\..\Infrastructure\{Project}.Infrastructure.Storage\{Project}.Infrastructure.Storage.csproj" />
-    <ProjectReference Include="..\..\Host\Aspire\AppHost\AppHost.csproj" AdditionalProperties="SkipUnoWasmBuild=true" />
+    <ProjectReference Include="..\..\src\Host\{Host}.Api\{Host}.Api.csproj" />
+    <ProjectReference Include="..\..\src\Application\{Project}.Application.Models\{Project}.Application.Models.csproj" />
+    <ProjectReference Include="..\..\src\Infrastructure\{Project}.Infrastructure.Storage\{Project}.Infrastructure.Storage.csproj" />
+    <ProjectReference Include="..\..\src\Host\Aspire\AppHost\AppHost.csproj" AdditionalProperties="SkipUnoWasmBuild=true" />
   </ItemGroup>
 </Project>
 ```
@@ -543,10 +543,10 @@ Aspire's emulators (Service Bus, Azurite) are best-effort under `DistributedAppl
 ---
 
 **TaskFlow proof (local):**
-- `../AI-Instructions-ReferenceApp/src/Test/Test.Aspire/AspireTestHost.cs`
-- `../AI-Instructions-ReferenceApp/src/Test/Test.Aspire/AspireMeshLifecycle.cs`
-- `../AI-Instructions-ReferenceApp/src/Test/Test.Aspire/ApiAuditPipelineTests.cs`
-- `../AI-Instructions-ReferenceApp/src/Test/Test.Aspire/FunctionAuditPipelineTests.cs`
+- `../AI-Instructions-ReferenceApp/tests/Test.Aspire/AspireTestHost.cs`
+- `../AI-Instructions-ReferenceApp/tests/Test.Aspire/AspireMeshLifecycle.cs`
+- `../AI-Instructions-ReferenceApp/tests/Test.Aspire/ApiAuditPipelineTests.cs`
+- `../AI-Instructions-ReferenceApp/tests/Test.Aspire/FunctionAuditPipelineTests.cs`
 
 **TaskFlow proof (remote fallback):**
-<https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/src/Test/Test.Aspire>
+<https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/tests/Test.Aspire>

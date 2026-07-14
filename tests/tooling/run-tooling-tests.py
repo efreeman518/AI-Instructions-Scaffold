@@ -232,6 +232,64 @@ class ValidatorHelperTests(unittest.TestCase):
         self.assertFalse(validator.heading_matches_section(headings, "Nonexistent Section"))
         self.assertFalse(validator.heading_matches_section(headings, ""))
 
+    def test_deprecated_layout_guard_matches_legacy_paths_only(self):
+        with tempfile.TemporaryDirectory(prefix="tooling-layout-") as tmp:
+            path = Path(tmp) / "paths.md"
+            path.write_text(
+                "\n".join([
+                    "src/Test/Test.Unit/Test.Unit.csproj",
+                    r"src\Test\Test.Unit\Test.Unit.csproj",
+                    "Test/Test.Endpoints/EndpointsTests.cs",
+                    r"Test\Test.Endpoints\EndpointsTests.cs",
+                    "src/{SolutionName}.slnx",
+                    r"src\TaskFlow.slnx",
+                    "src/{SolutionName}.sln",
+                    r"src\TaskFlow.sln",
+                    "App.sln",
+                    "./Test/Test.Unit/Test.Unit.csproj",
+                    r"repo\Test\Test.Unit\Test.Unit.csproj",
+                    "`Test.Support/Builders/EntityBuilder.cs`",
+                    "src/Directory.Build.props",
+                    r"src\Directory.Packages.props",
+                    "src/global.json",
+                    r"src\nuget.config",
+                ]),
+                encoding="utf-8",
+            )
+            findings = validator.Findings()
+            validator.check_deprecated_layout(path, findings)
+            self.assertEqual(len(findings.errors), 16)
+
+            path.write_text(
+                "tests/Test.Unit/Test.Unit.csproj\n"
+                r"tests\Test.Endpoints\Test.Endpoints.csproj" "\n"
+                "TaskFlow.slnx\nDirectory.Build.props\nDirectory.Packages.props\nglobal.json\nnuget.config\n"
+                "mysrc/Test.Unit/Test.Unit.csproj\nmy-src/Testing/Test.Unit/Test.Unit.csproj\n"
+                "my.src/Testing/Test.Unit/Test.Unit.csproj\nsrc/App.slnx.backup\nmysrc/global.json\n"
+                "`tests/Test.Support/Builders/EntityBuilder.cs`\n"
+                r"`..\Test.Support\Test.Support.csproj`" "\n"
+                "Use legacy `.sln` or `*.sln` only during adoption.\n",
+                encoding="utf-8",
+            )
+            findings = validator.Findings()
+            validator.check_deprecated_layout(path, findings)
+            self.assertEqual(findings.errors, [])
+
+    def test_test_project_templates_reference_production_under_src(self):
+        templates = (
+            "test-templates-aspire.md",
+            "test-templates-integration.md",
+            "test-templates-presentation.md",
+            "test-templates-quality.md",
+        )
+        production_layers = ("Application", "Domain", "Host", "Infrastructure", "UI")
+        for name in templates:
+            text = (REPO_ROOT / "templates" / name).read_text(encoding="utf-8")
+            self.assertIn("..\\..\\src\\", text, name)
+            for layer in production_layers:
+                self.assertNotIn(f"..\\..\\{layer}\\", text, name)
+                self.assertNotIn(f"../../{layer}/", text, name)
+
 
 # Module-level: a function stored as a class attribute would bind as a method
 # and receive self as an extra argument inside copytree.
@@ -289,6 +347,15 @@ class ValidatorMutationTests(unittest.TestCase):
         (repo / "templates" / "endpoint-template.md").unlink()
         self.assertEqual(self._run_validator(repo), 1)
 
+    def test_deprecated_layout_prose_fails(self):
+        repo = self._copy_repo()
+        target = repo / "patterns" / "api-host-wiring.md"
+        target.write_text(
+            target.read_text(encoding="utf-8") + "\nBuild src/{SolutionName}.slnx.\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(self._run_validator(repo), 1)
+
 
 class GoldenPathTests(unittest.TestCase):
     def test_extract_fenced_block_found_and_missing(self):
@@ -332,6 +399,144 @@ class GoldenPathTests(unittest.TestCase):
     def test_sanity_check_rejects_missing_required_key(self):
         with self.assertRaises(SystemExit):
             goldenpath.sanity_check_resource_yaml("unknownKey: 1\n")
+
+    def test_find_solution_prefers_root_slnx(self):
+        tmp = Path(tempfile.mkdtemp(prefix="tooling-solution-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        (tmp / "src").mkdir()
+        root_solution = tmp / goldenpath.GOLDEN_SOLUTION
+        root_solution.write_text("<Solution />\n", encoding="utf-8")
+        (tmp / "App.slnx").write_text("<Solution />\n", encoding="utf-8")
+        (tmp / "src" / "Legacy.slnx").write_text("<Solution />\n", encoding="utf-8")
+        self.assertEqual(goldenpath.find_solution(tmp), root_solution)
+
+    def test_gate_phase4_rejects_legacy_layout(self):
+        tmp = Path(tempfile.mkdtemp(prefix="tooling-layout-gate-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        solution_xml = (
+            '<Solution>\n'
+            '  <Project Path="src/Product/Product.csproj" />\n'
+            '  <Project Path="tests/Test.Unit/Test.Unit.csproj" />\n'
+            '</Solution>\n'
+        )
+        root_solution = tmp / goldenpath.GOLDEN_SOLUTION
+        root_solution.write_text(solution_xml, encoding="utf-8")
+        (tmp / "HANDOFF.md").write_text("contractsScaffolded: true\n", encoding="utf-8")
+        for name in ("Directory.Build.props", "Directory.Packages.props", "global.json"):
+            (tmp / name).write_text("test\n", encoding="utf-8")
+        (tmp / "src" / "Test").mkdir(parents=True)
+        (tmp / "src" / "Product").mkdir()
+        production_project = tmp / "src" / "Product" / "Product.csproj"
+        production_project.write_text("<Project />\n", encoding="utf-8")
+        (tmp / "tests" / "Test.Unit").mkdir(parents=True)
+        test_project = tmp / "tests" / "Test.Unit" / "Test.Unit.csproj"
+        test_project.write_text("<Project />\n", encoding="utf-8")
+        legacy_solution = tmp / "src" / "Legacy.slnx"
+        legacy_solution.write_text("<Solution />\n", encoding="utf-8")
+        root_legacy_solution = tmp / "Legacy.sln"
+        root_legacy_solution.write_text("Microsoft Visual Studio Solution File\n", encoding="utf-8")
+        legacy_config = tmp / "src" / "global.json"
+        legacy_config.write_text("test\n", encoding="utf-8")
+
+        with mock.patch.object(goldenpath, "run_gate_cmd", return_value=(True, "")):
+            ok, notes = goldenpath.gate("4", tmp)
+        self.assertFalse(ok)
+        self.assertTrue(any("LEGACY nested solution" in note for note in notes))
+        self.assertTrue(any("LEGACY root .sln" in note for note in notes))
+        self.assertTrue(any("LEGACY root configuration" in note for note in notes))
+        self.assertTrue(any("LEGACY test tree" in note for note in notes))
+
+        legacy_solution.unlink()
+        root_legacy_solution.unlink()
+        legacy_config.unlink()
+        shutil.rmtree(tmp / "src" / "Test")
+        self.assertFalse((tmp / "nuget.config").exists())
+        with mock.patch.object(goldenpath, "run_gate_cmd", return_value=(True, "")):
+            ok, notes = goldenpath.gate("4", tmp)
+        self.assertTrue(ok, notes)
+
+        shutil.rmtree(tmp / "tests")
+        with mock.patch.object(goldenpath, "run_gate_cmd", return_value=(True, "")):
+            ok, notes = goldenpath.gate("4", tmp)
+        self.assertFalse(ok)
+        self.assertIn("MISSING test tree tests/", notes)
+
+        (tmp / "tests").mkdir()
+        with mock.patch.object(goldenpath, "run_gate_cmd", return_value=(True, "")):
+            ok, notes = goldenpath.gate("4", tmp)
+        self.assertFalse(ok)
+        self.assertIn("MISSING test project under tests/", notes)
+
+        (tmp / "tests" / "Test.Unit").mkdir()
+        test_project.write_text("<Project />\n", encoding="utf-8")
+        (tmp / "global.json").unlink()
+        with mock.patch.object(goldenpath, "run_gate_cmd", return_value=(True, "")):
+            ok, notes = goldenpath.gate("4", tmp)
+        self.assertFalse(ok)
+        self.assertIn("MISSING root global.json", notes)
+
+        (tmp / "global.json").write_text("test\n", encoding="utf-8")
+        root_solution.unlink()
+        with mock.patch.object(goldenpath, "run_gate_cmd", return_value=(True, "")):
+            ok, notes = goldenpath.gate("4", tmp)
+        self.assertFalse(ok)
+        self.assertIn(f"MISSING root {goldenpath.GOLDEN_SOLUTION}", notes)
+
+        root_solution.write_text(solution_xml, encoding="utf-8")
+        extra_solution = tmp / "Extra.slnx"
+        extra_solution.write_text("<Solution />\n", encoding="utf-8")
+        with mock.patch.object(goldenpath, "run_gate_cmd", return_value=(True, "")):
+            ok, notes = goldenpath.gate("4", tmp)
+        self.assertFalse(ok)
+        self.assertIn("UNEXPECTED root .slnx: Extra.slnx", notes)
+        extra_solution.unlink()
+
+        nested_solution = tmp / "tests" / "Legacy.slnx"
+        nested_solution.write_text("<Solution />\n", encoding="utf-8")
+        with mock.patch.object(goldenpath, "run_gate_cmd", return_value=(True, "")):
+            ok, notes = goldenpath.gate("4", tmp)
+        self.assertFalse(ok)
+        self.assertTrue(any("LEGACY nested solution" in note for note in notes))
+        nested_solution.unlink()
+
+        root_solution.write_text(
+            solution_xml.replace("tests/Test.Unit/Test.Unit.csproj", "Test/Test.Unit/Test.Unit.csproj"),
+            encoding="utf-8",
+        )
+        with mock.patch.object(goldenpath, "run_gate_cmd", return_value=(True, "")):
+            ok, notes = goldenpath.gate("4", tmp)
+        self.assertFalse(ok)
+        self.assertTrue(any("NONCANONICAL project path" in note for note in notes))
+        root_solution.write_text(solution_xml, encoding="utf-8")
+
+        (tmp / "tools").mkdir()
+        misplaced_project = tmp / "tools" / "Tool.csproj"
+        misplaced_project.write_text("<Project />\n", encoding="utf-8")
+        with mock.patch.object(goldenpath, "run_gate_cmd", return_value=(True, "")):
+            ok, notes = goldenpath.gate("4", tmp)
+        self.assertFalse(ok)
+        self.assertTrue(any("MISPLACED project" in note for note in notes))
+        shutil.rmtree(tmp / "tools")
+
+        production_project.unlink()
+        with mock.patch.object(goldenpath, "run_gate_cmd", return_value=(True, "")):
+            ok, notes = goldenpath.gate("4", tmp)
+        self.assertFalse(ok)
+        self.assertIn("MISSING production project under src/", notes)
+        production_project.write_text("<Project />\n", encoding="utf-8")
+
+        (tmp / "Test").mkdir()
+        with mock.patch.object(goldenpath, "run_gate_cmd", return_value=(True, "")):
+            ok, notes = goldenpath.gate("4", tmp)
+        self.assertFalse(ok)
+        self.assertIn("LEGACY test tree Test/ exists; use tests/", notes)
+        shutil.rmtree(tmp / "Test")
+
+        shutil.rmtree(tmp / "src")
+        with mock.patch.object(goldenpath, "run_gate_cmd", return_value=(True, "")):
+            ok, notes = goldenpath.gate("4", tmp)
+        self.assertFalse(ok)
+        self.assertIn("MISSING production tree src/", notes)
 
     def test_gate_phase3(self):
         tmp = Path(tempfile.mkdtemp(prefix="tooling-gate-"))

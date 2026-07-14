@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Generates** | `Test/Test.Unit/Services/{Entity}ServiceTests.cs`, `Test/Test.Unit/Mappers/{Entity}MapperTests.cs` |
+| **Generates** | `tests/Test.Unit/Services/{Entity}ServiceTests.cs`, `tests/Test.Unit/Mappers/{Entity}MapperTests.cs` |
 | **Requires** | [service-template](service-template.md), [data-mapping-template](data-mapping-template.md), interfaces from Phase 4 |
 | **Phase** | 5b (App Core TDD) |
 | **Protocol** | Write these tests BEFORE implementing services. See [../ai/tdd-protocol.md](../ai/tdd-protocol.md). |
@@ -68,7 +68,7 @@ private {Entity}Service CreateService(
 
 ## Service Tests
 
-### File: `Test/Test.Unit/Services/{Entity}ServiceTests.cs`
+### File: `tests/Test.Unit/Services/{Entity}ServiceTests.cs`
 
 ```csharp
 [TestClass]
@@ -249,7 +249,7 @@ Required multi-tenant ownership cases:
 
 ## Mapper Tests
 
-### File: `Test/Test.Unit/Mappers/{Entity}MapperTests.cs`
+### File: `tests/Test.Unit/Mappers/{Entity}MapperTests.cs`
 
 ```csharp
 [TestClass]
@@ -343,7 +343,7 @@ public class {Entity}MapperTests
 
 Per-entity `{Entity}MapperTests` classes cover `ToDto`, `ToEntity`, and child-inline parity per entity. **In addition**, scaffold a single consolidated `MapperProjectionParityTests` class that pins the compile-projection / `ToDto` agreement for every mapper in one place. This is a small file but it's the cheapest catch for drift across the whole mapper layer.
 
-### File: `Test/Test.Unit/Mappers/MapperProjectionParityTests.cs`
+### File: `tests/Test.Unit/Mappers/MapperProjectionParityTests.cs`
 
 ```csharp
 using {Project}.Application.Mappers;

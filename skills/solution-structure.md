@@ -6,18 +6,26 @@ Define the canonical clean-architecture layout and dependency direction used by 
 
 ## Non-Negotiables
 
-1. Use `.slnx` as the solution format (not legacy `.sln`). Place it at **`src/{SolutionName}.slnx`** - inside `src/`, not at the repo root. The repo root holds only cross-cutting files (`.gitignore`, `.editorconfig`, `CLAUDE.md`, `AGENTS.md`, `HANDOFF.md`, `infra/`, `docs/`).
+1. Use `.slnx` as the solution format (not legacy `.sln`). Place it at **`{SolutionName}.slnx`** in the repo root beside `Directory.Build.props`, `Directory.Packages.props`, `global.json`, and `nuget.config` when that file is generated. Production projects live under `src/`; test projects live under sibling `tests/`.
 2. Maintain dependency flow: Domain -> Application -> Infrastructure -> Bootstrapper -> Hosts. **Why:** Reversing the direction couples core policy to adapters, forces adapter dependencies into core tests, and turns provider/host replacement into a cross-layer rewrite. Therefore domain and application projects never reference outward layers.
 3. Domain projects never reference Application or Infrastructure.
 4. Use central package management via `Directory.Packages.props`.
 5. Host projects add host-specific wiring only; shared registrations stay in Bootstrapper.
-6. **One public type per file.** Each `.cs` file declares exactly one public/internal top-level type and the file name matches that type. This rule is **universal** - it applies to generated app code (`src/Domain`, `src/Application`, `src/Infrastructure`, `src/Host`, `src/UI`, `src/Test`) **and** to local-package source under `src/Packages/<Prefix>.*` (the vendored `<packagePrefix>.*` shared surface). Lumped files (e.g. `ServiceBus.cs` declaring multiple message types, `Models.cs` declaring multiple DTOs, `Constants.cs` containing nested helper classes) must be split at generation time. The only permitted exceptions are: (a) nested types whose visibility is `private` to the outer type, (b) records / classes that exist solely to parameterize a generic type and are tightly coupled to the declaring file (rare - prefer splitting), and (c) compiler-generated partials. When scaffolding touches an existing lumped vendored file under `src/Packages/`, split it during that same sub-phase rather than leaving it as a tracked debt item.
+6. **One public type per file.** Each `.cs` file declares exactly one public/internal top-level type and the file name matches that type. This rule is **universal** - it applies to generated app code (`src/Domain`, `src/Application`, `src/Infrastructure`, `src/Host`, `src/UI`, `tests`) **and** to local-package source under `src/Packages/<Prefix>.*` (the vendored `<packagePrefix>.*` shared surface). Lumped files (e.g. `ServiceBus.cs` declaring multiple message types, `Models.cs` declaring multiple DTOs, `Constants.cs` containing nested helper classes) must be split at generation time. The only permitted exceptions are: (a) nested types whose visibility is `private` to the outer type, (b) records / classes that exist solely to parameterize a generic type and are tightly coupled to the declaring file (rare - prefer splitting), and (c) compiler-generated partials. When scaffolding touches an existing lumped vendored file under `src/Packages/`, split it during that same sub-phase rather than leaving it as a tracked debt item.
 
 ---
 
 ## Canonical Folder Layout
 
 ```
+{SolutionName}.slnx
+Directory.Build.props
+Directory.Packages.props
+global.json
+nuget.config                                           # feed/hybrid; optional for local
+.gitattributes
+.gitignore
+.editorconfig
 src/
 |-- Packages/                                       # only when packageStrategy: local or hybrid
 |   |-- {Prefix}.Domain/                            # generated only for layers in localPackageLayers
@@ -58,26 +66,22 @@ src/
 |   |-- {Host}.Uno.Presentation/        # optional Microsoft.NET.Sdk library: MVUX models, UI state/feed logic
 |   |-- {Host}.Blazor/                  # optional
 |   `-- {Host}.React/                   # optional
-|-- Test/
-|   |-- Test.Unit/                    # pure domain/application unit tests
-|   |-- Test.UI/                      # fast headless UI model/presentation tests; no app head reference
-|   |-- Test.Integration/             # component: one class vs one real store (standalone Testcontainers SQL/Azurite/Redis)
-|   |-- Test.Aspire/                  # mesh: full AppHost graph over HTTP (lazy-started; Docker-gated)
-|   |-- Test.Endpoints/               # WebApplicationFactory in-memory; per-endpoint contract tests
-|   |-- Test.E2E/                     # WebApplicationFactory + Testcontainers SQL; multi-endpoint workflow chains
-|   |-- Test.Architecture/            # NetArchTest layering rules
-|   |-- Test.PlaywrightUI/            # browser-driven UI tests against hosted stack (Aspire/docker-compose)
-|   |-- Test.Load/                    # NBomber (comprehensive profile)
-|   |-- Test.Benchmarks/              # BenchmarkDotNet (comprehensive profile)
-|   |-- Test.Mutation/                # Stryker.NET mutation tests (comprehensive profile)
-|   `-- Test.Support/                 # shared bases, builders, fixtures
-|-- Directory.Packages.props
-|-- global.json
-|-- nuget.config
-|-- .gitattributes
-|-- .gitignore
-|-- .editorconfig
-`-- {SolutionName}.slnx
+tests/
+|-- Test.Unit/                        # pure domain/application unit tests
+|-- Test.UI/                          # fast headless UI model/presentation tests; no app head reference
+|-- Test.Integration/                 # component: one class vs one real store (standalone Testcontainers SQL/Azurite/Redis)
+|-- Test.Integration.{Project}.FlowEngine/ # when FlowEngine definition validation is in scope
+|-- Test.Aspire/                      # mesh: full AppHost graph over HTTP (lazy-started; Docker-gated)
+|-- Test.FoundryLocal/                # RID-bound local AI lane when Foundry Local is in scope
+|-- Test.Endpoints/                   # WebApplicationFactory in-memory; per-endpoint contract tests
+|-- Test.E2E/                         # WebApplicationFactory + Testcontainers SQL; multi-endpoint workflow chains
+|-- Test.Architecture/                # NetArchTest layering rules
+|-- Test.PlaywrightUI/                # browser-driven UI tests against hosted stack (Aspire/docker-compose)
+|-- Test.Mobile/                      # Appium mobile lane when Uno native testing is in scope
+|-- Test.Load/                        # NBomber (comprehensive profile)
+|-- Test.Benchmarks/                  # BenchmarkDotNet (comprehensive profile)
+|-- Test.Mutation/                    # Stryker.NET mutation tests (comprehensive profile)
+`-- Test.Support/                     # shared bases, builders, fixtures
 ```
 
 Reference patterns: [../patterns/expected-output-index.md](../patterns/expected-output-index.md).
@@ -101,10 +105,12 @@ src/
 |   |-- Bootstrapper/              # was {Host}.Bootstrapper
 |   `-- Api/                       # was {Host}.Api
 ...
-`-- {SolutionName}.slnx            # solution file name is NOT collapsed
+tests/
+`-- Test.*                         # test project names are unchanged
+{SolutionName}.slnx                # solution file name is NOT collapsed
 ```
 
-The `{SolutionName}.slnx` file keeps its full name either way, and `{App}`-derived types render without the prefix (`DbContextTrxn` / `DbContextQuery`). `OrganizationName` is not applied under `none`. Test, `src/Packages/`, and `Aspire/` project names already omit the prefix and are unchanged by this setting. Token mechanics: [../ai/placeholder-tokens.md - Derivation Rules](../ai/placeholder-tokens.md#derivation-rules).
+The `{SolutionName}.slnx` file keeps its full name either way, and `{App}`-derived types render without the prefix (`DbContextTrxn` / `DbContextQuery`). `OrganizationName` is not applied under `none`. `tests/`, `src/Packages/`, and `Aspire/` project names already omit the prefix and are unchanged by this setting. Token mechanics: [../ai/placeholder-tokens.md - Derivation Rules](../ai/placeholder-tokens.md#derivation-rules).
 
 > **The prefix is not just verbosity - it prevents framework assembly/namespace collisions.** Bare project names and root namespaces collide with platform identities, and the failures are confusing:
 > - A bare **`Uno`** / **`Uno.Core`** project name clashes with the Uno Platform's own `Uno.*` assemblies.
@@ -145,7 +151,7 @@ src/Packages/**/bin/
 src/Packages/**/obj/
 ```
 
-Also **remove the line `*.e2e`** from the stock template. It targets a legacy Visual Studio trace format this scaffold never produces, but it matches the `Test.E2E/` project directory case-insensitively on Windows and silently excludes the entire E2E test project from git.
+Also **remove the line `*.e2e`** from the stock template. It targets a legacy Visual Studio trace format this scaffold never produces, but it matches the `tests/Test.E2E/` project directory case-insensitively on Windows and silently excludes the entire E2E test project from git.
 
 **Add ignore patterns for generated test output:** Stryker.NET reports are local quality artifacts and should not be committed. Append:
 
@@ -222,6 +228,8 @@ Use XML-based `.slnx` as the final solution artifact.
 
 - Preferred: author `.slnx` directly from the reference pattern.
 - If CLI scaffolding creates `.sln`, migrate and remove the `.sln` before continuing.
+- Root `.slnx` project paths start with `src/` for production projects and `tests/` for test projects.
+- From `tests/Test.*/*.csproj`, production `ProjectReference` paths start with `..\..\src\`; sibling test references such as `..\Test.Support\Test.Support.csproj` stay under `tests/`.
 
 Do not keep both formats in active use.
 
@@ -323,11 +331,13 @@ Use this repo as the **authoritative source of truth** for all EF.* types, APIs,
 
 ## Verification
 
-- [ ] `src/{SolutionName}.slnx` exists at `src/` root (not the repo root) and is the active solution format
-- [ ] `dotnet build` succeeds from `src/`
-- [ ] `Directory.Packages.props` is present and controls package versions
-- [ ] `global.json` uses `latestFeature` roll-forward
-- [ ] `nuget.config` includes required public/private feeds
+- [ ] `{SolutionName}.slnx` exists at repo root and is the active solution format
+- [ ] Production projects are under `src/`; test projects are under sibling `tests/`
+- [ ] `dotnet build {SolutionName}.slnx` succeeds from repo root
+- [ ] Repo-root `Directory.Build.props` controls shared build settings
+- [ ] Repo-root `Directory.Packages.props` controls package versions
+- [ ] Repo-root `global.json` uses `latestFeature` roll-forward
+- [ ] When generated, repo-root `nuget.config` includes required public/private feeds
 - [ ] Domain projects do not reference Application/Infrastructure
 - [ ] Host projects depend on Bootstrapper instead of duplicating shared DI wiring
 - [ ] Optional hosts can be removed without breaking core layer compilation

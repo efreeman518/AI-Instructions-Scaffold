@@ -66,8 +66,8 @@ Exit criteria:
 - [ ] Every entity from `.scaffold/resource-implementation.yaml` has: interface, DTO, entity shell, builders
 - [ ] All no-op stubs satisfy their interfaces
 - [ ] `RegisterServices.cs` wires all no-op stubs
-- [ ] Test.Support contains `WebApplicationFactoryBase` (thin adapter over `EfWebApplicationFactoryBase`), `JsonTestOptions`, `InMemoryDbBuilder`, `TestConstants`, and `Builders/{Entity}Builder` shells; `LocalSqlSettings` lives in the AppHost project; unit tests are flat classes (no shared unit-test base)
-- [ ] `Test.Endpoints/CustomApiFactory.cs` and `Test.E2E/SqlApiFactory.cs` inherit/use the shared `WebApplicationFactoryBase` (no duplicated swap-out plumbing); `Test.Integration/Infrastructure/*ContainerFixture` + `IntegrationTestSetup` (component) and `Test.Aspire/AspireTestHost` + `AspireMeshLifecycle` (mesh) all compile
+- [ ] `tests/Test.Support/` contains `WebApplicationFactoryBase` (thin adapter over `EfWebApplicationFactoryBase`), `JsonTestOptions`, `InMemoryDbBuilder`, `TestConstants`, and `Builders/{Entity}Builder` shells; `LocalSqlSettings` lives in the AppHost project; unit tests are flat classes (no shared unit-test base)
+- [ ] `tests/Test.Endpoints/CustomApiFactory.cs` and `tests/Test.E2E/SqlApiFactory.cs` inherit/use the shared `WebApplicationFactoryBase` (no duplicated swap-out plumbing); `tests/Test.Integration/Infrastructure/*ContainerFixture` + `IntegrationTestSetup` (component) and `tests/Test.Aspire/AspireTestHost` + `AspireMeshLifecycle` (mesh) all compile
 - [ ] `{Entity}DtoBuilder` returns valid DTOs
 - [ ] No domain logic in entity shells (only `throw new NotImplementedException`)
 - [ ] `<packagePrefix>.*` shared base types are consumed from feed packages or `src/Packages/<packagePrefix>.*` projects per `packageStrategy` - never reimplemented in application/domain/host layers
@@ -100,7 +100,7 @@ Commands:
 dotnet build
 dotnet test --filter "TestCategory=Unit"
 dotnet test --filter "TestCategory=LiveAI" # only when a live provider is intentionally available
-dotnet test src/Test/Test.FoundryLocal/Test.FoundryLocal.csproj --filter "TestCategory=LiveAI" # local live lane
+dotnet test tests/Test.FoundryLocal/Test.FoundryLocal.csproj --filter "TestCategory=LiveAI" # local live lane
 ```
 
 Scaffold migration (remove old, create fresh baseline - see [../patterns/data-layer-wiring.md](../patterns/data-layer-wiring.md)):
@@ -221,7 +221,7 @@ Run only the targets selected in `.scaffold/resource-implementation.yaml`. Keep 
 For Uno WASM, clean both target `bin` and target `obj` before a validation rebuild. If `WasmUI` tests are generated, run one smoke test before marking the UI validated:
 
 ```powershell
-dotnet test src/Test/Test.PlaywrightUI/Test.PlaywrightUI.csproj --filter TestCategory=WasmUI
+dotnet test tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj --filter TestCategory=WasmUI
 ```
 
 The `WasmUI` harness is default-on. It starts Aspire in testing mode when Docker is present and marks tests `Assert.Inconclusive` only when prerequisites are missing or `{APP}_WASM_TESTS_ENABLED=false`.
@@ -233,7 +233,7 @@ If targeting Android (`<tfm>-android`):
 - [ ] `project.assets.json` contains `Uno.WinUI.Runtime.Skia.Android` for Skia Android targets before runtime debugging starts
 - [ ] `<EmbedAssembliesIntoApk>true</EmbedAssembliesIntoApk>`, `<AndroidEnableAssemblyCompression>false</AndroidEnableAssemblyCompression>`, and `.so` uncompressed file extension settings are set if manual ADB/Appium sideloading is used
 - [ ] Emulator host networking uses `10.0.2.2` for local backend calls (see `skills/ui-uno-platforms.md` section Emulator Host Networking)
-- [ ] MSTest/Appium mobile smoke passes when native Android UI testing is in scope: `powershell -NoProfile -File src/Test/Test.Mobile/run-mobile-tests.ps1`
+- [ ] MSTest/Appium mobile smoke passes when native Android UI testing is in scope: `powershell -NoProfile -File tests/Test.Mobile/run-mobile-tests.ps1`
 - [ ] **Final green rule (mobile in scope):** do not declare green until the visible mobile suite passes on its own with mobile enabled (runner sets `{APP}_MOBILE_TESTS_ENABLED=true`), and then the full non-load solution run exits 0 (`dotnet test .\{SolutionName}.slnx --filter "TestCategory!=Load"`). Two separate passing runs, in that order. This is the canonical mobile completion gate; other files point here rather than restating it.
 
 > **Starter-library escape hatch:** If the repo currently contains only a single-TFM starter library or shell-contract scaffold instead of a real Uno multi-target app, Phase 5c for Uno must be recorded as **blocked**. `NETSDK1139` on `<tfm>-browserwasm` is expected in that scenario and is evidence that Uno scaffolding is still missing - not an environment glitch. Do not debug/workaround it; record the status as `blocked - Uno multi-target not yet created` and move on.
@@ -288,7 +288,7 @@ dotnet build src/Host/Aspire/AppHost
 
 Uno UI startup (post-build, in addition to the platform-target checks above):
 
-- [ ] Fast headless UI tests pass when UI model/presentation coverage exists: `dotnet test src/Test/Test.UI/Test.UI.csproj --filter "TestCategory=UI|TestCategory=Presentation"`
+- [ ] Fast headless UI tests pass when UI model/presentation coverage exists: `dotnet test tests/Test.UI/Test.UI.csproj --filter "TestCategory=UI|TestCategory=Presentation"`
 
 - [ ] **Standalone clean start:** the selected Uno target (`<tfm>-browserwasm` / `<tfm>-android` / `<tfm>-ios`) launches or builds to the available local gate and renders the shell with no WASM load errors / no Android startup crashes / no compile failures
 - [ ] **Aspire-registered clean start (when an Uno host is added to AppHost):** AppHost registers the ASP.NET Core WASM wrapper host, not the Uno SDK project; the resource reaches Running and serves its entry point without exception
@@ -334,10 +334,10 @@ Run mutation test prerequisites from repo root when the project exists:
 
 ```powershell
 dotnet tool restore
-dotnet test src/Test/Test.Mutation/Test.Mutation.csproj
+dotnet test tests/Test.Mutation/Test.Mutation.csproj
 ```
 
-Then run Stryker from `src/Test/Test.Mutation`:
+Then run Stryker from `tests/Test.Mutation`:
 
 ```powershell
 dotnet tool run dotnet-stryker
@@ -460,7 +460,7 @@ Rules:
 - The pin is temporary by definition: on every package-update pass, retry removing it and re-run the audit.
 - The direct reference goes only into projects whose dependency graph pulls the vulnerable version (`dotnet list package --vulnerable --include-transitive` names them).
 - When no fixed version exists anywhere, this pattern cannot apply - use the severity table above (gap entry with owner and target date).
-- TaskFlow proof: `MessagePack` lifted above the version `NBomber` resolves (`src/Directory.Packages.props` + `src/Test/Test.Load/Test.Load.csproj`).
+- TaskFlow proof: `MessagePack` lifted above the version `NBomber` resolves (`Directory.Packages.props` + `tests/Test.Load/Test.Load.csproj`).
 
 ---
 

@@ -123,7 +123,7 @@ Generated when `includeFlowEngine: true` in `.scaffold/resource-implementation.y
 |---|---|---|
 | `eng/test/start-local-test-stack.ps1` + `.vscode/tasks.json` | `local-test-stack-template.md` | `skills/testing.md` + `skills/testing-quality.md` |
 
-Generate when any of `Test.Aspire`, the `WasmUI` bridge tier, or `Test.Mobile` is in scope. Brings up the Aspire/WASM local stack in a re-runnable process-env-only script; generated mobile work uses `src/Test/Test.Mobile/run-mobile-tests.ps1` for Android build, emulator/Appium readiness, enable flag, `dotnet test`, and TRX output.
+Generate when any of `Test.Aspire`, the `WasmUI` bridge tier, or `Test.Mobile` is in scope. Brings up the Aspire/WASM local stack in a re-runnable process-env-only script; generated mobile work uses `tests/Test.Mobile/run-mobile-tests.ps1` for Android build, emulator/Appium readiness, enable flag, `dotnet test`, and TRX output.
 
 ## Documentation
 
@@ -135,7 +135,7 @@ Generate when any of `Test.Aspire`, the `WasmUI` bridge tier, or `Test.Mobile` i
 
 | Phase | Templates to Load |
 |---|---|
-| **4 - Contracts** | Solution structure + contracts (see `ai/contract-scaffolding.md`) - also emits `Test.Support/WebApplicationFactoryBase`, `Test.Endpoints/CustomApiFactory`, `Test.E2E/SqlApiFactory`, `Test.Integration/Infrastructure/*ContainerFixture` + `IntegrationTestSetup` (component), `Test.Aspire/AspireTestHost` + `AspireMeshLifecycle` (mesh) shells, and `Test.FoundryLocal` when AI/Foundry Local is in scope - profile-gated tiers (`Test.E2E`, `Test.Aspire`) only when generated per the `skills/testing.md` Capability-Gated table |
+| **4 - Contracts** | Solution structure + contracts (see `ai/contract-scaffolding.md`) - also emits `tests/Test.Support/WebApplicationFactoryBase`, `tests/Test.Endpoints/CustomApiFactory`, `tests/Test.E2E/SqlApiFactory`, `tests/Test.Integration/Infrastructure/*ContainerFixture` + `IntegrationTestSetup` (component), `tests/Test.Aspire/AspireTestHost` + `AspireMeshLifecycle` (mesh) shells, and `tests/Test.FoundryLocal` when AI/Foundry Local is in scope - profile-gated tiers (`Test.E2E`, `Test.Aspire`) only when generated per the `skills/testing.md` Capability-Gated table |
 | **5a - Foundation (TDD)** | `entity-template`, `ef-configuration-template`, `repository-template`, `domain-rules-template`, `appsettings-template`, **`updater-template` (required when entity has child collections)**, **`test-templates-domain`**, **`test-templates-repository`**, **`test-templates-integration`** (balanced+) |
 | **5b - App Core + Runtime (TDD for app/API, tests-after for runtime)** | `data-mapping-template`, `service-template`, `endpoint-template`, `structure-validator-template`, `exception-handler-template`, `message-handler-template` (if events), `health-check-template`, **`test-templates-service`**, **`test-templates-endpoint`**, **`test-templates-e2e`** (balanced+), `test-templates-integration` (audit-repo + projection pipeline tests), `test-templates-aspire` (mesh API/Function audit pipelines, comprehensive); `cqrs-handler-template`, `cqrs-endpoint-template`, `cqrs-validation-template`, `test-templates-cqrs` (when `applicationStyle: cqrs` or `switch`) |
 | **5c - Optional Hosts** | `uno-ui-client-layer`, `uno-mvux-model-template`, `uno-xaml-page-template`, `test-templates-presentation` (Uno); `skills/ui-react.md` (React); host-specific templates per enabled host; **`flowengine-trigger-template`** (when `includeFlowEngine: true` and Functions or Scheduler enabled) |

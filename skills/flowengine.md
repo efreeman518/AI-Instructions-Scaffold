@@ -38,7 +38,7 @@ src/
       Workflows/                         # workflow JSON files, copied to output
         approval-loop.json
         notify-on-completion.json
-test/
+tests/
   Test.Integration.{Project}.FlowEngine/ # workflow-tier guard tests (see flowengine-test-template.md)
 ```
 

@@ -29,7 +29,7 @@ Assert:
 - Use realistic setup and representative datasets.
 - Benchmark hot paths only.
 - Compare trends over time; do not use one-off numbers as hard pass/fail without baseline.
-- Pin BenchmarkDotNet artifacts under the benchmark project, not the caller's CWD. BenchmarkDotNet defaults `ArtifactsPath` to the current directory, so running from the repo root drops a `BenchmarkDotNet.Artifacts/` folder there. Pass an explicit config: `DefaultConfig.Instance.WithArtifactsPath(...)` anchored to the solution root by walking up from `AppContext.BaseDirectory` to the `*.slnx`/`*.sln` marker, then into `src/Test/Test.Benchmarks/BenchmarkDotNet.Artifacts`.
+- Pin BenchmarkDotNet artifacts under the benchmark project, not the caller's CWD. BenchmarkDotNet defaults `ArtifactsPath` to the current directory, so running from the repo root drops a `BenchmarkDotNet.Artifacts/` folder there. Pass an explicit config: `DefaultConfig.Instance.WithArtifactsPath(...)` anchored to the solution root by walking up from `AppContext.BaseDirectory` to the `*.slnx`/`*.sln` marker, then into `tests/Test.Benchmarks/BenchmarkDotNet.Artifacts`.
 
 ## Mutation Testing Rules
 
@@ -43,8 +43,8 @@ Assert:
 ## Deterministic Test Output Location
 
 - Optional hardening - `.gitignore` already keeps `TestResults/` out of commits; this only buys a deterministic location (useful for CI artifact collection or when `dotnet test` runs from varying directories). Skip it if a single test props/targets file does not already exist.
-- To pin test results, in the test-scoped `Directory.Build.props`/`.targets` under `src/Test/` (when one is present), inside the `IsTestProject` PropertyGroup set `<VSTestResultsDirectory>$(MSBuildThisFileDirectory)TestResults</VSTestResultsDirectory>`.
-- `$(MSBuildThisFileDirectory)` resolves to the targets file's own absolute directory, so every test project writes to the same `src/Test/TestResults` regardless of the directory `dotnet test` runs from. `VSTestResultsDirectory` is the property the VSTest MSBuild task maps to `--results-directory`.
+- To pin test results, in the test-scoped `Directory.Build.props`/`.targets` under `tests/` (when one is present), inside the `IsTestProject` PropertyGroup set `<VSTestResultsDirectory>$(MSBuildThisFileDirectory)TestResults</VSTestResultsDirectory>`.
+- `$(MSBuildThisFileDirectory)` resolves to the targets file's own absolute directory, so every test project writes to the same `tests/TestResults` regardless of the directory `dotnet test` runs from. `VSTestResultsDirectory` is the property the VSTest MSBuild task maps to `--results-directory`.
 - Caveat: a raw `dotnet vstest <dll>` call bypasses MSBuild and honors only its own `--ResultsDirectory` flag.
 
 ## Optional Extras
@@ -255,7 +255,7 @@ Increase late-lifecycle assertions to `60000` when page loads occur after severa
 - Use Playwright mobile viewports against Uno WASM for fast responsive checks on Windows.
 - Use Android emulator UI smoke tests only for native startup, native surface, first-viewport accessibility, and one reliable text-entry smoke. Do not drive deep CRUD, search persistence, child collections, or long-scroll Skia forms with Appium/UiAutomator2; cover those in API, integration, unit, and Playwright lanes.
 - When the repo uses MSTest, scaffold mobile native smoke tests as MSTest + Appium (`Test.Mobile`) instead of introducing NUnit. Keep default `dotnet test` dependency-free: unset `{APP}_MOBILE_TESTS_ENABLED` makes methods `Assert.Inconclusive` without starting Appium, emulator, or building APKs.
-- Generate `src/Test/Test.Mobile/run-mobile-tests.ps1`. The runner owns Android restore/build with `-p:BuildAllUnoTargets=true`, emulator readiness, Appium readiness, `{APP}_MOBILE_TESTS_ENABLED=true`, `dotnet test`, and TRX output. Explicit enabled mobile runs fail fast red if APK, emulator/device, Appium, or UiAutomator2 is missing/broken.
+- Generate `tests/Test.Mobile/run-mobile-tests.ps1`. The runner owns Android restore/build with `-p:BuildAllUnoTargets=true`, emulator readiness, Appium readiness, `{APP}_MOBILE_TESTS_ENABLED=true`, `dotnet test`, and TRX output. Explicit enabled mobile runs fail fast red if APK, emulator/device, Appium, or UiAutomator2 is missing/broken.
 - Test methods must not start Appium, start an Android Emulator, or build APKs. They connect to the prepared device/server, use method-level `[Timeout]`, and capture a screenshot on failure.
 - Use `MobileBy.AccessibilityId` for exact `AutomationProperties.Name` lookups. Avoid broad XPath except fallback probing after diagnostics show no accessibility id is exposed.
 - In runner setup, verify `appium`, `uiautomator2`, `adb`, `emulator`, `ANDROID_HOME`, and `JAVA_HOME` with `appium driver doctor uiautomator2` before blaming app code.
@@ -286,7 +286,7 @@ await expect(dialog).toBeVisible({ timeout: 15_000 });
 
 ### Playwright Config Output Location
 
-Set `outputDir` under `Test/Test.PlaywrightUI`, not under app project directories.
+Set `outputDir` under `tests/Test.PlaywrightUI`, not under app project directories.
 
 ## Visual Studio & VS Code Test Explorer
 
@@ -294,7 +294,7 @@ All test projects must be registered in the `.slnx` so both Test Explorers disco
 
 - **Document proof commands and pass rules.** README/test README must list exact commands for generated tiers and expected pass conditions, including which prerequisites yield `Assert.Inconclusive` and which status/provider mismatches are failures. Put durable rationale in `docs/tech-design.md`; keep README operational.
 
-- **Start the stack once per session.** When the scaffold has Aspire/WASM tiers, run `eng/test/start-local-test-stack.ps1` ([../templates/local-test-stack-template.md](../templates/local-test-stack-template.md)) before those tests. For mobile, run `src/Test/Test.Mobile/run-mobile-tests.ps1`; it owns Android build, emulator/Appium readiness, enable flag, `dotnet test`, and TRX output.
+- **Start the stack once per session.** When the scaffold has Aspire/WASM tiers, run `eng/test/start-local-test-stack.ps1` ([../templates/local-test-stack-template.md](../templates/local-test-stack-template.md)) before those tests. For mobile, run `tests/Test.Mobile/run-mobile-tests.ps1`; it owns Android build, emulator/Appium readiness, enable flag, `dotnet test`, and TRX output.
 - **Filter by category in Test Explorer:** among the tiers present, plus exclude `Load`. The canonical local run is `dotnet test --filter "TestCategory!=Load"`.
 - **Opt out with false-only env vars** for the default-on heavy tiers when you do not want one locally - only the vars for present tiers exist: `{APP}_RUN_ASPIRE_TESTS=false` (if Aspire), `{APP}_WASM_TESTS_ENABLED=false` (if Uno WASM). Default (unset) runs the tier; it self-marks `Inconclusive` if its prerequisite is missing. **`Test.Mobile` is the exception: opt-IN.** It defaults off (emulator/Appium/APK are too heavy for the canonical lane) - unset/false self-marks `Assert.Inconclusive` per test. The generated mobile runner sets `{APP}_MOBILE_TESTS_ENABLED=true`; after that, broken mobile prerequisites are red.
 - **Generate `.vscode/tasks.json`** with tasks for the present tiers only (start stack, build WASM, install Playwright Chromium, build Android APK, run all non-load, run Aspire/WASM/Mobile). Task definitions are in the [local test stack template](../templates/local-test-stack-template.md).

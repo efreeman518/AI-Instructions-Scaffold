@@ -2,131 +2,131 @@
 
 Load on-demand as a reference during Phase 5a-5e to verify scaffolded file layout.
 
-Expected file layout when scaffolding is complete. All paths relative to project root `src/`.
+Expected file layout when scaffolding is complete. All paths are relative to the repo root.
 
 > **Scope:** Backend layers below are always emitted. Optional Phase 5c hosts (Blazor, React, Uno) extend this index - those sections only apply when the corresponding `enabledFeatures` flag is set in `HANDOFF.md` (`includeBlazorUI`, `includeReactUI`, `includeUnoUI`). For host-internal layout details, see [../skills/ui-blazor.md](../skills/ui-blazor.md), [../skills/ui-react.md](../skills/ui-react.md), and [../skills/ui-uno.md](../skills/ui-uno.md).
 
 ## Domain Layer
 | Artifact | Path |
 |---|---|
-| Entity (root) | `Domain/Domain.Model/TodoItem.cs` |
-| Entity (child) | `Domain/Domain.Model/Comment.cs` |
-| Value object | `Domain/Domain.Model/DateRange.cs` |
+| Entity (root) | `src/Domain/Domain.Model/TodoItem.cs` |
+| Entity (child) | `src/Domain/Domain.Model/Comment.cs` |
+| Value object | `src/Domain/Domain.Model/DateRange.cs` |
 
 ## Data Access
 | Artifact | Path |
 |---|---|
-| EF config (entity) | `Infrastructure/Infrastructure.Data/Configurations/TodoItemConfiguration.cs` |
-| Write repository | `Infrastructure/Infrastructure.Repositories/TodoItemRepositoryTrxn.cs` |
-| Read repository | `Infrastructure/Infrastructure.Repositories/TodoItemRepositoryQuery.cs` |
-| Trxn DbContext | `Infrastructure/Infrastructure.Data/{App}DbContextTrxn.cs` |
-| Query DbContext | `Infrastructure/Infrastructure.Data/{App}DbContextQuery.cs` |
-| Updater | `Infrastructure/Infrastructure.Repositories/TodoItemUpdater.cs` |
+| EF config (entity) | `src/Infrastructure/Infrastructure.Data/Configurations/TodoItemConfiguration.cs` |
+| Write repository | `src/Infrastructure/Infrastructure.Repositories/TodoItemRepositoryTrxn.cs` |
+| Read repository | `src/Infrastructure/Infrastructure.Repositories/TodoItemRepositoryQuery.cs` |
+| Trxn DbContext | `src/Infrastructure/Infrastructure.Data/{App}DbContextTrxn.cs` |
+| Query DbContext | `src/Infrastructure/Infrastructure.Data/{App}DbContextQuery.cs` |
+| Updater | `src/Infrastructure/Infrastructure.Repositories/TodoItemUpdater.cs` |
 
 ## Application Layer
 | Artifact | Path |
 |---|---|
-| Service | `Application/Application.Services/TodoItemService.cs` |
-| DTO | `Application/Application.Models/TodoItemDto.cs` |
-| Search filter | `Application/Application.Models/TodoItemSearchFilter.cs` |
-| Mapper | `Application/Application.Mappers/TodoItemMapper.cs` |
-| Contracts | `Application/Application.Contracts/` |
-| Error constants | `Application/Application.Contracts/ErrorConstants.cs` |
-| DefaultRequest | `Application/Application.Models/DefaultRequest.cs` (record) |
-| DefaultResponse | `Application/Application.Models/DefaultResponse.cs` (record) |
-| Structure validator | `Application/Application.Services/Rules/{Entity}StructureValidator.cs` |
-| Service error messages | `Application/Application.Services/Rules/ServiceErrorMessages.cs` |
-| Tenant info DTO | `Application/Application.Models/TenantInfoDto.cs` *(multi-tenant only)* |
-| Tenant boundary validator | `Application/Application.Services/TenantBoundaryValidator.cs` *(multi-tenant only)* |
-| Tenant boundary interface | `Application/Application.Contracts/ITenantBoundaryValidator.cs` *(multi-tenant only)* |
-| Validation helper | `Application/Application.Services/Rules/ValidationHelper.cs` *(multi-tenant only)* |
-| Tenant logging extensions | `Application/Application.Services/Rules/TenantBoundaryLoggingExtensions.cs` *(multi-tenant only)* |
-| Tenant rules | `Application/Application.Services/Rules/TenantRules.cs` *(multi-tenant only)* |
-| Message handler | `Application/Application.MessageHandlers/TodoItemCreatedEventHandler.cs` |
-| Application style switch | `Application/Application.Contracts/ApplicationStyle.cs` *(when applicationStyle: switch)* |
-| CQRS requests | `Application/Application.Cqrs/Features/{Entity}/{Entity}Requests.cs` *(when applicationStyle: cqrs or switch)* |
-| CQRS handlers | `Application/Application.Cqrs/Features/{Entity}/{Entity}Handlers.cs` *(when applicationStyle: cqrs or switch)* |
-| CQRS feature registration | `Application/Application.Cqrs/Features/{Entity}/{Entity}CqrsRegistrations.cs` *(when applicationStyle: cqrs or switch)* |
-| CQRS shared helpers | `Application/Application.Cqrs/Features/Shared/CqrsHandlerSupport.cs` *(when applicationStyle: cqrs or switch)* |
-| CQRS root registration | `Application/Application.Cqrs/Registration/CqrsApplicationRegistration.cs` *(when applicationStyle: cqrs or switch)* |
+| Service | `src/Application/Application.Services/TodoItemService.cs` |
+| DTO | `src/Application/Application.Models/TodoItemDto.cs` |
+| Search filter | `src/Application/Application.Models/TodoItemSearchFilter.cs` |
+| Mapper | `src/Application/Application.Mappers/TodoItemMapper.cs` |
+| Contracts | `src/Application/Application.Contracts/` |
+| Error constants | `src/Application/Application.Contracts/ErrorConstants.cs` |
+| DefaultRequest | `src/Application/Application.Models/DefaultRequest.cs` (record) |
+| DefaultResponse | `src/Application/Application.Models/DefaultResponse.cs` (record) |
+| Structure validator | `src/Application/Application.Services/Rules/{Entity}StructureValidator.cs` |
+| Service error messages | `src/Application/Application.Services/Rules/ServiceErrorMessages.cs` |
+| Tenant info DTO | `src/Application/Application.Models/TenantInfoDto.cs` *(multi-tenant only)* |
+| Tenant boundary validator | `src/Application/Application.Services/TenantBoundaryValidator.cs` *(multi-tenant only)* |
+| Tenant boundary interface | `src/Application/Application.Contracts/ITenantBoundaryValidator.cs` *(multi-tenant only)* |
+| Validation helper | `src/Application/Application.Services/Rules/ValidationHelper.cs` *(multi-tenant only)* |
+| Tenant logging extensions | `src/Application/Application.Services/Rules/TenantBoundaryLoggingExtensions.cs` *(multi-tenant only)* |
+| Tenant rules | `src/Application/Application.Services/Rules/TenantRules.cs` *(multi-tenant only)* |
+| Message handler | `src/Application/Application.MessageHandlers/TodoItemCreatedEventHandler.cs` |
+| Application style switch | `src/Application/Application.Contracts/ApplicationStyle.cs` *(when applicationStyle: switch)* |
+| CQRS requests | `src/Application/Application.Cqrs/Features/{Entity}/{Entity}Requests.cs` *(when applicationStyle: cqrs or switch)* |
+| CQRS handlers | `src/Application/Application.Cqrs/Features/{Entity}/{Entity}Handlers.cs` *(when applicationStyle: cqrs or switch)* |
+| CQRS feature registration | `src/Application/Application.Cqrs/Features/{Entity}/{Entity}CqrsRegistrations.cs` *(when applicationStyle: cqrs or switch)* |
+| CQRS shared helpers | `src/Application/Application.Cqrs/Features/Shared/CqrsHandlerSupport.cs` *(when applicationStyle: cqrs or switch)* |
+| CQRS root registration | `src/Application/Application.Cqrs/Registration/CqrsApplicationRegistration.cs` *(when applicationStyle: cqrs or switch)* |
 
 Default scaffold and TaskFlow reference app keep DTOs and mappers in `Application.Models` and `Application.Mappers` so service and CQRS styles share one contract. A CQRS-only vertical slice may instead put feature-specific models, mappers, projections, and adapters under `Application.Cqrs/Features/{Entity}` when those shapes are not shared.
 
 ## API Host
 | Artifact | Path |
 |---|---|
-| Program.cs | `Host/{Host}.Api/Program.cs` |
-| Endpoints | `Host/{Host}.Api/Endpoints/TodoItemEndpoints.cs` |
-| CQRS endpoints | `Host/{Host}.Api/Endpoints/Cqrs/TodoItemCqrsEndpoints.cs` *(when applicationStyle: cqrs or switch)* |
-| RegisterApiServices | `Host/{Host}.Api/RegisterApiServices.cs` |
-| Bootstrapper | `Host/{Host}.Bootstrapper/RegisterServices.cs` |
+| Program.cs | `src/Host/{Host}.Api/Program.cs` |
+| Endpoints | `src/Host/{Host}.Api/Endpoints/TodoItemEndpoints.cs` |
+| CQRS endpoints | `src/Host/{Host}.Api/Endpoints/Cqrs/TodoItemCqrsEndpoints.cs` *(when applicationStyle: cqrs or switch)* |
+| RegisterApiServices | `src/Host/{Host}.Api/RegisterApiServices.cs` |
+| Bootstrapper | `src/Host/{Host}.Bootstrapper/RegisterServices.cs` |
 
 ## Testing
 | Artifact | Path |
 |---|---|
-| Test support - shared WAF base | `Test/Test.Support/WebApplicationFactoryBase.cs` (thin adapter over `EfWebApplicationFactoryBase` from EF.IntegrationTesting) |
-| Test support - JSON options | `Test/Test.Support/JsonTestOptions.cs` |
-| Test support - shared constants | `Test/Test.Support/TestConstants.cs` (`LocalSqlSettings.cs` lives in the AppHost project) |
-| Test support - utilities | `Test/Test.Support/InMemoryDbBuilder.cs` (unit tests are flat classes - no shared unit-test base) |
-| Test support - builders | `Test/Test.Support/Builders/{Entity}Builder.cs`, `{Entity}DtoBuilder.cs` (one of each per entity) |
-| Unit (domain) | `Test/Test.Unit/Domain/{Entity}Tests.cs`, `{Entity}RulesTests.cs` |
-| Unit (mapper, per entity) | `Test/Test.Unit/Mappers/{Entity}MapperTests.cs` |
-| Unit (mapper parity, consolidated) | `Test/Test.Unit/Mappers/MapperProjectionParityTests.cs` |
-| Unit (services) | `Test/Test.Unit/Services/{Entity}ServiceTests.cs` |
-| Unit (CQRS) | `Test/Test.Unit/Cqrs/{Entity}CqrsValidationTests.cs` *(when applicationStyle: cqrs or switch)* |
-| Unit (repositories) | `Test/Test.Unit/Repositories/{Entity}RepositoryTrxnTests.cs`, `{Entity}RepositoryQueryTests.cs` |
-| UI (headless presentation) | `Test/Test.UI/Presentation/{Entity}PresentationModelTests.cs` *(when UI model/presentation coverage exists)* |
-| Endpoint contract tests | `Test/Test.Endpoints/Endpoints/{Entity}EndpointsTests.cs` |
-| CQRS endpoint switch tests | `Test/Test.Endpoints/CqrsEndpointModeTests.cs` *(when applicationStyle: switch)* |
-| Endpoint factory | `Test/Test.Endpoints/CustomApiFactory.cs` (derives from `Test.Support/WebApplicationFactoryBase`) |
-| E2E factory | `Test/Test.E2E/SqlApiFactory.cs` (Testcontainers SQL, static lifecycle) |
-| E2E workflow tests | `Test/Test.E2E/{Entity}WorkflowTests.cs` |
-| Integration (component) - store fixtures | `Test/Test.Integration/Infrastructure/SqlContainerFixture.cs`, `AzuriteContainerFixture.cs` (+ `RedisContainerFixture.cs` when used) |
-| Integration (component) - assembly lifecycle | `Test/Test.Integration/Infrastructure/IntegrationTestSetup.cs` (starts store fixtures in parallel; captures `StartupError`) |
-| Integration (component) - repo integration | `Test/Test.Integration/{Entity}RepositoryIntegrationTests.cs` (migrations + CRUD + tenant filter + M:N) |
-| Integration (component) - audit repo (Azurite) | `Test/Test.Integration/AuditLogRepositoryAzuriteTests.cs` |
-| Integration (component) - projection pipeline | `Test/Test.Integration/DomainEventPipelineTests.cs` |
-| Aspire (mesh) - lazy host + lifecycle | `Test/Test.Aspire/AspireTestHost.cs` (lazy `EnsureStartedAsync`), `AspireMeshLifecycle.cs` (`[AssemblyCleanup]`) |
-| Aspire (mesh) - API audit pipeline | `Test/Test.Aspire/ApiAuditPipelineTests.cs` |
-| Aspire (mesh) - Function audit pipeline | `Test/Test.Aspire/FunctionAuditPipelineTests.cs` |
-| Architecture | `Test/Test.Architecture/*DependencyTests.cs`, `CqrsArchitectureTests.cs` *(when applicationStyle: cqrs or switch)* |
-| Playwright UI | `Test/Test.PlaywrightUI/Pages/{Entity}CrudTests.cs` (browser; runs against hosted stack) |
-| Mobile UI smoke | `src/Test/Test.Mobile/run-mobile-tests.ps1`, `Test/Test.Mobile/*` (MSTest + Appium; opt-in Android/iOS native launch checks) *(when Uno mobile native testing is enabled)* |
-| Load | `Test/Test.Load/{Entity}LoadTests.cs` |
-| Benchmark | `Test/Test.Benchmarks/{Entity}Benchmarks.cs` |
-| Mutation | `Test/Test.Mutation/Domain/{Entity}MutationSamples.cs`, `Test/Test.Mutation/stryker-config.json` |
+| Test support - shared WAF base | `tests/Test.Support/WebApplicationFactoryBase.cs` (thin adapter over `EfWebApplicationFactoryBase` from EF.IntegrationTesting) |
+| Test support - JSON options | `tests/Test.Support/JsonTestOptions.cs` |
+| Test support - shared constants | `tests/Test.Support/TestConstants.cs` (`LocalSqlSettings.cs` lives in the AppHost project) |
+| Test support - utilities | `tests/Test.Support/InMemoryDbBuilder.cs` (unit tests are flat classes - no shared unit-test base) |
+| Test support - builders | `tests/Test.Support/Builders/{Entity}Builder.cs`, `{Entity}DtoBuilder.cs` (one of each per entity) |
+| Unit (domain) | `tests/Test.Unit/Domain/{Entity}Tests.cs`, `{Entity}RulesTests.cs` |
+| Unit (mapper, per entity) | `tests/Test.Unit/Mappers/{Entity}MapperTests.cs` |
+| Unit (mapper parity, consolidated) | `tests/Test.Unit/Mappers/MapperProjectionParityTests.cs` |
+| Unit (services) | `tests/Test.Unit/Services/{Entity}ServiceTests.cs` |
+| Unit (CQRS) | `tests/Test.Unit/Cqrs/{Entity}CqrsValidationTests.cs` *(when applicationStyle: cqrs or switch)* |
+| Unit (repositories) | `tests/Test.Unit/Repositories/{Entity}RepositoryTrxnTests.cs`, `{Entity}RepositoryQueryTests.cs` |
+| UI (headless presentation) | `tests/Test.UI/Presentation/{Entity}PresentationModelTests.cs` *(when UI model/presentation coverage exists)* |
+| Endpoint contract tests | `tests/Test.Endpoints/Endpoints/{Entity}EndpointsTests.cs` |
+| CQRS endpoint switch tests | `tests/Test.Endpoints/CqrsEndpointModeTests.cs` *(when applicationStyle: switch)* |
+| Endpoint factory | `tests/Test.Endpoints/CustomApiFactory.cs` (derives from `tests/Test.Support/WebApplicationFactoryBase`) |
+| E2E factory | `tests/Test.E2E/SqlApiFactory.cs` (Testcontainers SQL, static lifecycle) |
+| E2E workflow tests | `tests/Test.E2E/{Entity}WorkflowTests.cs` |
+| Integration (component) - store fixtures | `tests/Test.Integration/Infrastructure/SqlContainerFixture.cs`, `AzuriteContainerFixture.cs` (+ `RedisContainerFixture.cs` when used) |
+| Integration (component) - assembly lifecycle | `tests/Test.Integration/Infrastructure/IntegrationTestSetup.cs` (starts store fixtures in parallel; captures `StartupError`) |
+| Integration (component) - repo integration | `tests/Test.Integration/{Entity}RepositoryIntegrationTests.cs` (migrations + CRUD + tenant filter + M:N) |
+| Integration (component) - audit repo (Azurite) | `tests/Test.Integration/AuditLogRepositoryAzuriteTests.cs` |
+| Integration (component) - projection pipeline | `tests/Test.Integration/DomainEventPipelineTests.cs` |
+| Aspire (mesh) - lazy host + lifecycle | `tests/Test.Aspire/AspireTestHost.cs` (lazy `EnsureStartedAsync`), `AspireMeshLifecycle.cs` (`[AssemblyCleanup]`) |
+| Aspire (mesh) - API audit pipeline | `tests/Test.Aspire/ApiAuditPipelineTests.cs` |
+| Aspire (mesh) - Function audit pipeline | `tests/Test.Aspire/FunctionAuditPipelineTests.cs` |
+| Architecture | `tests/Test.Architecture/*DependencyTests.cs`, `CqrsArchitectureTests.cs` *(when applicationStyle: cqrs or switch)* |
+| Playwright UI | `tests/Test.PlaywrightUI/Pages/{Entity}CrudTests.cs` (browser; runs against hosted stack) |
+| Mobile UI smoke | `tests/Test.Mobile/run-mobile-tests.ps1`, `tests/Test.Mobile/*` (MSTest + Appium; opt-in Android/iOS native launch checks) *(when Uno mobile native testing is enabled)* |
+| Load | `tests/Test.Load/{Entity}LoadTests.cs` |
+| Benchmark | `tests/Test.Benchmarks/{Entity}Benchmarks.cs` |
+| Mutation | `tests/Test.Mutation/Domain/{Entity}MutationSamples.cs`, `tests/Test.Mutation/stryker-config.json` |
 
 ## Aspire
 | Artifact | Path |
 |---|---|
-| AppHost | `Host/Aspire/AppHost/AppHost.cs` |
-| Service defaults | `Host/Aspire/ServiceDefaults/Extensions.cs` |
+| AppHost | `src/Host/Aspire/AppHost/AppHost.cs` |
+| Service defaults | `src/Host/Aspire/ServiceDefaults/Extensions.cs` |
 
 ## Infrastructure
 | Artifact | Path |
 |---|---|
-| Dockerfile (per host) | `Host/{Host}.Api/Dockerfile` |
-| Health checks | `Host/{Host}.Api/HealthChecks/SqlHealthCheck.cs` |
+| Dockerfile (per host) | `src/Host/{Host}.Api/Dockerfile` |
+| Health checks | `src/Host/{Host}.Api/HealthChecks/SqlHealthCheck.cs` |
 
 ## Blazor UI (Phase 5c, optional - `includeBlazorUI: true`)
 
-Source: [../skills/ui-blazor.md](../skills/ui-blazor.md). Project root: `Host/{Project}.Blazor/`.
+Source: [../skills/ui-blazor.md](../skills/ui-blazor.md). Project root: `src/UI/{Project}.Blazor/`.
 
 | Artifact | Path |
 |---|---|
-| Program.cs | `Host/{Project}.Blazor/Program.cs` |
-| App root | `Host/{Project}.Blazor/App.razor` |
-| Routes | `Host/{Project}.Blazor/Components/Routes.razor` |
-| Imports | `Host/{Project}.Blazor/Components/_Imports.razor` |
-| Layout | `Host/{Project}.Blazor/Components/Layout/MainLayout.razor` |
-| Page (dashboard) | `Host/{Project}.Blazor/Components/Pages/Dashboard.razor` |
-| Page (entity list, per entity) | `Host/{Project}.Blazor/Components/Pages/{Entity}List.razor` |
-| Page (entity new/edit, per entity) | `Host/{Project}.Blazor/Components/Pages/{Entity}Page.razor` |
-| Page (settings, error) | `Host/{Project}.Blazor/Components/Pages/Settings.razor`, `Error.razor` |
-| Refit API client | `Host/{Project}.Blazor/Services/I{Project}ApiClient.cs` |
-| Scoped state hub | `Host/{Project}.Blazor/Services/FloatService.cs` |
-| Static assets | `Host/{Project}.Blazor/wwwroot/app.css` |
-| Runtime config (WASM only) | `Host/{Project}.Blazor/wwwroot/appsettings.json` |
+| Program.cs | `src/UI/{Project}.Blazor/Program.cs` |
+| App root | `src/UI/{Project}.Blazor/App.razor` |
+| Routes | `src/UI/{Project}.Blazor/Components/Routes.razor` |
+| Imports | `src/UI/{Project}.Blazor/Components/_Imports.razor` |
+| Layout | `src/UI/{Project}.Blazor/Components/Layout/MainLayout.razor` |
+| Page (dashboard) | `src/UI/{Project}.Blazor/Components/Pages/Dashboard.razor` |
+| Page (entity list, per entity) | `src/UI/{Project}.Blazor/Components/Pages/{Entity}List.razor` |
+| Page (entity new/edit, per entity) | `src/UI/{Project}.Blazor/Components/Pages/{Entity}Page.razor` |
+| Page (settings, error) | `src/UI/{Project}.Blazor/Components/Pages/Settings.razor`, `Error.razor` |
+| Refit API client | `src/UI/{Project}.Blazor/Services/I{Project}ApiClient.cs` |
+| Scoped state hub | `src/UI/{Project}.Blazor/Services/FloatService.cs` |
+| Static assets | `src/UI/{Project}.Blazor/wwwroot/app.css` |
+| Runtime config (WASM only) | `src/UI/{Project}.Blazor/wwwroot/appsettings.json` |
 
 ## Uno UI (Phase 5c, optional, dedicated session - `includeUnoUI: true`)
 
@@ -155,19 +155,19 @@ Source: [../skills/ui-uno.md](../skills/ui-uno.md), [../skills/ui-uno-shell.md](
 
 ## React UI (Phase 5c, optional - `includeReactUI: true`)
 
-Source: [../skills/ui-react.md](../skills/ui-react.md). Project root: `UI/{Project}.React/`.
+Source: [../skills/ui-react.md](../skills/ui-react.md). Project root: `src/UI/{Project}.React/`.
 
 | Artifact | Path |
 |---|---|
-| Package manifest | `UI/{Project}.React/package.json` |
-| Vite config | `UI/{Project}.React/vite.config.ts` |
-| App entry | `UI/{Project}.React/src/main.tsx`, `UI/{Project}.React/src/app/App.tsx` |
-| Routes | `UI/{Project}.React/src/app/routes.tsx` |
-| API client | `UI/{Project}.React/src/api/{project}Api.ts` |
-| API types | `UI/{Project}.React/src/api/types.ts` |
-| Page (dashboard) | `UI/{Project}.React/src/features/dashboard/DashboardPage.tsx` |
-| Page (entity list, per entity) | `UI/{Project}.React/src/features/{entity}/{Entity}ListPage.tsx` |
-| Page (entity detail/edit, per entity) | `UI/{Project}.React/src/features/{entity}/{Entity}DetailPage.tsx` |
-| Form (per entity) | `UI/{Project}.React/src/features/{entity}/{Entity}Form.tsx` |
-| Query hooks (per entity) | `UI/{Project}.React/src/features/{entity}/{entity}Queries.ts` |
-| Shared layout/theme | `UI/{Project}.React/src/shared/layout/`, `UI/{Project}.React/src/shared/theme/` |
+| Package manifest | `src/UI/{Project}.React/package.json` |
+| Vite config | `src/UI/{Project}.React/vite.config.ts` |
+| App entry | `src/UI/{Project}.React/src/main.tsx`, `src/UI/{Project}.React/src/app/App.tsx` |
+| Routes | `src/UI/{Project}.React/src/app/routes.tsx` |
+| API client | `src/UI/{Project}.React/src/api/{project}Api.ts` |
+| API types | `src/UI/{Project}.React/src/api/types.ts` |
+| Page (dashboard) | `src/UI/{Project}.React/src/features/dashboard/DashboardPage.tsx` |
+| Page (entity list, per entity) | `src/UI/{Project}.React/src/features/{entity}/{Entity}ListPage.tsx` |
+| Page (entity detail/edit, per entity) | `src/UI/{Project}.React/src/features/{entity}/{Entity}DetailPage.tsx` |
+| Form (per entity) | `src/UI/{Project}.React/src/features/{entity}/{Entity}Form.tsx` |
+| Query hooks (per entity) | `src/UI/{Project}.React/src/features/{entity}/{entity}Queries.ts` |
+| Shared layout/theme | `src/UI/{Project}.React/src/shared/layout/`, `src/UI/{Project}.React/src/shared/theme/` |

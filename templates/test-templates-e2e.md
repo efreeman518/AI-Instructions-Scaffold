@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Generates** | `Test/Test.E2E/SqlApiFactory.cs`, `Test/Test.E2E/{Entity}WorkflowTests.cs` |
+| **Generates** | `tests/Test.E2E/SqlApiFactory.cs`, `tests/Test.E2E/{Entity}WorkflowTests.cs` |
 | **Requires** | [test-templates-endpoint](test-templates-endpoint.md) (for the shared `WebApplicationFactoryBase`), real SQL via Testcontainers |
 | **Phase** | Generated in Phase 4 (factory shell) and filled in during Phase 5b once services + endpoints are green |
 | **Protocol** | Tests-after. Unit + Endpoint tests in `Test.Endpoints` already pin per-endpoint behavior; E2E validates multi-endpoint **workflows** against real SQL - paging plans, FK constraints, projection translation, owned-type round-trip, and child-aggregate lifecycles. |
@@ -22,7 +22,7 @@ Rule of thumb: if the workflow spans **two or more endpoints** and the assertion
 
 ## SqlApiFactory
 
-### File: `Test/Test.E2E/SqlApiFactory.cs`
+### File: `tests/Test.E2E/SqlApiFactory.cs`
 
 ```csharp
 using Microsoft.EntityFrameworkCore;
@@ -95,7 +95,7 @@ public sealed class SqlApiFactory : WebApplicationFactoryBase<Program, {App}DbCo
 
 ---
 
-## File: `Test/Test.E2E/{Entity}WorkflowTests.cs`
+## File: `tests/Test.E2E/{Entity}WorkflowTests.cs`
 
 ```csharp
 using System.Net;
@@ -396,8 +396,8 @@ interaction checks; prove create/update/delete through the API.
 ---
 
 **TaskFlow proof (local):**
-- `../AI-Instructions-ReferenceApp/src/Test/Test.E2E/SqlApiFactory.cs`
-- `../AI-Instructions-ReferenceApp/src/Test/Test.E2E/TaskItemCrudE2ETests.cs`
+- `../AI-Instructions-ReferenceApp/tests/Test.E2E/SqlApiFactory.cs`
+- `../AI-Instructions-ReferenceApp/tests/Test.E2E/TaskItemCrudE2ETests.cs`
 
 **TaskFlow proof (remote fallback):**
-<https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/src/Test/Test.E2E>
+<https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/tests/Test.E2E>

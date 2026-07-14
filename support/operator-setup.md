@@ -16,12 +16,12 @@ Run once per machine/repo before beginning any scaffolding phase.
 
 ### Development Tools
 
-- [ ] Git repo initialized with `.gitignore` for .NET, **patched** for this scaffold's `src/Packages/` source folder and `Test.E2E/` project (see [../skills/solution-structure.md](../skills/solution-structure.md) section Required Root Files (Cross-Platform Hygiene))
+- [ ] Git repo initialized with `.gitignore` for .NET, **patched** for this scaffold's `src/Packages/` source folder and `tests/Test.E2E/` project (see [../skills/solution-structure.md](../skills/solution-structure.md) section Required Root Files (Cross-Platform Hygiene))
 - [ ] Current machine- or user-global Python 3 installed for scaffold helper scripts. Verify from a fresh shell per [python-setup.md](python-setup.md); do not rely on a repo `.venv` as the machine launcher.
 - [ ] Tracked-source validation runs after `git add .` - see [Tracked-Source Validation](#tracked-source-validation) below.
 - [ ] `.NET SDK` installed (`dotnet --version`)
 - [ ] A Docker-compatible container runtime running *(if Aspire/Testcontainers tiers use SQL/Redis/Service Bus/Azurite containers)* - any of Docker Desktop, WSL Docker Engine, Rancher Desktop, or a Podman-compatible Docker socket. Verify by **capability, not product**: `docker version`, `docker info`, and `docker run --rm hello-world` all succeed. For the Aspire mesh resource floor (CPU/RAM/swap) and WSL `.wslconfig` settings, see [troubleshooting.md](troubleshooting.md) -> Docker / Container Runtime.
-- [ ] `nuget.config` includes `nuget.org` + all custom/private feeds (see Private Feed Auth below)
+- [ ] For `packageStrategy: feed`/`hybrid`, repo-root `nuget.config` includes `nuget.org` + all custom/private feeds (see Private Feed Auth below); for `local`, the file may be absent
 - [ ] EF tools available (`dotnet ef --version`; prefer repo-local tool manifest, user-global `dotnet-ef` is acceptable)
 - [ ] Functions Core Tools installed (`func --version`) *(if using Functions)*
 - [ ] Uno templates installed (`dotnet new install Uno.Templates`) *(if using Uno UI)*
@@ -67,7 +67,7 @@ Feed-supplied layers require package read access before Phase 4 restore/build ca
 | Found | Author a **secret-free** repo `nuget.config`: copy the global source key into `<packageSources>`, add the prefix entry to `<packageSourceMapping>`, emit **no** `<packageSourceCredentials>` block (a repo credential block would shadow working global creds). NuGet resolves the PAT from the global store locally; CI injects `NUGET_AUTH_TOKEN`. Skip Step 3. |
 | Not found | Run Step 2b below to write the `%NUGET_AUTH_TOKEN%` credential block. |
 
-> **Local restore is a bare `dotnet restore`.** Never pass `--configfile src/nuget.config` for local restore: `--configfile` makes NuGet use only that file and skips the hierarchical merge with the global `NuGet.Config`, so the PAT resolved from the global store is never found and restore 401s on a fresh machine. The repo `nuget.config` is source-mapping only; credentials come from the global store (local) or `NUGET_AUTH_TOKEN` (CI, injected before restore). `--configfile` is correct only on the CI `dotnet nuget update source` step that writes those credentials in first.
+> **Local restore is a bare `dotnet restore`.** Never pass `--configfile nuget.config` for local restore: `--configfile` makes NuGet use only that file and skips the hierarchical merge with the global `NuGet.Config`, so the PAT resolved from the global store is never found and restore 401s on a fresh machine. The repo-root `nuget.config` is source-mapping only; credentials come from the global store (local) or `NUGET_AUTH_TOKEN` (CI, injected before restore). `--configfile` is correct only on the CI `dotnet nuget update source` step that writes those credentials in first.
 
 **Step 2b - write the credential-bearing config** (only when the probe found no global creds). Use the feed helper:
 

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Generates** | `Test/Test.Unit/Domain/{Entity}Tests.cs`, `Test/Test.Unit/Domain/{Entity}RulesTests.cs` |
+| **Generates** | `tests/Test.Unit/Domain/{Entity}Tests.cs`, `tests/Test.Unit/Domain/{Entity}RulesTests.cs` |
 | **Requires** | Entity shell from Phase 4, [domain-rules-template](domain-rules-template.md) |
 | **Phase** | 5a (Foundation TDD) |
 | **Protocol** | Write these tests BEFORE implementing entity logic. See [../ai/tdd-protocol.md](../ai/tdd-protocol.md). |
@@ -19,7 +19,7 @@ public void Given_ValidInput_When_EntityCreated_Then_ReturnsSuccess() { }
 
 ## Domain Entity Tests
 
-### File: `Test/Test.Unit/Domain/{Entity}Tests.cs`
+### File: `tests/Test.Unit/Domain/{Entity}Tests.cs`
 
 ```csharp
 [TestClass]
@@ -118,7 +118,7 @@ public class {Entity}Tests
 
 ## Domain Rule Tests
 
-### File: `Test/Test.Unit/Domain/{Entity}RulesTests.cs`
+### File: `tests/Test.Unit/Domain/{Entity}RulesTests.cs`
 
 ```csharp
 [TestClass]
@@ -165,7 +165,7 @@ public class {Entity}RulesTests
 
 ## Builder Activation (Phase 5a)
 
-After entity `Create()` is implemented, activate the builder in `Test.Support/Builders/{Entity}Builder.cs`:
+After entity `Create()` is implemented, activate the builder in `tests/Test.Support/Builders/{Entity}Builder.cs`:
 
 ```csharp
 // Replace the Phase 4 shell:
