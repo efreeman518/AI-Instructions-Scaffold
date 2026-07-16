@@ -176,7 +176,7 @@ Infrastructure and optional host phases do not follow TDD. Instead, implement fi
 5e tests: auth endpoint behavior plus AI service registration/no-op behavior; live provider checks only when provisioned.
 
 ```powershell
-dotnet test
+dotnet test -m:1
 ```
 
 ---

@@ -160,7 +160,7 @@ When the app needs API, Gateway, SQL, Redis, storage, or auth, generate an AppHo
 
 Required fixture behavior:
 
-- Check Docker with a short timeout. Missing Docker returns `Assert.Inconclusive` with the exact fix. Docker present means start Aspire and real resources.
+- Use the shared `AspireTestHostContext` from [test-templates-aspire.md](test-templates-aspire.md). Its Docker preflight drains stdout and stderr concurrently. Explicit `{APP}_WASM_TESTS_ENABLED=false` or missing Docker is inconclusive; Docker success makes later toolchain/AppHost/resource/browser failures red with diagnostics.
 - Clean both `bin/<configuration>/<tfm>-browserwasm` and `obj/<configuration>/<tfm>-browserwasm` before a test-owned rebuild.
 - Restore with `BuildAllUnoTargets=true` and `EnableUnoWasm=true`.
 - Build one target at a time with `TargetFrameworkOverride=<tfm>-browserwasm`, `EnableUnoWasm=true`, `--no-restore`, and `-m:1`. Do not use `-f`.
@@ -173,10 +173,10 @@ Required fixture behavior:
 - Resolve Gateway and UI base URLs through named Aspire endpoints. Use `CreateHttpClient(resource, "http")`; do not assume fixed local ports.
 - Warm up real Gateway auth before browser navigation by posting to the local login endpoint, for example `POST api/auth/login`, with the same test email the browser receives.
 - Build browser URLs with `{app}TestMode=true`, `{app}TestAuth=true`, `{app}TestReset=true`, `{app}TestEmail`, `{app}TestOnboarding`, `{app}TestSection`, and `{app}TestGatewayBaseUrl`. The gateway URL must be URL-encoded and must come from Aspire's named Gateway endpoint.
-- Bound every startup step with its own timeout and progress log. Uno WASM first build needs long split budgets: restore default 600 s, build default 1200 s, startup default at least 900 s. Do not use one shared startup timeout for restore plus build plus AppHost plus browser boot.
+- Start one `{APP}_WASM_STARTUP_TIMEOUT_SECONDS` budget before clean/restore. Restore, build, AppHost create/build/start, named health waits, endpoint resolution, Gateway auth warm-up, and browser launch consume its remaining time. Per-step caps may fail sooner but never reset the budget. Default at least 1800 s for a cold first build.
 - Stop/dispose the Aspire graph in assembly cleanup. If explicit Docker cleanup is needed, scope it to this test run only.
 - Reset the static base URL during assembly cleanup.
-- Run `dotnet build` or `dotnet test` on the generated `Test.PlaywrightUI` project before handoff. Namespace mismatches between wrapper tests and shared runner types are scaffold defects, not runtime issues.
+- Run `dotnet build` or `dotnet test tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj -m:1` before handoff. Namespace mismatches between wrapper tests and shared runner types are scaffold defects, not runtime issues.
 
 Generated assembly:
 
@@ -187,8 +187,8 @@ Generated assembly:
 
 Required files:
 
-- `WasmTestSettings.cs`: reads `{APP}_WASM_TESTS_ENABLED`, `{APP}_WASM_BROWSER`, `{APP}_WASM_HEADLESS`, `{APP}_WASM_TEST_EMAIL`, `{APP}_WASM_RESTORE_TIMEOUT_SECONDS`, `{APP}_WASM_BUILD_TIMEOUT_SECONDS`, `{APP}_WASM_STARTUP_TIMEOUT_SECONDS`, and `{APP}_WASM_PAGE_LOAD_TIMEOUT_SECONDS`. Treat only `false`, `0`, or `no` as opt-out. Defaults: restore 600 s, build 1200 s, startup 900 s minimum.
-- `WasmAppHost.cs`: owns Docker preflight, clean restore/build, AppHost startup, resource health waits, named endpoint resolution, Gateway auth warm-up, and cleanup.
+- `WasmTestSettings.cs`: reads `{APP}_WASM_TESTS_ENABLED`, `{APP}_WASM_BROWSER`, `{APP}_WASM_HEADLESS`, `{APP}_WASM_TEST_EMAIL`, `{APP}_WASM_STARTUP_TIMEOUT_SECONDS`, and `{APP}_WASM_PAGE_LOAD_TIMEOUT_SECONDS`. Treat only `false`, `0`, or `no` as opt-out. The startup value is one end-to-end wall-clock budget, default at least 1800 s.
+- `WasmAppHost.cs`: configures the graph and build arguments but delegates Docker preflight, cumulative deadline, resource waits, diagnostics, and cleanup to `AspireTestHostContext`.
 - `WasmTestHarness.cs`: owns Playwright startup, browser diagnostics, URL building, bridge-state polling, canvas assertions, screenshot artifacts, and failure messages.
 
 `WasmAppHost` should expose one entry point:
@@ -222,7 +222,7 @@ Node/TypeScript runner rules:
 
 - Use latest stable `@playwright/test`. Older versions can emit Node 26 `DEP0205 module.register()` deprecation noise that hides useful failure output.
 - Run one TypeScript project per child process (`node .../cli.js test --project <name>`). Do not run every Playwright project in one process.
-- Read `{APP}_PLAYWRIGHT_PROJECT_TIMEOUT_SECONDS` and `{APP}_PLAYWRIGHT_TEST_TIMEOUT_SECONDS`; fail fast with command, exit code, stdout, stderr, and timeout value.
+- Read `{APP}_PLAYWRIGHT_PROJECT_TIMEOUT_SECONDS` and `{APP}_PLAYWRIGHT_TEST_TIMEOUT_SECONDS` as subordinate caps; also pass the shared startup-deadline token so neither can extend the end-to-end budget. Fail fast with command, exit code, stdout, stderr, and timeout value.
 - On timeout/cancellation, kill the child process tree (`Kill(entireProcessTree: true)`) before returning failure.
 - Do not pass `--reporter=line` from a C# or CI child-process runner. Its carriage-return progress output can hide failure detail in captured stdout/stderr. Use `list`, `dot`, or the default reporter when output is captured.
 - Keep C# runner namespaces and TypeScript runner namespaces aligned with the generated project. The solution build is the gate.
@@ -238,7 +238,7 @@ Node/TypeScript runner rules:
 /// The shared WasmAppHost fixture starts Aspire, restores/builds browserwasm, and resolves
 /// dynamic endpoints. The test asserts on published state and saves a screenshot artifact.
 /// Manual run (Docker must be running; local stack script is optional):
-///   dotnet test tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj --filter TestCategory=WasmUI
+///   dotnet test tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj --filter TestCategory=WasmUI -m:1
 /// </summary>
 [TestClass]
 [TestCategory("WasmUI")]
@@ -279,7 +279,7 @@ public class {Entity}CanvasTests
 }
 ```
 
-For Node/TS Playwright, the same shape applies: `await page.waitForFunction(() => globalThis.__{app}TestState?.status === "ready", { timeout: 900000 })`, then read fields off the returned handle. Keep the 900 s startup budget for first Uno WASM boot and keep restore/build timeouts separate ([../skills/testing-quality.md](../skills/testing-quality.md)).
+For Node/TS Playwright, the same shape applies: `await page.waitForFunction(() => globalThis.__{app}TestState?.status === "ready", { timeout: remainingStartupMilliseconds })`, then read fields off the returned handle. The fixture owns one startup deadline across restore, build, AppHost, readiness, and browser launch; per-step caps may be shorter but cannot reset it ([../skills/testing-quality.md](../skills/testing-quality.md)).
 
 ## Verification
 
@@ -294,7 +294,7 @@ For Node/TS Playwright, the same shape applies: `await page.waitForFunction(() =
 - [ ] Tests assert a rendered canvas larger than 100x100 and a nonblank fingerprint/pixel hash.
 - [ ] `WasmUI` tests start Aspire in testing mode when the app needs AppHost resources.
 - [ ] Docker missing marks `Assert.Inconclusive` with a fix; Docker present starts real resources.
-- [ ] Child `dotnet` restore/build commands clear profiler env vars and use separate timeout values.
+- [ ] Child `dotnet` restore/build commands clear profiler env vars and consume the shared remaining startup budget; any per-step cap is subordinate.
 - [ ] WASM clean rebuild deletes both target `bin` and target `obj`, then writes a test-owned stamp.
 - [ ] Lazy single-start guard checks static `_app` / base URL state, not per-test `WasmTestSettings.BaseUrl`.
 - [ ] Named Aspire endpoints are used for Gateway/UI URLs; no fixed local port fallback ships in tests.

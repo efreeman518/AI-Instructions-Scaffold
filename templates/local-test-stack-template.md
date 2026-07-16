@@ -11,11 +11,11 @@
 
 ## Generate only for selected capabilities
 
-This script and its `.vscode/tasks.json` entries are **derived from the early Phase 2 capability pick** (see [Capability-Gated Test Tiers](../skills/testing.md#capability-gated-test-tiers-the-early-decision-drives-the-rest)). Emit only the branches and tasks for tiers that were actually generated: no Uno -> no WASM/mobile branches; no `useAspire` -> no AppHost branch. An `api-only` scaffold needs none of this - skip the script entirely (a plain `dotnet test --filter "TestCategory!=Load"` suffices). The `-Skip*` switches below toggle *within* the set of branches that exist; they are not a substitute for omitting unselected capabilities at generation time.
+This script and its `.vscode/tasks.json` entries are **derived from the early Phase 2 capability pick** (see [Capability-Gated Test Tiers](../skills/testing.md#capability-gated-test-tiers-the-early-decision-drives-the-rest)). Emit only the branches and tasks for tiers that were actually generated: no Uno -> no WASM/mobile branches; no `useAspire` -> no AppHost branch. An `api-only` scaffold needs none of this - skip the script entirely. A filtered command may support fast iteration, but final acceptance remains unfiltered and serial: `dotnet test .\{SolutionName}.slnx --no-build -m:1`. The `-Skip*` switches below toggle *within* the set of branches that exist; they are not a substitute for omitting unselected capabilities at generation time.
 
 ## Why one script
 
-WASM and Aspire tests need a running local stack (built artifacts, a started AppHost, browsers). Mobile needs a dedicated runner because Android build, emulator readiness, Appium readiness, enable flag, `dotnet test`, and TRX output must stay in one fail-fast lane. Generate `eng/test/start-local-test-stack.ps1` for Aspire/WASM and `tests/Test.Mobile/run-mobile-tests.ps1` for mobile. Print exact endpoints and rerun commands. Default heavy tiers self-skip (`Inconclusive`) only when prerequisites are missing; explicit mobile runner lanes fail fast when mobile prerequisites are broken.
+WASM and Aspire tests need a running local stack (built artifacts, a started AppHost, browsers). Mobile needs a dedicated runner because Android build, emulator readiness, Appium readiness, enable flag, `dotnet test`, and TRX output must stay in one fail-fast lane. Generate `eng/test/start-local-test-stack.ps1` for Aspire/WASM and `tests/Test.Mobile/run-mobile-tests.ps1` for mobile. Print exact endpoints and rerun commands. Required Aspire-backed infrastructure is inconclusive only for explicit opt-out or failed Docker preflight; selected-lane toolchain/AppHost failures are red. Optional LiveAI performs its provider preflight before host creation per [ai-integration.md](../skills/ai-integration.md). Explicit mobile runner lanes fail fast when mobile prerequisites are broken.
 
 **Hard rule:** process-env only. The script sets `$env:PATH`, `ANDROID_HOME`, endpoint vars for the current process tree (and child test runs it launches). It must not call `setx` or edit machine/user PATH. A developer who never runs the script must still be able to build and run the app.
 
@@ -141,12 +141,12 @@ function Wait-Endpoint($url, $seconds = 180) {
 }
 if (-not $SkipAspire) {
     Step 'Waiting for gateway'
-    if (-not (Wait-Endpoint "https://localhost:$GatewayPort/health")) { Warn 'gateway not ready - Aspire tests will mark Inconclusive' }
+    if (-not (Wait-Endpoint "https://localhost:$GatewayPort/health")) { throw 'gateway not ready before the local-stack deadline; inspect AppHost resource state and logs' }
 }
 if (-not $SkipWasm) {
     if ($WasmUrl) {
         Step 'Waiting for standalone WASM UI'
-        if (-not (Wait-Endpoint $WasmUrl)) { Warn 'WASM UI not ready - WasmUI tests will mark Inconclusive' }
+        if (-not (Wait-Endpoint $WasmUrl)) { throw 'WASM UI not ready before the local-stack deadline; inspect host and browser diagnostics' }
     } else {
         Warn 'WASM UI URL not probed here. AppHost-backed WasmUI tests resolve the UI resource URL from Aspire named endpoints.'
     }
@@ -167,9 +167,9 @@ Write-Host @"
   Mobile:   use tests/Test.Mobile/run-mobile-tests.ps1 (Android gateway from emulator: http://10.0.2.2:$GatewayPort/)
 
   Rerun individual tiers:
-    dotnet test .\{SolutionName}.slnx --filter "TestCategory!=Load"
-    dotnet test tests/Test.Aspire/Test.Aspire.csproj           --filter TestCategory=Aspire
-    dotnet test tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj --filter TestCategory=WasmUI
+    dotnet test .\{SolutionName}.slnx -m:1
+    dotnet test tests/Test.Aspire/Test.Aspire.csproj -m:1 --filter TestCategory=Aspire
+    dotnet test tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj -m:1 --filter TestCategory=WasmUI
     powershell -NoProfile -File tests/Test.Mobile/run-mobile-tests.ps1 -SkipBuild
 "@ -ForegroundColor Green
 ```
@@ -188,9 +188,9 @@ Generate into `.vscode/tasks.json` so Test Explorer users have one-click stack c
     { "label": "Build WASM", "type": "shell", "command": "pwsh -File eng/test/start-local-test-stack.ps1 -SkipAspire -SkipMobile" },
     { "label": "Install Playwright Chromium", "type": "shell", "command": "pwsh tests/Test.PlaywrightUI/bin/Debug/net{X}.0/playwright.ps1 install chromium" },
     { "label": "Test: Mobile with build", "type": "shell", "command": "powershell -NoProfile -File tests/Test.Mobile/run-mobile-tests.ps1" },
-    { "label": "Test: all non-load", "type": "shell", "command": "dotnet test .\\{SolutionName}.slnx --filter \"TestCategory!=Load\"", "group": { "kind": "test", "isDefault": true } },
-    { "label": "Test: Aspire", "type": "shell", "command": "dotnet test tests/Test.Aspire/Test.Aspire.csproj --filter TestCategory=Aspire" },
-    { "label": "Test: WASM", "type": "shell", "command": "dotnet test tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj --filter TestCategory=WasmUI" },
+    { "label": "Test: full serial acceptance", "type": "shell", "command": "dotnet test .\\{SolutionName}.slnx -m:1", "group": { "kind": "test", "isDefault": true } },
+    { "label": "Test: Aspire", "type": "shell", "command": "dotnet test tests/Test.Aspire/Test.Aspire.csproj -m:1 --filter TestCategory=Aspire" },
+    { "label": "Test: WASM", "type": "shell", "command": "dotnet test tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj -m:1 --filter TestCategory=WasmUI" },
     { "label": "Test: Mobile", "type": "shell", "command": "powershell -NoProfile -File tests/Test.Mobile/run-mobile-tests.ps1 -SkipBuild" }
   ]
 }
@@ -214,4 +214,4 @@ This runner owns the whole Android lane end-to-end. Test methods only connect; t
 - [ ] `tests/Test.Mobile/run-mobile-tests.ps1` exists when mobile tier exists.
 - [ ] Mobile runner meets the responsibilities in section Mobile runner (`run-mobile-tests.ps1`): resource probe with exact paths, SDK discovery + `ANDROID_HOME`/`ANDROID_SDK_ROOT` export, Android build, visible cold-boot handling, one scoped launch retry, `{APP}_MOBILE_TESTS_ENABLED=true`, `dotnet test`, TRX.
 - [ ] script prints exact endpoints per-tier rerun commands, including mobile runner command.
-- [ ] `.vscode/tasks.json` entries exist for: start stack, build WASM, install Playwright, run non-load, run Aspire/WASM, run Mobile via `run-mobile-tests.ps1`.
+- [ ] `.vscode/tasks.json` entries exist for: start stack, build WASM, install Playwright, run full serial acceptance, run Aspire/WASM, run Mobile via `run-mobile-tests.ps1`.

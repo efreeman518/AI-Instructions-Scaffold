@@ -403,7 +403,7 @@ After the final enabled Phase 5 sub-phase:
 ```powershell
 dotnet restore
 dotnet build
-dotnet test
+dotnet test .\{SolutionName}.slnx --no-build -m:1
 ```
 
 Then walk through `support/final-scaffold-checklist.md`.

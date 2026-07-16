@@ -71,7 +71,7 @@ Run this check before writing Phase 4 tasks. Fix source artifacts first, not gen
 - [ ] Fast headless UI model/presentation tests (if UI model/presentation coverage exists) - `Test.UI`, categories `UI` / `Presentation`
 - [ ] Notifications (if enabled)
 - [ ] Write per-host smoke tests
-- [ ] **Checkpoint:** `dotnet build`, each enabled host responds, `dotnet test` passes; per-host gate status recorded in `HANDOFF.md`
+- [ ] **Checkpoint:** `dotnet build`, each enabled host responds, `dotnet test -m:1` passes; per-host gate status recorded in `HANDOFF.md`
 
 ### Phase 5d - Quality + Delivery
 - [ ] Service-level Integration tests against real external services (Testcontainers SQL, real cache) - `Test.Integration`, `TestCategory=Integration` (balanced + comprehensive profiles)
@@ -85,7 +85,7 @@ Run this check before writing Phase 4 tasks. Fix source artifacts first, not gen
 - [ ] CI/CD pipeline
 - [ ] Dockerfile
 - [ ] Vulnerability audit (`dotnet list package --vulnerable --include-transitive`)
-- [ ] Full regression: `dotnet test` (all categories)
+- [ ] Full regression: `dotnet test -m:1` (all categories; serialize resource-heavy projects)
 - [ ] **Checkpoint:** full test suite passes; `az bicep build` succeeds (if IaC enabled)
 
 ### Phase 5e - Integration (Auth + AI)

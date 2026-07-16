@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Generates** | `tests/Test.E2E/SqlApiFactory.cs`, `tests/Test.E2E/{Entity}WorkflowTests.cs` |
+| **Generates** | `tests/Test.Support/Hosting/DockerRuntimePreflight.cs` (shared with other container tiers), `tests/Test.E2E/SqlApiFactory.cs`, `tests/Test.E2E/{Entity}WorkflowTests.cs` |
 | **Requires** | [test-templates-endpoint](test-templates-endpoint.md) (for the shared `WebApplicationFactoryBase`), real SQL via Testcontainers |
 | **Phase** | Generated in Phase 4 (factory shell) and filled in during Phase 5b once services + endpoints are green |
 | **Protocol** | Tests-after. Unit + Endpoint tests in `Test.Endpoints` already pin per-endpoint behavior; E2E validates multi-endpoint **workflows** against real SQL - paging plans, FK constraints, projection translation, owned-type round-trip, and child-aggregate lifecycles. |
@@ -28,6 +28,7 @@ Rule of thumb: if the workflow spans **two or more endpoints** and the assertion
 using Microsoft.EntityFrameworkCore;
 using {Project}.Infrastructure.Data;
 using Test.Support;
+using Test.Support.Hosting;
 using Testcontainers.MsSql;
 
 namespace Test.E2E;
@@ -49,10 +50,17 @@ public sealed class SqlApiFactory : WebApplicationFactoryBase<Program, {App}DbCo
 
     /// <summary>Startup failure captured by <see cref="StartContainerAsync"/>; null when the container started cleanly.</summary>
     public static Exception? StartupError { get; private set; }
+    public static string? DockerUnavailableReason { get; private set; }
 
-    public static async Task StartContainerAsync()
+    public static async Task StartContainerAsync(CancellationToken cancellationToken)
     {
-        if (_started || StartupError is not null) return;
+        if (_started || DockerUnavailableReason is not null || StartupError is not null) return;
+
+        DockerUnavailableReason = await DockerRuntimePreflight.GetUnavailableReasonAsync(
+            TimeSpan.FromSeconds(10),
+            cancellationToken);
+        if (DockerUnavailableReason is not null) return;
+
         try
         {
             _container = new MsSqlBuilder("mcr.microsoft.com/mssql/server:2025-latest").Build();
@@ -62,7 +70,6 @@ public sealed class SqlApiFactory : WebApplicationFactoryBase<Program, {App}DbCo
         }
         catch (Exception ex)
         {
-            // Missing/stopped Docker must mark dependent tests Inconclusive, never red (GR-11).
             StartupError = ex;
         }
     }
@@ -133,9 +140,9 @@ public class {Entity}WorkflowTests
     [ClassInitialize]
     public static async Task ClassInit(TestContext _)
     {
-        await SqlApiFactory.StartContainerAsync();
-        if (SqlApiFactory.StartupError != null)
-            return; // tests mark themselves Inconclusive in TestSetup
+        await SqlApiFactory.StartContainerAsync(_.CancellationToken);
+        if (SqlApiFactory.DockerUnavailableReason is not null || SqlApiFactory.StartupError is not null)
+            return;
 
         _factory = new SqlApiFactory();
 
@@ -145,12 +152,18 @@ public class {Entity}WorkflowTests
         await db.Database.MigrateAsync();
     }
 
-    /// <summary>Marks the test Inconclusive when the SQL container failed to start (class-init safety).</summary>
+    /// <summary>Classifies Docker unavailability separately from a SQL startup failure.</summary>
     [TestInitialize]
     public void TestSetup()
     {
-        if (SqlApiFactory.StartupError != null)
-            Assert.Inconclusive($"SQL container startup failed: {SqlApiFactory.StartupError.Message}");
+        if (SqlApiFactory.DockerUnavailableReason is not null)
+        {
+            Assert.Inconclusive(SqlApiFactory.DockerUnavailableReason);
+            return;
+        }
+
+        if (SqlApiFactory.StartupError is not null)
+            Assert.Fail($"SQL container startup failed after Docker preflight succeeded:{Environment.NewLine}{SqlApiFactory.StartupError}");
     }
 
     [ClassCleanup]
@@ -363,8 +376,8 @@ The API host emits string enums via `ConfigureHttpJsonOptions`. Without `JsonStr
 ### `DefaultRequest<T>` / `DefaultResponse<T>` wrappers
 Every endpoint contract uses `DefaultRequest<T>` for body and `DefaultResponse<T>` for response. Tests must follow the same shape - `new DefaultRequest<{Entity}Dto> { Item = dto }` on POST/PUT, `ReadFromJsonAsync<DefaultResponse<{Entity}Dto>>` on GET/POST/PUT. Direct DTO POSTs will fail validation.
 
-### Missing Docker degrades to Inconclusive, never red
-`StartContainerAsync` captures startup failure into `SqlApiFactory.StartupError` instead of throwing. `[ClassInitialize]` returns early on failure; every test guards via the `[TestInitialize]` `TestSetup()` shown above and marks itself `Assert.Inconclusive` with the captured message. A developer without Docker running sees an actionable inconclusive count, not a wall of red - same contract as `Test.Integration` ([test-templates-integration.md](test-templates-integration.md)) and the `Test.Aspire` mesh preflight ([test-templates-aspire.md](test-templates-aspire.md)). Never throw from assembly/class init for an environment prerequisite.
+### Missing Docker degrades to Inconclusive; container startup stays red
+`StartContainerAsync` runs the shared bounded `DockerRuntimePreflight` before creating the SQL container. `[ClassInitialize]` returns early when preflight or startup failed so discovery continues. Every test's `[TestInitialize]` marks only `DockerUnavailableReason` inconclusive; a captured `StartupError` after successful preflight fails with the full exception. This matches `Test.Integration` and Aspire-backed tiers without turning an image, port, configuration, or health failure into an environment skip.
 
 ### Static container ownership
 The container is started and disposed via the **first and last** test class. With multiple workflow test classes, both call `SqlApiFactory.StartContainerAsync()`; the second call is a cheap idempotent return because `_started` is set. This is intentional - DO NOT add reference counting or "is anyone still using it" logic; the static `_started` flag is sufficient.
@@ -384,9 +397,9 @@ interaction checks; prove create/update/delete through the API.
 
 - [ ] `Test.E2E` references `Microsoft.AspNetCore.Mvc.Testing` + `Testcontainers.MsSql`.
 - [ ] `SqlApiFactory` derives from `WebApplicationFactoryBase<Program, {App}DbContextTrxn, {App}DbContextQuery>` - does **not** reimplement the swap-out logic.
-- [ ] `SqlApiFactory.StartContainerAsync` is idempotent (`_started` guard) and captures `StartupError` instead of throwing.
-- [ ] Every workflow class guards on `SqlApiFactory.StartupError` in `[TestInitialize]` and marks itself `Inconclusive` when Docker/container startup failed - never red.
-- [ ] Every workflow class applies migrations in `[ClassInitialize]` (skipped via early return when `StartupError` is set).
+- [ ] `SqlApiFactory.StartContainerAsync` is idempotent, runs bounded Docker preflight once, and captures post-preflight `StartupError` without aborting discovery.
+- [ ] Every workflow class marks only `DockerUnavailableReason` inconclusive and fails a captured `StartupError` with the full exception.
+- [ ] Every workflow class applies migrations in `[ClassInitialize]` (skipped via early return when preflight or startup failed).
 - [ ] Every test in `Test.E2E` carries `[TestCategory("E2E")]`.
 - [ ] JSON deserialization uses a configured `JsonSerializerOptions` (named-enum tolerant + case-insensitive).
 - [ ] Distinct-page pagination test exists for every searchable entity.

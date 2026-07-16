@@ -52,6 +52,7 @@ A gate is only as trustworthy as the evidence behind it. Apply on every phase an
 - Paste observed output - passing/ignored/inconclusive counts, exit code, the resource-Running line - never the output you expect. If you did not run it, it is not green.
 - `dotnet test` is not green on a non-zero exit code or any aborted assembly, regardless of individual test results.
 - If a command was skipped (out of scope, blocked, deferred), say so explicitly with the reason - do not leave a reader to infer it passed.
+- Before changing deterministic application or test code because Test Explorer or another IDE surface reports a failure, reproduce the affected test with a fresh CLI command in the current checkout. If the CLI run passes, treat the IDE result as stale until reproduced. Use bounded repeated CLI runs when ordering or timing is suspected; do not weaken fake-client, provider-selection, or other deterministic coverage from stale IDE evidence.
 
 This guards the most common handoff defect: a `HANDOFF.md` that reports success the session never demonstrated.
 
@@ -99,8 +100,8 @@ Commands:
 ```powershell
 dotnet build
 dotnet test --filter "TestCategory=Unit"
-dotnet test --filter "TestCategory=LiveAI" # only when a live provider is intentionally available
-dotnet test tests/Test.FoundryLocal/Test.FoundryLocal.csproj --filter "TestCategory=LiveAI" # local live lane
+dotnet test --filter "TestCategory=LiveAI" -m:1 # only when a live provider is intentionally available
+dotnet test tests/Test.FoundryLocal/Test.FoundryLocal.csproj --filter "TestCategory=LiveAI" -m:1 # local live lane
 ```
 
 Scaffold migration (remove old, create fresh baseline - see [../patterns/data-layer-wiring.md](../patterns/data-layer-wiring.md)):
@@ -221,10 +222,10 @@ Run only the targets selected in `.scaffold/resource-implementation.yaml`. Keep 
 For Uno WASM, clean both target `bin` and target `obj` before a validation rebuild. If `WasmUI` tests are generated, run one smoke test before marking the UI validated:
 
 ```powershell
-dotnet test tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj --filter TestCategory=WasmUI
+dotnet test tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj --filter TestCategory=WasmUI -m:1
 ```
 
-The `WasmUI` harness is default-on. It starts Aspire in testing mode when Docker is present and marks tests `Assert.Inconclusive` only when prerequisites are missing or `{APP}_WASM_TESTS_ENABLED=false`.
+The `WasmUI` harness is default-on. It starts Aspire in testing mode when Docker is present and marks tests `Assert.Inconclusive` only when `{APP}_WASM_TESTS_ENABLED=false` or Docker preflight proves no compatible runtime is available. Missing WASM/browser tooling and AppHost/resource/browser startup failures after Docker succeeds are red with diagnostics.
 
 If targeting Android (`<tfm>-android`):
 - [ ] Android Studio or SDK command-line tools installed with Platform-Tools, Emulator, one recent platform, and one AVD
@@ -234,7 +235,7 @@ If targeting Android (`<tfm>-android`):
 - [ ] `<EmbedAssembliesIntoApk>true</EmbedAssembliesIntoApk>`, `<AndroidEnableAssemblyCompression>false</AndroidEnableAssemblyCompression>`, and `.so` uncompressed file extension settings are set if manual ADB/Appium sideloading is used
 - [ ] Emulator host networking uses `10.0.2.2` for local backend calls (see `skills/ui-uno-platforms.md` section Emulator Host Networking)
 - [ ] MSTest/Appium mobile smoke passes when native Android UI testing is in scope: `powershell -NoProfile -File tests/Test.Mobile/run-mobile-tests.ps1`
-- [ ] **Final green rule (mobile in scope):** do not declare green until the visible mobile suite passes on its own with mobile enabled (runner sets `{APP}_MOBILE_TESTS_ENABLED=true`), and then the full non-load solution run exits 0 (`dotnet test .\{SolutionName}.slnx --filter "TestCategory!=Load"`). Two separate passing runs, in that order. This is the canonical mobile completion gate; other files point here rather than restating it.
+- [ ] **Final green rule (mobile in scope):** do not declare green until the visible mobile suite passes on its own with mobile enabled (runner sets `{APP}_MOBILE_TESTS_ENABLED=true`), and then the unfiltered serial solution run exits 0 (`dotnet test .\{SolutionName}.slnx --no-build -m:1`). Two separate passing runs, in that order. This is the canonical mobile completion gate; other files point here rather than restating it.
 
 > **Starter-library escape hatch:** If the repo currently contains only a single-TFM starter library or shell-contract scaffold instead of a real Uno multi-target app, Phase 5c for Uno must be recorded as **blocked**. `NETSDK1139` on `<tfm>-browserwasm` is expected in that scenario and is evidence that Uno scaffolding is still missing - not an environment glitch. Do not debug/workaround it; record the status as `blocked - Uno multi-target not yet created` and move on.
 
@@ -327,8 +328,10 @@ Required profile gate (full regression):
 Commands:
 
 ```powershell
-dotnet test
+dotnet test .\{SolutionName}.slnx --no-build -m:1
 ```
+
+This acceptance command is deliberately unfiltered. `Test.Aspire`, `Test.PlaywrightUI`, and `WasmUI` are resource-heavy and share host/container/build surfaces, so `-m:1` is required. Required-infrastructure explicit opt-outs and Docker-unavailable preflight may be inconclusive; selected-lane startup/readiness failures remain red with diagnostics. Optional LiveAI follows [../skills/ai-integration.md](../skills/ai-integration.md) section Optional Live-Provider Classification.
 
 Run mutation test prerequisites from repo root when the project exists:
 
@@ -379,7 +382,7 @@ If live Entra setup is not yet performed, log it in `HANDOFF.md` as a deployment
 
 **Scaffold mode is the default.** AI integration is complete when AI-backed interfaces compile, resolve from DI, and tests pass with stubs or no-op implementations. Live Foundry/AI Search endpoints are deployment-only dependencies and do not block scaffold completion.
 
-Provider contract: Azure Foundry when configured, else Foundry Local when available, else no-op. No-op is valid for non-live tests only. `Test.Aspire` sets `AiServices:DisableFoundryLocal=true` and proves Azure live smoke only when configured. `Test.FoundryLocal` sets `AiServices:RequireFoundryLocal=true`, starts the API host directly, and checks `/api/v1/ai/status`. Missing/undiscoverable runtime or generation exceeding its request budget after healthy local status is inconclusive; startup failure after discovery, no-op fallback, bad HTTP/contract, or wrong status is failure. Classification owner: [../skills/ai-integration.md](../skills/ai-integration.md) section Provider Test Tiers.
+Provider contract: Azure Foundry when configured, else Foundry Local when available, else no-op. No-op is valid for non-live tests only. `Test.Aspire` checks Azure eligibility before AppHost creation and proves Azure live smoke only when configured. `Test.FoundryLocal` starts the API host directly after its optional-runtime preflight and checks `/api/v1/ai/status`. Explicit false run flags are fast opt-outs, not prerequisites for absent optional providers. Classification owner: [../skills/ai-integration.md](../skills/ai-integration.md) section Optional Live-Provider Classification.
 
 | Mode | Required |
 |---|---|
@@ -470,8 +473,8 @@ Must pass before merge:
 
 ```powershell
 dotnet restore
-dotnet build
-dotnet test
+dotnet build .\{SolutionName}.slnx -m:1
+dotnet test .\{SolutionName}.slnx --no-build -m:1
 ```
 
 Plus a manual walk-through of [final-scaffold-checklist.md](final-scaffold-checklist.md) covering: solution structure shape, no-op stub coverage, host startup smoke checks, and HANDOFF.md completeness.

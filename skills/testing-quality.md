@@ -82,7 +82,7 @@ Playwright requires a real hosted stack. It cannot run on `WebApplicationFactory
 - Configure one base URL per UI surface/project. Do not share a hard-coded URL across Blazor, Uno, and React.
 - Make the base URL environment-driven (`{APP}_BLAZOR_BASE_URL`, `{APP}_WASM_BASE_URL` for Uno WASM, `{APP}_REACT_BASE_URL`, or equivalent) for externally hosted stacks (CI, docker-compose, preview deployments). The Uno var uses the `{APP}_WASM_*` family to match the standalone WASM test harness.
 - When the app is Aspire-hosted, the C# suite resolves the URL programmatically: self-host the AppHost with `DistributedApplicationTestingBuilder`, wait for the UI resource to become healthy, then resolve its URL from `CreateHttpClient("{ui-resource}", "http").BaseAddress`. Full fixture shape: [../templates/test-templates-quality.md](../templates/test-templates-quality.md) section E2E Tests (Playwright). Vite/React resources may use a dynamic port; never assume `5173`, `5178`, or a prior run's URL.
-- Never ship a hard-coded URL fallback or `[Ignore]`d tests pointed at a guessed URL - when no base URL can be resolved (env var absent, Docker/AppHost unavailable), mark tests `Assert.Inconclusive` with a precise message.
+- Never ship a hard-coded URL fallback or `[Ignore]`d tests pointed at a guessed URL. An explicit Playwright opt-out or failed Docker preflight is inconclusive; after Docker succeeds, unresolved named endpoints and AppHost/browser startup failures are red with shared-host diagnostics.
 - Standalone Vite can use a conventional dev port, but hosted-stack Playwright must use the actual Aspire resource URL.
 
 ### Baseline Rules
@@ -123,7 +123,7 @@ test.describe("EntityCrud", () => {
 });
 ```
 
-Set Uno WASM browser startup timeout to at least `900000` ms / 900 s. Keep first restore/build budgets separate from browser/app startup: default `{APP}_WASM_RESTORE_TIMEOUT_SECONDS=600`, `{APP}_WASM_BUILD_TIMEOUT_SECONDS=1200`, and `{APP}_WASM_STARTUP_TIMEOUT_SECONDS=900`. Do not spend one shared startup timeout across restore, build, AppHost start, endpoint health, and browser boot.
+Set one `{APP}_WASM_STARTUP_TIMEOUT_SECONDS` wall-clock budget before test-owned restore. Restore, build, AppHost create/build/start, named resource health, endpoint resolution, Gateway warm-up, and browser launch all consume its remaining time. Per-operation caps may fail a step sooner but must never reset the global deadline. Default at least 1800 s for a cold first build; choose a lower verified budget when the generated app is lighter.
 
 `test.use({ viewport })` does not apply to `beforeAll`-owned contexts. Pass viewport to `browser.newContext({ viewport })`.
 
@@ -162,10 +162,10 @@ When `Test.PlaywrightUI` is a C# MSTest project that drives an existing TypeScri
 - **Fail fast with captured output.** On non-zero exit or timeout, fail the current MSTest immediately and include command, exit code, stdout, stderr, timeout value, and project name.
 - **Capture stdout and stderr even on cancellation.** Start the async reads (`ReadToEndAsync`) before awaiting exit, and return both streams in the result on the cancellation path too - a Playwright failure that arrives as the test host cancels must still reach the TRX, not disappear.
 - **Kill the entire process tree.** On `OperationCanceledException`, call `process.Kill(entireProcessTree: true)` (swallow `InvalidOperationException` if it already exited), then `await WaitForExitAsync(CancellationToken.None)` so orphaned browser/node children do not leak and hold locks.
-- **Gate on the CLI being installed.** Expose an `IsInstalled` check (`File.Exists(cliPath)`) and mark the test `Assert.Inconclusive` with the install step when the suite has not been provisioned, never red.
+- **Gate on the CLI being installed.** Check the explicit false opt-out before startup. Once the lane is selected, expose an `IsInstalled` check (`File.Exists(cliPath)`) and fail red with the install step when the suite has not been provisioned.
 - **Do not use `--reporter=line` in captured child-process runs.** Its carriage-return progress output can hide the real failure in TRX/stdout capture. Use the default reporter, `list`, or `dot`.
 - **Use latest stable `@playwright/test`** for generated Node suites. Older versions can add Node 26 `DEP0205 module.register()` deprecation noise to already-noisy browser output.
-- **Build the wrapper project as a gate.** Namespace mismatches between wrapper tests and `TypeScriptPlaywrightRunner.cs` are scaffold defects. `dotnet build` or `dotnet test` on `Test.PlaywrightUI` must catch them before handoff.
+- **Build the wrapper project as a gate.** Namespace mismatches between wrapper tests and `TypeScriptPlaywrightRunner.cs` are scaffold defects. `dotnet build` or `dotnet test tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj -m:1` must catch them before handoff.
 - **Register the C# wrapper in the `.slnx`.** A `Test.PlaywrightUI` project with a .NET wrapper must be in the solution file or `dotnet test` over the solution silently skips it - the suite passes by being invisible. The TypeScript-only projects (React/Uno) are still run by their own Playwright config; only the .NET wrapper needs `.slnx` registration.
 
 ### Uno WASM: DOM/Click Strategy (managed-DOM renderer)
@@ -220,7 +220,7 @@ When the WASM app needs API, Gateway, SQL, Redis, storage, auth, or other Aspire
 
 Build the WASM assets before browser navigation with `TargetFrameworkOverride=<tfm>-browserwasm` and `EnableUnoWasm=true`, then pass the dynamic Gateway endpoint to the browser through a test-only query parameter such as `{app}TestGatewayBaseUrl`. Without that override, a scaffolded app can accidentally call a fixed dev gateway port while Aspire assigned a dynamic port.
 
-Every startup step must have its own timeout and progress log: Docker preflight, host lock, WASM restore, clean rebuild, AppHost builder creation, graph build, graph start, resource health, Gateway auth warm-up, UI endpoint readiness, and browser state wait. First Uno WASM restore/build can exceed normal browser-test timeouts; budget restore and build independently from `{APP}_WASM_STARTUP_TIMEOUT_SECONDS`. Missing Docker marks `Assert.Inconclusive` with the exact fix. Docker present means start Aspire and real backing resources.
+Start one monotonic `{APP}_WASM_STARTUP_TIMEOUT_SECONDS` deadline before Docker preflight or test-owned restore. Docker preflight, host lock, WASM restore/build, AppHost create/build/start, named health waits, Gateway warm-up, UI readiness, and browser launch consume the same remaining budget. Step caps may fail sooner but never reset or extend the deadline. Missing Docker marks `Assert.Inconclusive` with the exact fix; after preflight, tooling and startup failures are red with diagnostics.
 
 Generated `WasmUI` assemblies must include `[assembly: DoNotParallelize]`. AppHost-backed browser classes fight over containers, ports, WASM output, and cold-start state when MSTest runs them in parallel.
 
@@ -296,7 +296,7 @@ All test projects must be registered in the `.slnx` so both Test Explorers disco
 
 - **Start the stack once per session.** When the scaffold has Aspire/WASM tiers, run `eng/test/start-local-test-stack.ps1` ([../templates/local-test-stack-template.md](../templates/local-test-stack-template.md)) before those tests. For mobile, run `tests/Test.Mobile/run-mobile-tests.ps1`; it owns Android build, emulator/Appium readiness, enable flag, `dotnet test`, and TRX output.
 - **Filter by category in Test Explorer:** among the tiers present, plus exclude `Load`. The canonical local run is `dotnet test --filter "TestCategory!=Load"`.
-- **Opt out with false-only env vars** for the default-on heavy tiers when you do not want one locally - only the vars for present tiers exist: `{APP}_RUN_ASPIRE_TESTS=false` (if Aspire), `{APP}_WASM_TESTS_ENABLED=false` (if Uno WASM). Default (unset) runs the tier; it self-marks `Inconclusive` if its prerequisite is missing. **`Test.Mobile` is the exception: opt-IN.** It defaults off (emulator/Appium/APK are too heavy for the canonical lane) - unset/false self-marks `Assert.Inconclusive` per test. The generated mobile runner sets `{APP}_MOBILE_TESTS_ENABLED=true`; after that, broken mobile prerequisites are red.
+- **Opt out with false-only env vars** for the default-on heavy tiers when you do not want one locally - only the vars for present tiers exist: `{APP}_RUN_ASPIRE_TESTS=false` (if Aspire), `{APP}_WASM_TESTS_ENABLED=false` (if Uno WASM). Default (unset) runs required infrastructure; only failed Docker preflight self-marks `Inconclusive`. Missing selected-lane tooling and post-preflight failures are red. Optional LiveAI uses [ai-integration.md](ai-integration.md) section Optional Live-Provider Classification. **`Test.Mobile` is the exception: opt-IN.** It defaults off (emulator/Appium/APK are too heavy for the canonical lane) - unset/false self-marks `Assert.Inconclusive` per test. The generated mobile runner sets `{APP}_MOBILE_TESTS_ENABLED=true`; after that, broken mobile prerequisites are red.
 - **Generate `.vscode/tasks.json`** with tasks for the present tiers only (start stack, build WASM, install Playwright Chromium, build Android APK, run all non-load, run Aspire/WASM/Mobile). Task definitions are in the [local test stack template](../templates/local-test-stack-template.md).
 
 ## Verification Checklist
@@ -316,5 +316,5 @@ All test projects must be registered in the `.slnx` so both Test Explorers disco
 - [ ] WASM browser diagnostics capture console, errors, failed requests, response errors, URL, HTML, scripts, canvas count, body text, and bridge state.
 - [ ] Selector strategy is stable for the target UI tech.
 - [ ] UI assertions are structural, not seed/count-dependent.
-- [ ] Timeout profile matches UI runtime behavior (Uno WASM first startup: startup >= 900 s, restore 600 s, build 1200 s, separate budgets).
+- [ ] Uno WASM uses one startup budget, default at least 1800 s for cold restore/build plus AppHost and browser launch; step caps never extend it.
 - [ ] Test output folder is inside the test project.

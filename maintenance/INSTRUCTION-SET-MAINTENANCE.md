@@ -48,6 +48,7 @@ CANARIES = {
     'AiProviderInfo("local")': "skills/ai-integration.md",  # availability-driven provider signal; pointers say "AiProviderInfo" only
     'AiProviderInfo("stub")': "skills/ai-integration.md",  # opt-in dev-stub content tier; pointers say "AiProviderInfo" / provider "stub" only
     "machine capacity, not a contract failure": "skills/ai-integration.md",  # capacity-timeout is Inconclusive, not Fail; keeps the old "timeout -> Fail" wording from drifting back
+    "before Aspire graph creation": "skills/ai-integration.md",  # Azure optional-provider eligibility is checked before boot; missing config is Inconclusive
     "public static IHostApplicationBuilder AddServiceDefaults(": "patterns/infrastructure-wiring.md",  # ServiceDefaults method body; hosts call AddServiceDefaults() but only the owner defines it
     "builder.Services.AddOpenTelemetry().UseAzureMonitor()": "patterns/infrastructure-wiring.md",  # Azure Monitor export gate (ConfigureOpenTelemetry body); observability/iac/function-app point here, never restate the call-site
     "No direct App Insights integration in the worker": "skills/function-app.md",  # Aspire+Functions telemetry hazard (startup error + duplicate-request suppression); infrastructure-wiring points here

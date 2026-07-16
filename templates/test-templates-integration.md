@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Generates** | `tests/Test.Integration/Infrastructure/SqlContainerFixture.cs`, `tests/Test.Integration/Infrastructure/AzuriteContainerFixture.cs` (+ `RedisContainerFixture.cs` when the app uses Redis), `tests/Test.Integration/Infrastructure/IntegrationTestSetup.cs`, `tests/Test.Integration/{Entity}RepositoryIntegrationTests.cs`, `tests/Test.Integration/AuditLogRepositoryAzuriteTests.cs`, `tests/Test.Integration/DomainEventPipelineTests.cs` |
+| **Generates** | `tests/Test.Support/Hosting/DockerRuntimePreflight.cs` (shared with Aspire-backed tiers when present), `tests/Test.Integration/Infrastructure/SqlContainerFixture.cs`, `tests/Test.Integration/Infrastructure/AzuriteContainerFixture.cs` (+ `RedisContainerFixture.cs` when the app uses Redis), `tests/Test.Integration/Infrastructure/IntegrationTestSetup.cs`, `tests/Test.Integration/{Entity}RepositoryIntegrationTests.cs`, `tests/Test.Integration/AuditLogRepositoryAzuriteTests.cs`, `tests/Test.Integration/DomainEventPipelineTests.cs` |
 | **Requires** | [repository-template](repository-template.md), [updater-template](updater-template.md), `EF.IntegrationTesting` (Testcontainers fixtures), Testcontainers packages for each store the app uses |
 | **Phase** | Fixtures generated in Phase 4 (component shells); tests filled in during Phase 5a (`*RepositoryIntegrationTests`) and Phase 5b (`AuditLogRepositoryAzuriteTests`, `DomainEventPipelineTests`) |
 | **Protocol** | Tests-after for this tier - TDD lives in `Test.Unit` and `Test.Endpoints`. Integration verifies wiring against real infrastructure (SQL/Azurite/Redis), so write the tests once the unit + endpoint tests pin behavior. |
@@ -23,7 +23,7 @@
 
 ## Fixture model
 
-Each store the app uses gets a **standalone Testcontainer fixture** under `tests/Test.Integration/Infrastructure/`. A single `IntegrationTestSetup` starts the needed fixtures in parallel from `[AssemblyInitialize]` and disposes them in `[AssemblyCleanup]`. Each fixture **captures its `StartupError` rather than throwing**, and each test marks itself `Inconclusive` when its store failed to start (assembly-init safety - a container failure must not flip the whole assembly red). Generate only the fixtures the app needs (SQL always; Azurite when audit/table storage is in scope; Redis when a distributed cache is in scope).
+Each store the app uses gets a **standalone Testcontainer fixture** under `tests/Test.Integration/Infrastructure/`. A single `IntegrationTestSetup` runs the shared bounded Docker preflight, starts the needed fixtures in parallel from `[AssemblyInitialize]`, and disposes them in `[AssemblyCleanup]`. Each fixture captures its `StartupError` rather than throwing so discovery continues, but each dependent test then fails with the full exception. Only the preflight-confirmed unavailable runtime is `Inconclusive`. Generate only the fixtures the app needs (SQL always; Azurite when audit/table storage is in scope; Redis when a distributed cache is in scope).
 
 > **Naming:** name each fixture for the store it owns (`SqlContainerFixture`, `AzuriteContainerFixture`, `RedisContainerFixture`). They are standalone - they do **not** wrap or depend on the Aspire host.
 
@@ -44,8 +44,8 @@ namespace Test.Integration.Infrastructure;
 /// Standalone SQL Server Testcontainer for the component tier. Wraps the shared EF.IntegrationTesting
 /// <c>MsSqlContainerFixture</c> so SQL-only repository/migration/projection tests run against a real
 /// database without booting the Aspire AppHost graph. Started once by <see cref="IntegrationTestSetup"/>;
-/// <see cref="StartupError"/> is captured (not thrown) so a container failure marks only the dependent
-/// tests Inconclusive instead of aborting the whole assembly.
+/// <see cref="StartupError"/> is captured so dependent tests fail with its diagnostics without aborting
+/// assembly discovery.
 /// </summary>
 internal static class SqlContainerFixture
 {
@@ -57,7 +57,7 @@ internal static class SqlContainerFixture
     /// <summary>Connection string for the running SQL container. Only valid once startup succeeded.</summary>
     internal static string ConnectionString => Sql.ConnectionString;
 
-    /// <summary>Starts the SQL container, capturing any failure for the Inconclusive-on-failure pattern.</summary>
+    /// <summary>Starts the SQL container, capturing any post-preflight failure for dependent tests.</summary>
     internal static async Task StartAsync()
     {
         try { await Sql.StartAsync(); }
@@ -118,7 +118,7 @@ internal static class AzuriteContainerFixture
     /// <summary>Azurite connection string (blob/queue/table). Only valid once startup succeeded.</summary>
     internal static string ConnectionString => Azurite.GetConnectionString();
 
-    /// <summary>Starts the Azurite container, capturing any failure for the Inconclusive-on-failure pattern.</summary>
+    /// <summary>Starts the Azurite container, capturing any post-preflight failure for dependent tests.</summary>
     internal static async Task StartAsync()
     {
         try { await Azurite.StartAsync(); }
@@ -139,27 +139,54 @@ internal static class AzuriteContainerFixture
 ```csharp
 namespace Test.Integration.Infrastructure;
 
+using Test.Support.Hosting;
+
 /// <summary>
 /// Assembly-scoped lifecycle for the component tier. Starts the standalone store Testcontainers in
-/// parallel via <c>[AssemblyInitialize]</c> and disposes them via <c>[AssemblyCleanup]</c>. Each fixture
-/// captures its own <c>StartupError</c> (assembly-init safety) so a container failure marks only the
-/// dependent tests Inconclusive instead of aborting the whole assembly. Component tier only - no Aspire
-/// graph, no <c>AppHost</c> reference.
+/// parallel via <c>[AssemblyInitialize]</c> and disposes them via <c>[AssemblyCleanup]</c>. A bounded Docker
+/// preflight is the only inconclusive path; captured container startup failures remain red. Component tier
+/// only - no Aspire graph or AppHost reference.
 /// </summary>
 [TestClass]
 public class IntegrationTestSetup
 {
+    internal static string? DockerUnavailableReason { get; private set; }
+
     [AssemblyInitialize]
-    public static async Task AssemblyInit(TestContext _) =>
+    public static async Task AssemblyInit(TestContext context)
+    {
+        DockerUnavailableReason = await DockerRuntimePreflight.GetUnavailableReasonAsync(
+            TimeSpan.FromSeconds(10),
+            context.CancellationToken);
+        if (DockerUnavailableReason is not null)
+            return;
+
         await Task.WhenAll(
             SqlContainerFixture.StartAsync(),
             AzuriteContainerFixture.StartAsync());
+    }
 
     [AssemblyCleanup]
-    public static async Task AssemblyCleanup(TestContext _) =>
-        await Task.WhenAll(
-            SqlContainerFixture.StopAsync(),
-            AzuriteContainerFixture.StopAsync());
+    public static async Task AssemblyCleanup(TestContext _)
+    {
+        if (DockerUnavailableReason is null)
+            await Task.WhenAll(SqlContainerFixture.StopAsync(), AzuriteContainerFixture.StopAsync());
+    }
+
+    internal static bool IsUnavailable(Exception? startupError) =>
+        DockerUnavailableReason is not null || startupError is not null;
+
+    internal static void AssertAvailable(string resourceName, Exception? startupError)
+    {
+        if (DockerUnavailableReason is not null)
+        {
+            Assert.Inconclusive(DockerUnavailableReason);
+            return;
+        }
+
+        if (startupError is not null)
+            Assert.Fail($"{resourceName} container startup failed after Docker preflight succeeded:{Environment.NewLine}{startupError}");
+    }
 }
 ```
 
@@ -234,12 +261,11 @@ public class {Entity}RepositoryIntegrationTests
     // every cancellable async call (including helpers). See ../skills/testing.md Cancellation-Token discipline.
     public TestContext TestContext { get; set; } = null!;
 
-    /// <summary>Marks the test Inconclusive when the SQL container failed to start (assembly-init safety).</summary>
+    /// <summary>Classifies Docker unavailability separately from a SQL startup failure.</summary>
     [TestInitialize]
     public void TestSetup()
     {
-        if (SqlContainerFixture.StartupError != null)
-            Assert.Inconclusive($"SQL container startup failed: {SqlContainerFixture.StartupError.Message}");
+        IntegrationTestSetup.AssertAvailable("SQL", SqlContainerFixture.StartupError);
     }
 
     [TestMethod]
@@ -481,12 +507,11 @@ public class AuditLogRepositoryAzuriteTests
 {
     public TestContext TestContext { get; set; } = null!;
 
-    /// <summary>Marks the test Inconclusive when the Azurite container failed to start (assembly-init safety).</summary>
+    /// <summary>Classifies Docker unavailability as Inconclusive and post-preflight startup failure as red.</summary>
     [TestInitialize]
     public void TestSetup()
     {
-        if (AzuriteContainerFixture.StartupError != null)
-            Assert.Inconclusive($"Azurite container startup failed: {AzuriteContainerFixture.StartupError.Message}");
+        IntegrationTestSetup.AssertAvailable("Azurite", AzuriteContainerFixture.StartupError);
     }
 
     [TestMethod]
@@ -605,18 +630,17 @@ public class DomainEventPipelineTests
     [ClassInitialize]
     public static async Task ClassInit(TestContext context)
     {
-        if (SqlContainerFixture.StartupError != null)
-            return; // tests mark themselves Inconclusive in TestSetup
+        if (IntegrationTestSetup.IsUnavailable(SqlContainerFixture.StartupError))
+            return;
         await using var db = SqlContainerFixture.CreateTrxnContext();
         await db.Database.MigrateAsync(context.CancellationToken);
     }
 
-    /// <summary>Marks the test Inconclusive when the SQL container failed to start (assembly-init safety).</summary>
+    /// <summary>Classifies Docker unavailability separately from a SQL startup failure.</summary>
     [TestInitialize]
     public void TestSetup()
     {
-        if (SqlContainerFixture.StartupError != null)
-            Assert.Inconclusive($"SQL container startup failed: {SqlContainerFixture.StartupError.Message}");
+        IntegrationTestSetup.AssertAvailable("SQL", SqlContainerFixture.StartupError);
     }
 
     [TestMethod]
@@ -710,9 +734,9 @@ Skip this template when the project does not have a projection service / read-mo
 ## Verification
 
 - [ ] `Test.Integration` references **no** `AppHost` and **no** `Aspire.Hosting.Testing` - component tier only.
-- [ ] One standalone fixture per store under `Infrastructure/`; each captures `StartupError` instead of throwing.
-- [ ] One `IntegrationTestSetup` owns the sole `[AssemblyInitialize]`/`[AssemblyCleanup]` and starts the fixtures in parallel.
-- [ ] Every test guards on its store's `StartupError` in `[TestInitialize]` (or `[ClassInitialize]`) and marks itself `Inconclusive` on failure.
+- [ ] One standalone fixture per store under `Infrastructure/`; each captures `StartupError` instead of aborting discovery.
+- [ ] One `IntegrationTestSetup` owns bounded Docker preflight plus the sole `[AssemblyInitialize]`/`[AssemblyCleanup]`, then starts fixtures in parallel only after preflight succeeds.
+- [ ] Every test marks failed Docker preflight `Inconclusive`; a captured store startup failure after successful preflight fails with the full exception.
 - [ ] Component tests instantiate the class under test directly against a fixture connection string - no `CreateHttpClient`, no `WaitForResourceHealthyAsync`, no `DistributedApplicationTestingBuilder`.
 - [ ] `Migrations_ApplyCleanly_ToSqlContainer` exists exactly once per assembly (not per entity).
 - [ ] Tenant query filter test exists when `enableMultiTenant: true`; M:N test exists when entity uses a junction.

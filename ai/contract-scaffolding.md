@@ -219,7 +219,7 @@ The shared base is the **single source of truth** for swapping the production Db
 - `tests/Test.Integration/Infrastructure/SqlContainerFixture.cs` + `AzuriteContainerFixture.cs` (+ `RedisContainerFixture.cs` when Redis is used) - standalone per-store Testcontainers fixtures for the **component** tier; `SqlContainerFixture` builds `{App}DbContextTrxn` / `{App}DbContextQuery` against its own container. No Aspire. Full file shapes: [test-templates-integration.md](../templates/test-templates-integration.md).
 - `tests/Test.Integration/Infrastructure/IntegrationTestSetup.cs` - `[AssemblyInitialize]` starts the store fixtures in parallel (each capturing `StartupError`); `[AssemblyCleanup]` disposes them.
 - `tests/Test.Aspire/AspireTestHost.cs` - lazy assembly-scoped fixture that starts the full Aspire AppHost graph (API + Functions + SQL + Azurite) via `EnsureStartedAsync`, plus `tests/Test.Aspire/AspireMeshLifecycle.cs` (`[AssemblyCleanup]`). Full file shapes: [test-templates-aspire.md](../templates/test-templates-aspire.md).
-- `tests/Test.FoundryLocal/FoundryLocalLiveSmokeTests.cs` - RID-bound live local AI lane when `includeAiServices: true` and Foundry Local provider is in scope. Starts API host directly, sets `AiServices:RequireFoundryLocal=true`, checks `/api/v1/ai/status`, and fails on no-op/stub/status drift. Canonical owner: [ai-integration.md](../skills/ai-integration.md).
+- `tests/Test.FoundryLocal/FoundryLocalLiveSmokeTests.cs` - RID-bound live local AI lane when `includeAiServices: true` and Foundry Local provider is in scope. Applies the canonical optional-runtime classification, then starts the API host directly, sets `AiServices:RequireFoundryLocal=true`, and checks `/api/v1/ai/status`; provider/status failures after runtime discovery stay red. Canonical owner: [ai-integration.md](../skills/ai-integration.md).
 - `tests/Test.Mobile/run-mobile-tests.ps1` - generated when `Test.Mobile` exists; owns Android restore/build, emulator/Appium readiness, `{APP}_MOBILE_TESTS_ENABLED=true`, `dotnet test`, and TRX output. Explicit runner lane fails fast on broken mobile prerequisites.
 - `EndpointTestBase` (optional) - HTTP client helper used by endpoint test classes.
 
@@ -316,7 +316,7 @@ dotnet build
 dotnet test --filter "TestCategory=Unit|TestCategory=Endpoint"
 ```
 
-The entire solution - including all test projects - must compile successfully. `dotnet restore` must succeed against the configured private feed (with `NUGET_AUTH_TOKEN` set). At Phase 4, the only tests present are the trivially-passing shells emitted alongside the contract - they must all pass (no project should fail to discover tests, fail to assembly-init, or leave the runner red). Tests that exercise external infrastructure (`[TestCategory("Integration")]`, `[TestCategory("E2E")]`) are populated in Phase 5 and may use `Assert.Inconclusive` / `[Ignore]` with a reason until the dependency is wired.
+The entire solution - including all test projects - must compile successfully. `dotnet restore` must succeed against the configured private feed (with `NUGET_AUTH_TOKEN` set). At Phase 4, the only tests present are the trivially-passing shells emitted alongside the contract - they must all pass (no project should fail to discover tests, fail to assembly-init, or leave the runner red). Populate external-infrastructure tests (`Integration`, `E2E`, Aspire) only when their dependency contract is wired; do not generate ignored or broadly inconclusive placeholders.
 
 Developer reviews the scaffolded shape against the verification checklist below.
 

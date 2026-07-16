@@ -44,6 +44,9 @@ Checks:
     (required keys, declared keys, enum values). Structural line-parse checks
     run with stdlib only; when pyyaml + jsonschema are installed (e.g. in CI),
     full schema validation runs as well.
+  - Optional live-AI policy integrity: Azure eligibility remains before Aspire
+    startup, absent local runtime/capacity outcomes remain inconclusive, real
+    provider failures remain red, and deterministic coverage stays required.
   - EF package API integrity: the types and members documented in
     support/ef-packages-reference.md exist in the installed NuGet package
     assemblies. Catches docs/package drift before a golden-path run surfaces it
@@ -177,6 +180,36 @@ EXPECTED_SMOKE_CHECK_HARNESS_ENTRYPOINTS = {
     ".github/agents/vertical-slice.agent.md",
     ".github/agents/scaffold-adopt.agent.md",
 }
+
+OPTIONAL_AI_CONTRACT_REQUIREMENTS: dict[str, tuple[str, ...]] = {
+    "skills/ai-integration.md": (
+        "### Optional Live-Provider Classification (canonical owner)",
+        "fast explicit opt-out, not a prerequisite",
+        "before Aspire graph creation",
+        "machine capacity, not a contract failure",
+        "Provider selection stays deterministic",
+        "fresh CLI reproduction",
+        "Do not increase the timeout as the fix",
+        "status/routing/HTTP/JSON/schema/contract assertions fail",
+    ),
+    "skills/testing.md": ("Optional Live-Provider Classification",),
+    "support/execution-gates.md": ("Optional Live-Provider Classification",),
+    "support/final-scaffold-checklist.md": ("Optional Live-Provider Classification",),
+    "templates/test-templates-aspire.md": (
+        "### Optional Azure LiveAI eligibility before host creation",
+        "AzureFoundryTestEligibility.GetUnavailableReason()",
+        "same pure Azure-selection predicate",
+    ),
+}
+
+OPTIONAL_AI_FORBIDDEN_CLAIMS = (
+    "sole inconclusive opt-out",
+    "otherwise missing azure configuration and post-start status/provider failures are red",
+    "missing runtime/configuration, startup, no-op/stub fallback, bad http/contract, wrong status, and model-generation timeout are failures",
+    "missing runtime, startup failure, `none`/`stub`, bad http or schema, wrong status, and model-generation timeout all fail red",
+    "selected lanes do not self-skip missing tools or provider configuration",
+    "missing ai configuration, runtime, or model timeout must fail red",
+)
 
 
 class Findings:
@@ -500,6 +533,43 @@ def check_readme_install_table(findings: Findings) -> None:
     for d in sorted(payload_dirs):
         if f"`{d}/`" not in table_text:
             findings.err(readme, f"'What it places' table omits `{d}/` (installer INSTRUCTIONS_DIRS copies it)")
+
+
+def check_optional_ai_contract(findings: Findings) -> None:
+    """Keep optional live-provider classification and generated ordering from drifting."""
+    texts: dict[str, str] = {}
+    for rel, required in OPTIONAL_AI_CONTRACT_REQUIREMENTS.items():
+        path = INSTRUCTIONS_ROOT / rel
+        if not path.exists():
+            findings.err(path, "optional live-AI contract file is missing")
+            continue
+        text = path.read_text(encoding="utf-8")
+        texts[rel] = text
+        for phrase in required:
+            if phrase not in text:
+                findings.err(path, f"optional live-AI contract is missing required policy: {phrase!r}")
+
+    template_rel = "templates/test-templates-aspire.md"
+    template = texts.get(template_rel, "")
+    section_start = template.find("### Optional Azure LiveAI eligibility before host creation")
+    section_end = template.find("\n---", section_start) if section_start >= 0 else -1
+    section = template[section_start:section_end] if section_start >= 0 and section_end >= 0 else ""
+    eligibility = section.find("AzureFoundryTestEligibility.GetUnavailableReason()")
+    ensure_started = section.find("await AspireTestHost.EnsureStartedAsync(context);")
+    if eligibility < 0 or ensure_started < 0 or eligibility > ensure_started:
+        findings.err(
+            INSTRUCTIONS_ROOT / template_rel,
+            "Azure LiveAI template must check provider eligibility before AspireTestHost.EnsureStartedAsync",
+        )
+
+    for rel, text in texts.items():
+        lowered = text.casefold()
+        for claim in OPTIONAL_AI_FORBIDDEN_CLAIMS:
+            if claim in lowered:
+                findings.err(
+                    INSTRUCTIONS_ROOT / rel,
+                    f"optional live-AI contract contains deprecated failure claim: {claim!r}",
+                )
 
 
 # Matches x.y.z(-suffix) but not segments of 4-part dotted quads (IP addresses).
@@ -1051,6 +1121,7 @@ def main() -> int:
     check_maintenance_guards(findings)
     check_payload_shape(findings)
     check_readme_install_table(findings)
+    check_optional_ai_contract(findings)
     check_phase5_load_set(findings)
     check_phase5_template_coverage(findings)
     check_loadset_token_budget(findings)

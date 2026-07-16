@@ -14,11 +14,11 @@ Run from the generated app root:
 
 ```powershell
 dotnet restore
-dotnet build
-dotnet test
+dotnet build .\{SolutionName}.slnx -m:1
+dotnet test .\{SolutionName}.slnx --no-build -m:1
 ```
 
-All three must exit 0. Then walk the **Completion Criteria** below.
+All three must exit 0. The test command is unfiltered and serial so Aspire, Playwright, and WASM full-stack projects cannot boot overlapping graphs. Then walk the **Completion Criteria** below.
 
 If IaC is enabled:
 
@@ -67,8 +67,8 @@ Use `curl`, HTTPie, REST Client, or Scalar. Record status codes and endpoint dis
 
 ## Completion Criteria
 
-- [ ] `dotnet restore`, `dotnet build`, and `dotnet test` pass. The full `dotnet test` (no filter) is green - every category the scaffold produces is either passing or `Assert.Inconclusive` / `[Ignore]` with a recorded reason. No test assembly aborts in `[AssemblyInitialize]`.
-- [ ] Every test that is `[Ignore]`'d or marked `Assert.Inconclusive` for a deferred external dep is named in `HANDOFF.md` section Scaffold Acceptance with the unblocking step.
+- [ ] `dotnet restore`, serial `dotnet build .\{SolutionName}.slnx -m:1`, and unfiltered serial `dotnet test .\{SolutionName}.slnx --no-build -m:1` pass. No filtered fast-tier run substitutes for this acceptance gate; no test assembly aborts in `[AssemblyInitialize]`.
+- [ ] Every `[Ignore]` or `Assert.Inconclusive` result is named in `HANDOFF.md` section Scaffold Acceptance with its unblocking step. Required Aspire-backed full-stack infrastructure uses inconclusive only for an explicit opt-out or failed Docker preflight; container/AppHost/start/readiness/browser failures are red with resource diagnostics. Optional LiveAI follows [../skills/ai-integration.md](../skills/ai-integration.md) section Optional Live-Provider Classification.
 - [ ] Shared `<packagePrefix>.*` layers resolve according to `packageStrategy`: feed/hybrid feed layers restore from configured private feed (`NUGET_AUTH_TOKEN` or credential provider); local/hybrid local layers exist under `src/Packages/<packagePrefix>.*` and are consumed via `<ProjectReference>`.
 - [ ] `.scaffold/UBIQUITOUS-LANGUAGE.md` and `.scaffold/DESIGN-DECISIONS.md` still match the generated entity, service, and endpoint names. Mechanical check: `python {instructionsRoot}/scripts/check-artifact-drift.py --root .` reports no drift (advisory - review each finding against GR-01: fix the artifact first, then code).
 - [ ] Generated solution shape matches `skills/solution-structure.md` (no missing project, no orphan no-op stub).
@@ -80,12 +80,12 @@ Use `curl`, HTTPie, REST Client, or Scalar. Record status codes and endpoint dis
 - [ ] OpenAPI/Scalar loads.
 - [ ] Human acceptance smoke was attempted for at least one primary workflow. Any gap is recorded in `HANDOFF.md` section UAT / Acceptance Gaps with source, current evidence, root cause, and closure plan.
 - [ ] **Aspire AppHost clean startup:** `dotnet run --project src/Host/Aspire/AppHost` reaches the dashboard with every registered resource in **Running** state, no exceptions in resource logs, and `/healthz` plus `/readyz` returning 200 on every API/server host that exposes probes. UI resources without probes pass when their root URL renders without exception. Stub-mode external deps (`emulator`, `lazy-optional`, `no-op stub`, `deployment-only`) count as healthy when their stub/emulator path responds.
-- [ ] **AI provider lanes (when enabled):** `/api/v1/ai/status` reports Azure Foundry when configured, else Foundry Local when available, else no-op. `Test.Aspire` sets `AiServices:DisableFoundryLocal=true` and only proves Azure live smoke. `Test.FoundryLocal` sets `AiServices:RequireFoundryLocal=true`; missing/undiscoverable runtime is `Assert.Inconclusive`. After runtime discovery, startup failure, no-op fallback, bad HTTP, invalid contract, or wrong status is failure; generation exceeding its request budget after healthy local status is `Assert.Inconclusive` because it measures machine capacity, not contract correctness.
+- [ ] **AI provider lanes (when enabled):** Azure eligibility is checked before Aspire creation; absent Azure configuration and absent Foundry Local runtime are named `Assert.Inconclusive` outcomes. A healthy local provider that exceeds its bounded generation budget is also inconclusive; configured/discovered-provider startup, provider mismatch, status, routing, HTTP, JSON, schema, and contract failures remain red. Explicit false run flags are optional fast opt-outs. Canonical matrix: [../skills/ai-integration.md](../skills/ai-integration.md) section Optional Live-Provider Classification.
 - [ ] **Every UI host starts cleanly - Aspire-registered AND standalone:**
   - Blazor (when enabled): standalone `dotnet run` reaches `Application started` + root URL renders; when added to AppHost, the resource reaches Running and a Refit call returns data (or typed empty state).
   - React/Vite (when enabled): `npm run lint` + `npm run build` pass; standalone Vite root renders; when added to AppHost, the resource reaches Running on its current dynamic URL and one Gateway/API-backed page loads.
   - Uno (when enabled): the selected platform target (`<tfm>-browserwasm` / `<tfm>-android` / `<tfm>-ios`) builds through `TargetFrameworkOverride` and launches where local tooling supports it; browserwasm validation cleans both target `bin` and target `obj` before rebuild; before Android/iOS package builds, restore with `-p:BuildAllUnoTargets=true`; when added to AppHost, the ASP.NET Core WASM wrapper resource reaches Running.
-  - Uno `WasmUI` (when generated): at least one `TestCategory=WasmUI` smoke runs. Docker missing may mark `Assert.Inconclusive` with a fix; Docker present starts Aspire testing mode, keeps required resources live, resolves named endpoints, and reaches bridge-ready state.
+  - Uno `WasmUI` (when generated): at least one `TestCategory=WasmUI` smoke runs. Only explicit `{APP}_WASM_TESTS_ENABLED=false` or failed Docker preflight may mark it `Assert.Inconclusive`; Docker success makes missing tooling, AppHost/resource/readiness, and browser failures red with diagnostics.
   - Backend connectivity from UI: at least one entity list page loads against the Gateway/API without console exceptions (empty or typed-empty state acceptable for secondary surfaces).
 - [ ] **Primary-actor vertical slice runs end-to-end with seeded data (not just green unit tests).** With the AppHost booted and the Development seeder run, the primary actor's main flow works through the actual UI: the primary list/detail surface shows the seeded records (not an empty list), and one primary-actor action (create/submit/the core domain verb) completes against the running stack. UI interactivity is live (Blazor: interactive render mode opted in, not static SSR; Uno: commands fire and chrome renders).
 - [ ] If `applicationStyle: switch`, both `Application:Style=Service` and `Application:Style=Cqrs` have at least one endpoint-mode smoke test. The two modes expose the same route templates and response envelopes.
@@ -144,7 +144,7 @@ Scaffold completion is local-complete per **GR-11**; deployment is a separate, h
 
 - **Provision live infrastructure per IaC** - [../skills/iac.md](../skills/iac.md) section Deployment, plus the manual items in section One-time, account-bound steps (resource group, federated credentials, registry wiring).
 - **Configure CI/CD** - [../skills/cicd.md](../skills/cicd.md) section Required Secrets, plus the Required Variables and Environments sections in the same file.
-- **Flip deployment-only stubs** - walk the deferred external dependencies recorded in `HANDOFF.md`: provision each, fill its config section, remove or gate the `// TODO: [CONFIGURE]` stub, and re-enable the named `[Ignore]`/`Assert.Inconclusive` tests.
+- **Flip deployment-only stubs** - walk the deferred external dependencies recorded in `HANDOFF.md`: provision each, fill its config section, remove or gate the `// TODO: [CONFIGURE]` stub, and re-enable its named deferred tests. For required Aspire-backed infrastructure, remove the explicit false opt-out; do not add `[Ignore]` or broad `Assert.Inconclusive` handling for runtime failures. Optional LiveAI retains its provider-specific classification.
 - **Production DB migration** - [../skills/cicd.md](../skills/cicd.md) section Production DB Migration (Migrator Job) (one-shot migrator job before image swap; schema leads code).
 
 ---

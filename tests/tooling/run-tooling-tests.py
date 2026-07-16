@@ -172,6 +172,59 @@ class InstallerTests(unittest.TestCase):
 
 
 class ValidatorHelperTests(unittest.TestCase):
+    def _make_optional_ai_contract_root(self, root: Path) -> None:
+        for rel, required in validator.OPTIONAL_AI_CONTRACT_REQUIREMENTS.items():
+            path = root / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if rel == "templates/test-templates-aspire.md":
+                text = (
+                    "### Optional Azure LiveAI eligibility before host creation\n"
+                    "var unavailable = AzureFoundryTestEligibility.GetUnavailableReason();\n"
+                    "await AspireTestHost.EnsureStartedAsync(context);\n"
+                    "same pure Azure-selection predicate\n\n---\n"
+                )
+            else:
+                text = "\n".join(required) + "\n"
+            path.write_text(text, encoding="utf-8")
+
+    def test_optional_ai_contract_guard_requires_owner_policy_and_prehost_order(self):
+        with tempfile.TemporaryDirectory(prefix="tooling-optional-ai-") as tmp:
+            root = Path(tmp)
+            self._make_optional_ai_contract_root(root)
+            with mock.patch.object(validator, "INSTRUCTIONS_ROOT", root):
+                findings = validator.Findings()
+                validator.check_optional_ai_contract(findings)
+                self.assertEqual(findings.errors, [])
+
+                owner = root / "skills" / "ai-integration.md"
+                owner.write_text(
+                    owner.read_text(encoding="utf-8").replace(
+                        "machine capacity, not a contract failure",
+                        "capacity issue",
+                    ),
+                    encoding="utf-8",
+                )
+                findings = validator.Findings()
+                validator.check_optional_ai_contract(findings)
+
+            self.assertTrue(any("machine capacity" in message for _, message in findings.errors))
+
+    def test_optional_ai_contract_guard_rejects_deprecated_failure_claim(self):
+        with tempfile.TemporaryDirectory(prefix="tooling-optional-ai-") as tmp:
+            root = Path(tmp)
+            self._make_optional_ai_contract_root(root)
+            testing = root / "skills" / "testing.md"
+            testing.write_text(
+                testing.read_text(encoding="utf-8")
+                + "\nMissing AI configuration, runtime, or model timeout must fail red.\n",
+                encoding="utf-8",
+            )
+            with mock.patch.object(validator, "INSTRUCTIONS_ROOT", root):
+                findings = validator.Findings()
+                validator.check_optional_ai_contract(findings)
+
+            self.assertTrue(any("deprecated failure claim" in message for _, message in findings.errors))
+
     def test_estimate_unique_tokens_deduplicates_across_loadset_groups(self):
         with tempfile.TemporaryDirectory(prefix="tooling-loadset-") as tmp:
             base = Path(tmp) / "base.md"

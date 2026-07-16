@@ -164,61 +164,81 @@ public sealed class AggregateBoundaryTests : BaseTest
 >
 > **MudBlazor timing:** Always `waitFor` inputs before fill and use 15 s timeout for delete dialogs as defined in [../skills/testing-quality.md](../skills/testing-quality.md) section Hosted Browser UI.
 >
-> **Base URL:** Aspire assigns dynamic ports to UI hosts, especially React/Vite apps. Resolve the base URL at run time via `PlaywrightStackFixture` below - env var when an externally hosted stack is provided, otherwise self-host the AppHost and read the UI resource's actual endpoint. **Never generate a hard-coded URL fallback, and never generate `[Ignore]`d tests pointed at a guessed URL** - a Playwright suite that cannot find its stack degrades to `Assert.Inconclusive` with a precise message (GR-11), same as the Docker-gated tiers. For Uno WASM, also pass the dynamically resolved Gateway endpoint into the app through the test-mode query string so the browser client does not fall back to a fixed dev port.
+> **Base URL:** Aspire assigns dynamic ports to UI hosts, especially React/Vite apps. Resolve the base URL at run time via `PlaywrightStackFixture` below - env var when an externally hosted stack is provided, otherwise self-host the AppHost and read the UI resource's actual endpoint. **Never generate a hard-coded URL fallback, and never generate `[Ignore]`d tests pointed at a guessed URL.** Explicit `{APP}_PLAYWRIGHT_TESTS_ENABLED=false` or failed Docker preflight is inconclusive. After Docker succeeds, unresolved named endpoints and AppHost/browser failures dump diagnostics and fail red. For Uno WASM, also pass the dynamically resolved Gateway endpoint into the app through the test-mode query string so the browser client does not fall back to a fixed dev port.
 
 ### File: `tests/Test.PlaywrightUI/PlaywrightStackFixture.cs`
 
-When `useAspire: true`, the suite hosts the stack itself with `DistributedApplicationTestingBuilder` (package `Aspire.Hosting.Testing` + a project reference to the AppHost), waits for the UI resource, and reads its dynamic URL from a named endpoint. `{ui-resource}` is the AppHost resource name of the UI under test (e.g. the React/Vite or Blazor resource). An explicit `{APP}_UI_BASE_URL` always wins, so CI can target a docker-compose stack or preview deployment without booting Aspire.
+When `useAspire: true`, the suite hosts the stack itself with `DistributedApplicationTestingBuilder`, the AppHost reference, and the shared `AspireTestHostContext` from [test-templates-aspire.md](test-templates-aspire.md). `{ui-resource}` is the named AppHost resource. An explicit `{APP}_UI_BASE_URL` wins for an externally hosted stack.
+
+Admin UI/API browser suites are thin consumers of this fixture. Do not generate a separate `AdminAspireFixture` with its own Docker probe, timeout, state dump, or cleanup; select the admin resource names/endpoints while reusing the same context.
 
 ```csharp
 [TestClass]
 public class PlaywrightStackFixture
 {
     private static DistributedApplication? _app;
-    private static readonly TimeSpan StartupTimeout = TimeSpan.FromMinutes(5);
+    private static AspireTestHostContext? _hostContext;
 
-    /// <summary>Startup failure captured by AssemblyInit; null when a base URL was resolved.</summary>
-    public static Exception? StartupError { get; private set; }
-
-    /// <summary>Resolved UI base URL. Only valid when <see cref="StartupError"/> is null.</summary>
+    /// <summary>Resolved UI base URL after external-target selection or named Aspire resource health.</summary>
     public static string BaseUrl { get; private set; } = null!;
 
     [AssemblyInitialize]
-    public static async Task AssemblyInit(TestContext _)
+    public static async Task AssemblyInit(TestContext context)
     {
-        // Externally hosted stack (CI, docker-compose, preview env) wins.
         var external = Environment.GetEnvironmentVariable("{APP}_UI_BASE_URL");
         if (!string.IsNullOrWhiteSpace(external)) { BaseUrl = external.TrimEnd('/'); return; }
 
-        // Otherwise self-host the Aspire AppHost and read the dynamic UI endpoint.
+        if (string.Equals(Environment.GetEnvironmentVariable("{APP}_PLAYWRIGHT_TESTS_ENABLED"), "false", StringComparison.OrdinalIgnoreCase))
+        {
+            Assert.Inconclusive("{APP}_PLAYWRIGHT_TESTS_ENABLED=false - Playwright full-stack tier opted out.");
+            return;
+        }
+
+        _hostContext = new AspireTestHostContext(
+            AspireTestHostContext.ReadPositiveSeconds("{APP}_ASPIRE_STARTUP_TIMEOUT_SECONDS", 900),
+            "{APP}_ASPIRE_RESOURCE_LOGGING");
+        var dockerUnavailable = await _hostContext.GetDockerUnavailableReasonAsync(context.CancellationToken);
+        if (dockerUnavailable is not null)
+        {
+            Assert.Inconclusive(dockerUnavailable);
+            return;
+        }
+
         try
         {
-            // Same flag the AppHost's IsAspireTesting() reads via Environment.GetEnvironmentVariable;
-            // set it before CreateAsync so the graph boots in testing mode (ephemeral containers,
-            // optional hosts off). Mirrors {APP}_ASPIRE_TESTING in the Aspire mesh fixture.
             Environment.SetEnvironmentVariable("{APP}_ASPIRE_TESTING", "true");
-            var builder = await DistributedApplicationTestingBuilder.CreateAsync<Projects.{App}_AppHost>();
-            _app = await builder.BuildAsync().WaitAsync(StartupTimeout);
-            await _app.StartAsync().WaitAsync(StartupTimeout);
-            await _app.ResourceNotifications
-                .WaitForResourceHealthyAsync("{ui-resource}")
-                .WaitAsync(StartupTimeout);
+            var builder = await _hostContext.RunStartupStepAsync(
+                "create Playwright Aspire test host",
+                token => DistributedApplicationTestingBuilder.CreateAsync<Projects.{App}_AppHost>(cancellationToken: token),
+                context.CancellationToken);
+            _app = await _hostContext.RunStartupStepAsync("build Playwright Aspire test host", token => builder.BuildAsync(token), context.CancellationToken);
+            _hostContext.Attach(_app);
+            await _hostContext.RunStartupStepAsync("start Playwright Aspire test host", token => _app.StartAsync(token), context.CancellationToken);
+            await _hostContext.WaitForResourceHealthyAsync("{ui-resource}", context.CancellationToken);
 
             using var endpointClient = _app.CreateHttpClient("{ui-resource}", "http");
             BaseUrl = endpointClient.BaseAddress?.ToString().TrimEnd('/')
                 ?? throw new InvalidOperationException("No http endpoint found for {ui-resource}.");
         }
-        catch (Exception ex)
+        catch
         {
-            // Missing Docker/AppHost marks the suite Inconclusive, never red (GR-11).
-            StartupError = ex;
+            await _hostContext.DumpResourceDiagnosticsAsync("{ui-resource}", CancellationToken.None);
+            throw;
         }
     }
 
     [AssemblyCleanup]
-    public static async Task AssemblyCleanup(TestContext _)
+    public static async Task AssemblyCleanup(TestContext context)
     {
-        if (_app is not null) await _app.DisposeAsync();
+        try
+        {
+            if (_hostContext is not null)
+                await _hostContext.StopAndDisposeAsync(context.CancellationToken);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("{APP}_ASPIRE_TESTING", null);
+        }
     }
 }
 ```
@@ -226,7 +246,7 @@ public class PlaywrightStackFixture
 ### File: `tests/Test.PlaywrightUI/Tests/{Entity}CrudTests.cs`
 
 ```csharp
-[assembly: Parallelize(Workers = 4, Scope = ExecutionScope.MethodLevel)]
+[assembly: DoNotParallelize]
 
 [TestClass]
 [TestCategory("PlaywrightUI")]
@@ -239,8 +259,6 @@ public class {Entity}CrudTests : PageTest
     [TestInitialize]
     public async Task TestInitialize()
     {
-        if (PlaywrightStackFixture.StartupError != null)
-            Assert.Inconclusive($"Hosted stack unavailable: {PlaywrightStackFixture.StartupError.Message}");
         await Page.GotoAsync(BaseUrl);
     }
 
@@ -563,7 +581,7 @@ The Integration (`Test.Integration` component), Aspire (`Test.Aspire` mesh), and
 - [test-templates-aspire.md](test-templates-aspire.md) - mesh: `AspireTestHost` (lazy) + `AspireMeshLifecycle`, `ApiAuditPipelineTests`, `FunctionAuditPipelineTests`.
 - [test-templates-e2e.md](test-templates-e2e.md) - `SqlApiFactory`, `{Entity}WorkflowTests` (full CRUD + paged search + child-aggregate workflows against Testcontainers SQL).
 
-Phase 5d treats these tiers as **regression scope**, not generation scope: run them as part of the final quality gate (`dotnet test --filter "TestCategory=Integration|TestCategory=E2E"`) but do not re-generate fixtures here. If a sub-phase skipped its tier earlier (e.g., `api-only` scaffold), load the matching template on-demand and back-fill.
+Phase 5d treats these tiers as **regression scope**, not generation scope: run them as part of the final quality gate (`dotnet test --filter "TestCategory=Integration|TestCategory=E2E" -m:1`) but do not re-generate fixtures here. If a sub-phase skipped its tier earlier (e.g., `api-only` scaffold), load the matching template on-demand and back-fill.
 
 > **Docker requirement:** Integration / E2E tiers need Docker Desktop running (Testcontainers + Azurite). In CI, run them with `--filter "TestCategory=Integration|TestCategory=E2E"` separately from unit/endpoint tests so a missing daemon fails fast instead of cascading.
 
@@ -574,7 +592,7 @@ Phase 5d treats these tiers as **regression scope**, not generation scope: run t
 After writing quality gate tests, run the full suite to verify no regressions from 5a/5b/5c/5d:
 
 ```powershell
-dotnet test
+dotnet test -m:1
 ```
 
 Profile gates:

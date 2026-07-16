@@ -250,6 +250,30 @@ Key points:
 
 If the Functions host also consumes shared `BlobStorage1`, `TableStorage1`, or `ServiceBus1` clients through the Bootstrapper, make those registrations prefer env/AppHost-injected values over `local.settings.json` fallbacks. Otherwise the host can still connect to stale `UseDevelopmentStorage=true` / empty local settings even when Aspire injected the correct dynamic-port connection strings.
 
+### Make the local Functions run directory absolute
+
+`Microsoft.Azure.Functions.Worker.Sdk` 2.0.x computes `RunWorkingDirectory=$(OutDir)`, a relative path such as `bin\Debug\netX.0`. Aspire may launch `dotnet run --project <absolute-path>` from another directory. Core Tools then fails before binding HTTP with `An error occurred trying to start process 'cmd' ... The directory name is invalid`, while the Aspire proxy only returns 500.
+
+Override the SDK-computed property after `_FunctionsComputeRunArguments` in the Functions project. Do not call Aspire's `WithWorkingDirectory(...)`; `AzureFunctionsProjectResource` is not an `ExecutableResource` and does not support that extension.
+
+```xml
+<Target Name="UseAbsoluteFunctionsRunWorkingDirectory"
+        AfterTargets="_FunctionsComputeRunArguments">
+  <PropertyGroup>
+    <RunWorkingDirectory>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/$(OutDir)'))</RunWorkingDirectory>
+  </PropertyGroup>
+</Target>
+```
+
+Keep the ordinary AppHost registration:
+
+```csharp
+builder.AddAzureFunctionsProject<Projects.{Project}_Functions>("{project}-functions")
+    .WithHostStorage(storage);
+```
+
+Keep the Functions mesh test red when this launch fails. Only an explicit `{APP}_RUN_FUNCTIONS_TESTS=false` opt-out may mark it inconclusive.
+
 ### Always-Aspire by design (no isolation gate)
 
 The API host gates real Azure client registration on connection-string presence so a `WebApplicationFactory` isolation tier can run without Aspire (see [aspire.md](aspire.md) "Detecting Aspire at Runtime - Presence, Not Environment"). The Functions host does **not** do this - it registers its Aspire client integrations unconditionally (`AddSqlServerDbContext`, `AddAzureBlobServiceClient`, `AddAzureServiceBusClient`). This is intentional: there is no in-process WAF-style isolation tier for a Functions worker, so the Aspire-mesh tier - which always supplies connection strings - is the only path that exercises it. Keep these registrations unconditional. If a future Functions host ever needs an isolation tier, reuse the same connection-string presence gate the API uses, never an environment-name check.

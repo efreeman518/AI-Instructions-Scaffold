@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Generates** | `tests/Test.Aspire/AspireTestHost.cs`, `tests/Test.Aspire/AspireMeshLifecycle.cs`, `tests/Test.Aspire/AssemblyInfo.cs`, `tests/Test.Aspire/ApiAuditPipelineTests.cs`, `tests/Test.Aspire/FunctionAuditPipelineTests.cs` (when a Functions host is enabled), Blazor-mesh smoke (when `includeBlazorUI`), `tests/Test.Aspire/Test.Aspire.csproj` |
-| **Requires** | an Aspire AppHost project, [test-templates-integration.md](test-templates-integration.md) (the component tier this splits from), `Aspire.Hosting.Testing`, `EF.IntegrationTesting` (Aspire + Environment helpers) |
+| **Generates** | `tests/Test.Support/Hosting/DockerRuntimePreflight.cs`, `tests/Test.Support/Aspire/AspireTestHostContext.cs`, `tests/Test.Aspire/AspireTestHost.cs`, `tests/Test.Aspire/AspireMeshLifecycle.cs`, `tests/Test.Aspire/AssemblyInfo.cs`, `tests/Test.Aspire/ApiAuditPipelineTests.cs`, `tests/Test.Aspire/FunctionAuditPipelineTests.cs` (when a Functions host is enabled), Blazor-mesh smoke (when `includeBlazorUI`), `tests/Test.Aspire/Test.Aspire.csproj` |
+| **Requires** | an Aspire AppHost project, [test-templates-integration.md](test-templates-integration.md) (the component tier this splits from), `Aspire.Hosting.Testing` on `Test.Support` plus Aspire-backed consumers, `EF.IntegrationTesting` (Aspire + Environment helpers) |
 | **Phase** | Host + lifecycle shells in Phase 4; mesh tests filled in Phase 5b (and Phase 5c for opt-in hosts: Functions, Blazor, Service Bus) |
 | **Protocol** | Tests-after - the mesh tier verifies the production AppHost graph end-to-end once the component and endpoint tiers pin behavior. |
 | **Component tier** | One-class-vs-one-store tests (repository, audit repository, projection) live in the separate `Test.Integration` project on standalone Testcontainers - see [test-templates-integration.md](test-templates-integration.md). |
@@ -29,6 +29,37 @@ Canonical rule: [../skills/testing.md](../skills/testing.md#heavy-aspire-mesh-gr
 
 > **Naming:** `AspireTestHost` (not `DatabaseFixture`). The fixture owns the full distributed application - DB + Functions + Table Storage + lifecycle - and the name reflects that. It can stay `internal` (consumed only within `Test.Aspire`).
 
+## Shared Aspire test-host context
+
+Generate one `DockerRuntimePreflight` under `tests/Test.Support/Hosting` and one `AspireTestHostContext` under `tests/Test.Support/Aspire`; mesh, admin/browser, and WasmUI fixtures consume the context instead of copying lifecycle code. Component Testcontainers fixtures may call the same generic Docker preflight without taking an AppHost dependency. Neither helper depends on MSTest. For required mesh infrastructure, thin adapters alone translate an explicit opt-out or the preflight's Docker-unavailable result to `Assert.Inconclusive`. Optional Azure `LiveAI` performs provider eligibility before calling the shared host, as specified below.
+
+Required public surface:
+
+```csharp
+public sealed class AspireTestHostContext
+{
+    public AspireTestHostContext(TimeSpan startupBudget, string resourceLoggingEnvironmentVariable, TimeSpan? cleanupBudget = null);
+    public bool ResourceLoggingEnabled { get; }
+    public TimeSpan RemainingStartupBudget { get; }
+    public Task<string?> GetDockerUnavailableReasonAsync(CancellationToken ct);
+    public Task<T> RunStartupStepAsync<T>(string step, Func<CancellationToken, Task<T>> operation, CancellationToken ct);
+    public Task RunStartupStepAsync(string step, Func<CancellationToken, Task> operation, CancellationToken ct);
+    public void Attach(DistributedApplication app);
+    public Task WaitForResourceHealthyAsync(string resourceName, CancellationToken ct);
+    public Task DumpResourceDiagnosticsAsync(string resourceName, CancellationToken ct);
+    public Task StopAndDisposeAsync(CancellationToken ct);
+}
+```
+
+Implementation rules:
+
+1. Start a monotonic clock in the constructor. `RunStartupStepAsync` passes a linked token and the **remaining** budget; it never grants a fresh timeout. Relabel cancellation/timeout as global-deadline expiry only when the context's own deadline fired; preserve a shorter step's original timeout and diagnostics.
+2. `GetDockerUnavailableReasonAsync` spends the remaining deadline through `DockerRuntimePreflight.GetUnavailableReasonAsync`. That helper runs `docker info` with a short cap, starts `ReadToEndAsync()` for both stdout and stderr before awaiting exit, and kills the process tree on timeout. It returns a precise reason only for a missing/unreachable Docker-compatible runtime.
+3. `Attach` records the built `DistributedApplication`. Named waits call `ResourceNotifications.WaitForResourceHealthyAsync` through `RunStartupStepAsync`.
+4. Every wait/startup failure prints state, health, exit code, start timestamp, and stop timestamp before rethrowing. Resource logs are additive and opt-in via `{APP}_ASPIRE_RESOURCE_LOGGING=true`; state diagnostics are always on.
+5. Cleanup has one separate bounded wall-clock budget across both `StopAsync` and `DisposeAsync`. Restore fixture-owned environment in a caller `finally` even when cleanup fails.
+6. Reference proof: `AI-Instructions-ReferenceApp/tests/Test.Support/Aspire/AspireTestHostContext.cs`. Copy behavior, not TaskFlow names.
+
 ---
 
 ## AspireTestHost
@@ -42,6 +73,7 @@ using AppHost;
 using EF.IntegrationTesting.Aspire;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Test.Support.Aspire;
 using EnvironmentVariableScope = EF.IntegrationTesting.Environment.EnvironmentVariableScope;
 using FunctionsCoreToolsDiscovery = EF.IntegrationTesting.Environment.FunctionsCoreToolsDiscovery;
 
@@ -52,25 +84,11 @@ namespace Test.Aspire;
 /// Storage) the first time a mesh test class calls <see cref="EnsureStartedAsync"/> from
 /// <c>[ClassInitialize]</c>. Mesh tier (Aspire.Hosting.Testing) - the only tier that exercises the full
 /// service mesh, which no lighter tier reproduces. Teardown runs once via
-/// <c>AspireMeshLifecycle.[AssemblyCleanup]</c>. Per-call <c>.WaitAsync(DefaultTimeout, ct)</c> bounds
-/// every async Aspire step; <c>WaitForResourceHealthyAsync</c> avoids races where containers report
-/// Running before they accept connections.
+/// <c>AspireMeshLifecycle.[AssemblyCleanup]</c>. AspireTestHostContext owns the cumulative startup
+/// deadline, named waits, diagnostics, and bounded cleanup.
 /// </summary>
 internal static class AspireTestHost
 {
-    /// <summary>
-    /// Per-call deadline applied via <c>.WaitAsync(DefaultTimeout, ct)</c>. Sized for slow cold-starts -
-    /// SQL + storage containers on a cold Docker (first image pull, post-prune) can exceed 5 min.
-    /// Override with the {APP}_ASPIRE_STARTUP_TIMEOUT_SECONDS env var; defaults to 600 s.
-    /// </summary>
-    internal static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(
-        int.TryParse(Environment.GetEnvironmentVariable("{APP}_ASPIRE_STARTUP_TIMEOUT_SECONDS"), out var s) && s > 0
-            ? s
-            : 600);
-
-    /// <summary>Cleanup deadline. StopAsync should return promptly; the bound prevents a stuck shutdown.</summary>
-    private static readonly TimeSpan CleanupTimeout = TimeSpan.FromMinutes(1);
-
     /// <summary>
     /// Internal diagnostic switch (NOT a test-selection opt-in). Resource logging is off by default to keep
     /// TRX output readable; set <c>{APP}_ASPIRE_RESOURCE_LOGGING=true</c> only while diagnosing a startup or
@@ -82,7 +100,10 @@ internal static class AspireTestHost
     private static readonly SemaphoreSlim Gate = new(1, 1);
 
     private static EnvironmentVariableScope? _environment;
+    private static AspireTestHostContext? _hostContext;
     internal static string ConnectionString = null!;
+    internal static TimeSpan DefaultTimeout => _hostContext?.RemainingStartupBudget
+        ?? AspireTestHostContext.ReadPositiveSeconds("{APP}_ASPIRE_STARTUP_TIMEOUT_SECONDS", 900);
 
     /// <summary>Shared Aspire app started once for all mesh tests.</summary>
     internal static DistributedApplication? AspireApp { get; private set; }
@@ -99,12 +120,42 @@ internal static class AspireTestHost
         if (AspireApp is not null)
             return;
 
+        if (string.Equals(Environment.GetEnvironmentVariable("{APP}_RUN_ASPIRE_TESTS"), "false", StringComparison.OrdinalIgnoreCase))
+        {
+            Assert.Inconclusive("{APP}_RUN_ASPIRE_TESTS=false - Aspire mesh tier opted out.");
+            return;
+        }
+
         await Gate.WaitAsync(context.CancellationToken);
         try
         {
             if (AspireApp is not null)
                 return;
-            await StartAsync(context.CancellationToken);
+
+            _hostContext = new AspireTestHostContext(
+                AspireTestHostContext.ReadPositiveSeconds("{APP}_ASPIRE_STARTUP_TIMEOUT_SECONDS", 900),
+                ResourceLoggingEnvironmentVariable);
+            var dockerUnavailable = await _hostContext.GetDockerUnavailableReasonAsync(context.CancellationToken);
+            if (dockerUnavailable is not null)
+            {
+                _hostContext = null;
+                Assert.Inconclusive(dockerUnavailable);
+                return;
+            }
+
+            try
+            {
+                await StartAsync(context.CancellationToken);
+            }
+            catch
+            {
+                foreach (var resource in new[] { "{app}db", "{app}migrator", "{app}api", "{app}gateway" })
+                    await _hostContext.DumpResourceDiagnosticsAsync(resource, CancellationToken.None);
+
+                try { await StopAsync(CancellationToken.None); }
+                catch (Exception cleanupException) { Console.Error.WriteLine($"Cleanup also failed: {cleanupException.Message}"); }
+                throw;
+            }
         }
         finally
         {
@@ -114,32 +165,32 @@ internal static class AspireTestHost
 
     private static async Task StartAsync(CancellationToken ct)
     {
+        var hostContext = _hostContext ?? throw new InvalidOperationException("Aspire host context is not initialized.");
         // AppHost.cs reads these via Environment.GetEnvironmentVariable, so they must be process env vars.
         _environment = new EnvironmentVariableScope()
             .Set("{APP}_ASPIRE_TESTING", "true");
 
-        if (EnsureFuncToolAvailable())
+        if (!IsExplicitlyDisabled("{APP}_RUN_FUNCTIONS_TESTS") && EnsureFuncToolAvailable())
             _environment.Set("{APP}_INCLUDE_FUNCTIONS", "true");
 
-        ResourceLoggingEnabled = IsEnabled(ResourceLoggingEnvironmentVariable);
+        ResourceLoggingEnabled = hostContext.ResourceLoggingEnabled;
 
         var appHostProgramType = Type.GetType("Program, AppHost", throwOnError: true)!;
 
-        var builder = await DistributedApplicationTestingBuilder.CreateAsync(
-            appHostProgramType,
-            args: [],
-            configureBuilder: (appOptions, hostSettings) =>
-            {
-                appOptions.DisableDashboard = true; // explicit > implicit default
-                // Quiet by default - resource logs flood the TRX and make failures unreadable. The
-                // diagnostic override re-enables them; state comes from ResourceNotifications, not logs.
-                appOptions.EnableResourceLogging = ResourceLoggingEnabled;
-
-                // Pass parameters through IConfiguration, NOT env-var mutation, so test isolation stays clean.
-                hostSettings.Configuration ??= new();
-                hostSettings.Configuration["Parameters:sql-password"] = LocalSqlSettings.SharedSaPassword;
-            },
-            cancellationToken: ct).WaitAsync(DefaultTimeout, ct);
+        var builder = await hostContext.RunStartupStepAsync(
+            "create Aspire mesh test host",
+            token => DistributedApplicationTestingBuilder.CreateAsync(
+                appHostProgramType,
+                args: [],
+                configureBuilder: (appOptions, hostSettings) =>
+                {
+                    appOptions.DisableDashboard = true;
+                    appOptions.EnableResourceLogging = ResourceLoggingEnabled;
+                    hostSettings.Configuration ??= new();
+                    hostSettings.Configuration["Parameters:sql-password"] = LocalSqlSettings.SharedSaPassword;
+                },
+                cancellationToken: token),
+            ct);
 
         builder.Services.AddLogging(logging =>
         {
@@ -148,44 +199,41 @@ internal static class AspireTestHost
             logging.AddFilter("Aspire.", LogLevel.Warning);
         });
 
-        AspireApp = await builder.BuildAsync(ct).WaitAsync(DefaultTimeout, ct);
-        await AspireApp.StartAsync(ct).WaitAsync(DefaultTimeout, ct);
+        AspireApp = await hostContext.RunStartupStepAsync("build Aspire mesh test host", token => builder.BuildAsync(token), ct);
+        hostContext.Attach(AspireApp);
+        await hostContext.RunStartupStepAsync("start Aspire mesh test host", token => AspireApp.StartAsync(token), ct);
 
-        // Container reaching Running != SQL accepting connections - wait for the health check.
-        await AspireApp.WaitForResourceHealthyAsync("{app}db", DefaultTimeout, ct);
+        await hostContext.WaitForResourceHealthyAsync("{app}db", ct);
 
-        ConnectionString = await AspireApp.GetRequiredConnectionStringAsync("{app}db", DefaultTimeout, ct);
+        ConnectionString = await hostContext.RunStartupStepAsync(
+            "resolve {app}db connection string",
+            token => AspireApp.GetRequiredConnectionStringAsync("{app}db", hostContext.RemainingStartupBudget, token),
+            ct);
     }
 
     /// <summary>Stops and disposes the graph (if started) and restores env vars. Invoked once by AspireMeshLifecycle.</summary>
     internal static async Task StopAsync(CancellationToken ct)
     {
-        if (AspireApp is not null)
+        var hostContext = _hostContext;
+        try
         {
-            try
-            {
-                await AspireApp.StopAsync(ct).WaitAsync(CleanupTimeout);
-            }
-            catch (TimeoutException)
-            {
-                // Bounded shutdown - DisposeAsync below still cleans up underlying processes/containers.
-            }
-
-            await AspireApp.DisposeAsync();
-            AspireApp = null;
+            if (hostContext is not null)
+                await hostContext.StopAndDisposeAsync(ct);
         }
-
-        _environment?.Dispose();
-        _environment = null;
+        finally
+        {
+            AspireApp = null;
+            _hostContext = null;
+            _environment?.Dispose();
+            _environment = null;
+        }
     }
 
-    /// <summary>Waits for a named Aspire resource to reach Healthy, bounded by DefaultTimeout. Call before talking to it.</summary>
+    /// <summary>Waits for a named Aspire resource within the one cumulative startup deadline.</summary>
     internal static Task WaitForResourceHealthyAsync(string resourceName, CancellationToken cancellationToken = default)
     {
-        if (AspireApp is null)
-            throw new InvalidOperationException("AspireApp is not initialized.");
-
-        return AspireApp.WaitForResourceHealthyAsync(resourceName, DefaultTimeout, cancellationToken);
+        var hostContext = _hostContext ?? throw new InvalidOperationException("Aspire host context is not initialized.");
+        return hostContext.WaitForResourceHealthyAsync(resourceName, cancellationToken);
     }
 
     /// <summary>Checks if Azure Functions Core Tools (func.exe) is available on PATH.</summary>
@@ -194,6 +242,14 @@ internal static class AspireTestHost
     /// <summary>True only when the named env var is a case-insensitive "true". Used for diagnostic overrides.</summary>
     private static bool IsEnabled(string variableName) =>
         string.Equals(Environment.GetEnvironmentVariable(variableName), "true", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsExplicitlyDisabled(string variableName)
+    {
+        var value = Environment.GetEnvironmentVariable(variableName);
+        return string.Equals(value, "false", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, "0", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, "no", StringComparison.OrdinalIgnoreCase);
+    }
 }
 ```
 
@@ -229,18 +285,20 @@ public class AspireMeshLifecycle
 
 1. **One shared app per assembly, lazily started** - boot in `EnsureStartedAsync` (guarded by a `SemaphoreSlim`), called from each mesh class's `[ClassInitialize]`. Never per test method. No eager `[AssemblyInitialize]` start.
 2. **`Parameters:*` via `configureBuilder.hostSettings.Configuration`** - not env-var mutation.
-3. **Scope env vars** - `{APP}_ASPIRE_TESTING`, `{APP}_INCLUDE_FUNCTIONS` via `EnvironmentVariableScope` (restored on dispose). These are read at graph-construction time and baked into the graph once it starts, so the one shared lazily-started graph cannot re-flip them per test. A test that needs a different provider/config (e.g. proving local fallback) builds its own isolated graph (see [ai-integration.md](../skills/ai-integration.md) section Deciding the Live Lane Without Probing the CLI) - it does not mutate the shared graph's env after start.
-4. **Per-call `.WaitAsync(DefaultTimeout, ct)`** on every async Aspire call. Not a single umbrella CTS.
+3. **Scope env vars** - `{APP}_ASPIRE_TESTING`, `{APP}_INCLUDE_FUNCTIONS` via `EnvironmentVariableScope` (restored on dispose). Do not add an explicitly opted-out Functions/UI resource to the test graph. These choices are read at graph construction and baked into the one shared graph, so they cannot be re-flipped per test. A test that needs a different provider/config builds its own isolated graph (see [ai-integration.md](../skills/ai-integration.md) section Deciding the Live Lane Without Probing the CLI).
+4. **One shared `AspireTestHostContext` startup deadline** across Docker preflight, create, build, start, named health waits, endpoint/connection resolution, and any browser launch. Per-step caps may be shorter but never reset the deadline.
 5. **`WaitForResourceHealthyAsync(name, ct)` before talking to a resource.** Running != ready.
-6. **`[AssemblyCleanup]` lives in `AspireMeshLifecycle`** - bound `StopAsync` with `.WaitAsync(CleanupTimeout)` and catch `TimeoutException` so a stuck teardown does not hang CI.
+6. **`[AssemblyCleanup]` lives in `AspireMeshLifecycle`** - call `AspireTestHostContext.StopAndDisposeAsync`; one cleanup deadline covers both stop and dispose, and environment restoration stays in `finally`.
 7. **Distinct `Aspire` category** - tag every mesh test `[TestCategory("Aspire")]`, never `Integration`. The component tier owns `Integration`; sharing the category would boot the whole graph on a `--filter TestCategory=Integration` run, defeating the split.
-8. **Configurable startup timeout** - `DefaultTimeout` reads `{APP}_ASPIRE_STARTUP_TIMEOUT_SECONDS` (default 600 s) so cold containers (first image pull, post-prune) do not time out at a hardcoded 5 min.
-9. **Default-on, false-only opt-out** - the mesh tier is discoverable and runs by default so Test Explorer surfaces it. Honour `{APP}_RUN_ASPIRE_TESTS=false` and a missing-Docker/AppHost preflight by marking dependent tests `Assert.Inconclusive` with a precise message - never red. Fast CI lanes set the opt-out; they do not rely on an enable flag.
+8. **Configurable global startup budget** - `{APP}_ASPIRE_STARTUP_TIMEOUT_SECONDS` defaults to 900 s and is read once when the context starts. Do not re-read it per step.
+9. **Default-on, narrow inconclusive boundary for required mesh infrastructure** - honour `{APP}_RUN_ASPIRE_TESTS=false` and failed Docker preflight with precise `Assert.Inconclusive` messages. Docker success means AppHost/container/create/build/start/readiness failures are red after state diagnostics. Fast CI lanes set the explicit opt-out when they intentionally exclude the tier. Optional Azure `LiveAI` uses the pre-host eligibility exception owned by [../skills/ai-integration.md](../skills/ai-integration.md).
 10. **Test containers are ephemeral; the SDK owns teardown.** The AppHost gates `ContainerLifetime.Persistent` + `WithDataVolume` on `!IsAspireTesting()` (see [../skills/aspire.md](../skills/aspire.md), Rules), so the graph this fixture boots uses **ephemeral** containers. `AspireApp.StopAsync()`/`DisposeAsync()` in `AspireTestHost.StopAsync` removes **exactly** the containers this run started. **Never** add a `docker rm` sweep filtered by image, name prefix, or the generic `com.microsoft.dotnet.aspire.container.name` label - that deletes other projects' and sessions' containers, including intentional persistent stacks. The mesh tier needs no Docker cleanup beyond `DisposeAsync`.
 
-### Resource logging off by default
+When Functions is in the graph, its project must override the Functions SDK's relative `RunWorkingDirectory` with an absolute path per [../skills/function-app.md](../skills/function-app.md) section Make the local Functions run directory absolute. Do not call `WithWorkingDirectory(...)` on `AzureFunctionsProjectResource`; that extension only supports executable resources. A Running resource whose proxy returns 500 because Core Tools never bound its port is a host startup failure, not an inconclusive prerequisite gap.
 
-State comes from notifications; raw logs only via the diagnostic override.
+### State diagnostics on by default; resource logs optional
+
+State comes from notifications on every failure; raw logs remain an additive diagnostic override.
 
 Aspire resource logging floods the TRX and makes a real failure impossible to find. Keep it **off by default** and read resource *state* from `ResourceNotifications`, which is always available regardless of the logging switch. Surface the raw logs only through the internal diagnostic override.
 
@@ -285,7 +343,7 @@ private static async Task DumpResourceLogsAsync(string resourceName, Cancellatio
 }
 ```
 
-Call both from a test's failure path before rethrowing (`DumpResourceState(name); await DumpResourceLogsAsync(name, ct); throw;`). `ResourceLoggerService` lives in `Aspire.Hosting.ApplicationModel`.
+The shared context calls both from startup and named-wait failure paths before rethrowing. `ResourceLoggerService` lives in `Aspire.Hosting.ApplicationModel`.
 
 ### Cleanup: ephemeral-by-default, per-run label only as a fallback
 
@@ -298,51 +356,55 @@ The default needs no Docker commands at all - ephemeral test containers are torn
 
 Do **not** sweep old stopped containers unless the developer explicitly asks for machine-level Docker cleanup. Removing by exact run id leaves other projects, prior sessions, and intentional persistent containers untouched.
 
-### Opt-out + preflight (default-on, Inconclusive on missing prereqs)
+### Required-mesh opt-out + Docker preflight
 
-The mesh tier is default-on so Test Explorer discovers it. It must degrade to `Inconclusive` - never red - when the opt-out is set or Docker/AppHost is unavailable. Put the decision in one helper and call it from each mesh class's `[ClassInitialize]` before `EnsureStartedAsync`:
+The required mesh tier is default-on so Test Explorer discovers it. Only explicit opt-out and a failed Docker-compatible runtime preflight are inconclusive for required mesh infrastructure. Put translation in the thin MSTest adapter; `AspireTestHostContext` returns the Docker reason and never depends on MSTest:
 
 ```csharp
-internal static class MeshPreflight
-{
-    /// <summary>Returns a reason to skip (Inconclusive), or null when the mesh tier should run.</summary>
-    public static string? SkipReason()
-    {
-        if (string.Equals(Environment.GetEnvironmentVariable("{APP}_RUN_ASPIRE_TESTS"), "false",
-                StringComparison.OrdinalIgnoreCase))
-            return "{APP}_RUN_ASPIRE_TESTS=false - mesh tier opted out.";
-
-        if (!DockerAvailable())
-            return "Docker Desktop is not running. Start Docker, then run " +
-                   "eng/test/start-local-test-stack.ps1, or set {APP}_RUN_ASPIRE_TESTS=false to skip.";
-
-        return null;
-    }
-
-    private static bool DockerAvailable()
-    {
-        try
-        {
-            using var p = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
-                "docker", "info") { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false });
-            p!.WaitForExit(5000);
-            return p.HasExited && p.ExitCode == 0;
-        }
-        catch { return false; }
-    }
-}
-
-// In each mesh test class:
 [ClassInitialize]
 public static async Task ClassInit(TestContext context)
 {
-    var skip = MeshPreflight.SkipReason();
-    if (skip is not null) { Assert.Inconclusive(skip); return; }
+    if (string.Equals(Environment.GetEnvironmentVariable("{APP}_RUN_ASPIRE_TESTS"), "false", StringComparison.OrdinalIgnoreCase))
+    {
+        Assert.Inconclusive("{APP}_RUN_ASPIRE_TESTS=false - mesh tier opted out.");
+        return;
+    }
+
     await AspireTestHost.EnsureStartedAsync(context);
 }
 ```
 
-`Assert.Inconclusive` in `[ClassInitialize]` marks the class's tests inconclusive without failing the run. The message is precise and actionable - no vague "skipped".
+`AspireTestHost.EnsureStartedAsync` performs the shared Docker preflight and marks it inconclusive when unavailable. It never catches AppHost startup/readiness failures as availability; those dump diagnostics and propagate red.
+
+### Optional Azure LiveAI eligibility before host creation
+
+When AI is generated, the Azure `LiveAI` class must check provider eligibility before it can call `AspireTestHost.EnsureStartedAsync`. `{APP}_RUN_AZURE_FOUNDRY_TESTS=false` is a fast opt-out, not a required flag when Azure configuration is absent.
+
+```csharp
+[ClassInitialize]
+public static async Task ClassInit(TestContext context)
+{
+    if (string.Equals(
+        Environment.GetEnvironmentVariable("{APP}_RUN_AZURE_FOUNDRY_TESTS"),
+        "false",
+        StringComparison.OrdinalIgnoreCase))
+    {
+        Assert.Inconclusive("{APP}_RUN_AZURE_FOUNDRY_TESTS=false - Azure live AI opted out.");
+        return;
+    }
+
+    var unavailable = AzureFoundryTestEligibility.GetUnavailableReason();
+    if (unavailable is not null)
+    {
+        Assert.Inconclusive(unavailable);
+        return;
+    }
+
+    await AspireTestHost.EnsureStartedAsync(context);
+}
+```
+
+Generate `AzureFoundryTestEligibility` as a thin, process-only preflight. It loads the same environment/user-secret inputs the AppHost consumes and calls the same pure Azure-selection predicate. If selection is currently inline in AppHost `Program.cs`, extract one pure predicate and reuse it; do not duplicate a second heuristic in tests. The preflight must not create `DistributedApplicationTestingBuilder`, call `EnsureStartedAsync`, query `/api/v1/ai/status`, authenticate, or call a model. Missing selection inputs return a precise unavailable reason. Once eligible, startup/authentication/provider/status/routing/HTTP/JSON/schema/contract failures stay red. Full classification: [../skills/ai-integration.md](../skills/ai-integration.md) section Optional Live-Provider Classification.
 
 ---
 
@@ -372,7 +434,7 @@ namespace Test.Aspire;
 /// visibility.
 /// Manual run (Docker Desktop must be running; start the local stack first - see
 /// eng/test/start-local-test-stack.ps1):
-///   dotnet test tests/Test.Aspire/Test.Aspire.csproj --filter TestCategory=Aspire
+///   dotnet test tests/Test.Aspire/Test.Aspire.csproj --filter TestCategory=Aspire -m:1
 /// Set {APP}_RUN_ASPIRE_TESTS=false to skip the mesh tier (e.g. in fast CI lanes).
 /// </summary>
 [TestClass]
@@ -387,7 +449,7 @@ public class ApiAuditPipelineTests
     public static Task ClassInit(TestContext context) => AspireTestHost.EnsureStartedAsync(context);
 
     [TestMethod]
-    [Timeout(300000)]
+    [Timeout(1_200_000, CooperativeCancellation = true)]
     public async Task Given_Api{Entity}Create_When_RequestHandled_Then_AuditEntryPersistedToTableStorage()
     {
         var ct = CancellationToken.None;
@@ -479,13 +541,13 @@ public class ApiAuditPipelineTests
 
 ### Why downstream-effect polling matters
 
-Aspire's emulators (Service Bus, Azurite) are best-effort under `DistributedApplicationTestingBuilder`. Asserting "audit row exists in Azurite for this request" exercises the same path production runs through, and it survives the small lag between HTTP 201 and the background `AuditHandler` flushing. **Assert against the persistent downstream effect (the audit row, the projection document), not against the bus/queue.** When the downstream effect is genuinely unavailable in this test scope, `[Ignore]` with a reason rather than asserting against the bus and accepting flakes.
+Aspire's emulators (Service Bus, Azurite) are best-effort under `DistributedApplicationTestingBuilder`. Asserting "audit row exists in Azurite for this request" exercises the same path production runs through, and it survives the small lag between HTTP 201 and the background `AuditHandler` flushing. **Assert against the persistent downstream effect (the audit row, the projection document), not against the bus/queue.** If that effect is outside the selected test scope, do not generate the test; an enabled mesh test must not hide the missing dependency with `[Ignore]`.
 
 ---
 
 ## Other mesh tests (generate when the host is enabled)
 
-- **`FunctionAuditPipelineTests`** (`includeFunctions`): same shape against the `{app}functions` resource; gate on `AspireTestHost.EnsureFuncToolAvailable()` and `Assert.Inconclusive` when `func.exe` is absent. Functions has the longest cold-start - keep the 300 s `[Timeout]`.
+- **`FunctionAuditPipelineTests`** (`includeFunctions`): same shape against the `{app}functions` resource. An explicit `{APP}_RUN_FUNCTIONS_TESTS=false` opts out before graph construction. Otherwise `AspireTestHost.EnsureFuncToolAvailable()` must fail red with the install step when `func` is absent. Functions has the longest cold-start; its coarse MSTest `[Timeout]` must exceed the configurable global startup budget plus assertion time (for a 900 s startup default, use at least 1200 s).
 - **Blazor-mesh smoke** (`includeBlazorUI`): `tests/Test.Aspire/BlazorMeshSmokeTests`. Opt the Blazor resource into the graph via `{APP}_INCLUDE_BLAZOR=true` and hit one page that round-trips through the API (Gateway routing + Refit + tenant header). Calls `AspireTestHost.EnsureStartedAsync` from `[ClassInitialize]`.
 - **Service Bus -> Function -> projection**: assert on the projection store's downstream document, never the topic/queue.
 
@@ -530,12 +592,17 @@ Aspire's emulators (Service Bus, Azurite) are best-effort under `DistributedAppl
 - [ ] `AspireTestHost` is lazy (`EnsureStartedAsync` + `SemaphoreSlim`); no eager `[AssemblyInitialize]` start.
 - [ ] `AspireMeshLifecycle.[AssemblyCleanup]` stops/disposes the graph once; bounded by `CleanupTimeout`.
 - [ ] Every mesh test class calls `AspireTestHost.EnsureStartedAsync` from `[ClassInitialize]` and is `[DoNotParallelize]`.
-- [ ] Every async Aspire call has its own `.WaitAsync(DefaultTimeout, ct)`; tests gate on `WaitForResourceHealthyAsync`.
+- [ ] Mesh and Playwright/WasmUI adapters use one shared `AspireTestHostContext`; no fixture duplicates Docker probing, deadlines, state dumps, or cleanup.
+- [ ] One startup context begins before Docker/test-owned restore and bounds create, build, start, named waits, endpoint resolution, warm-up, and browser launch by remaining time.
 - [ ] `Parameters:*` passed via `configureBuilder.hostSettings.Configuration`; env vars scoped + restored.
 - [ ] Multi-resource pipeline tests assert against the **downstream persistent effect** (audit row, projection document), not the bus/queue.
 - [ ] Every mesh test carries `[TestCategory("Aspire")]` (not `Integration`); `--filter TestCategory=Integration` boots **no** graph.
-- [ ] `DefaultTimeout` reads `{APP}_ASPIRE_STARTUP_TIMEOUT_SECONDS` (default 600 s).
-- [ ] Mesh classes preflight via `MeshPreflight.SkipReason()` -> `Assert.Inconclusive` on `{APP}_RUN_ASPIRE_TESTS=false` or missing Docker (never red).
+- [ ] `{APP}_ASPIRE_STARTUP_TIMEOUT_SECONDS` is read once as a global budget (default 900 s); subordinate per-step caps cannot extend it.
+- [ ] Required mesh infrastructure is inconclusive only for `{APP}_RUN_ASPIRE_TESTS=false` or failed Docker preflight; AppHost/container/start/readiness failures dump diagnostics and fail.
+- [ ] Azure `LiveAI` checks the app's shared provider-selection predicate before `AspireTestHost.EnsureStartedAsync`; missing optional Azure configuration is inconclusive without booting the graph, while eligible-provider failures stay red per `skills/ai-integration.md`.
+- [ ] Docker preflight begins concurrent stdout/stderr drains before waiting for `docker info` and kills the process tree on timeout.
+- [ ] Failure output includes resource state, health, exit code, and start/stop timestamps by default; resource logs are optional.
+- [ ] Cleanup uses one bounded deadline across stop and dispose; fixture-owned environment is restored in `finally`.
 - [ ] Test-booted containers are **ephemeral** (AppHost gates persistent lifetime + data volume on `!IsAspireTesting()`); cleanup is `DisposeAsync` only - no `docker rm` sweep by image, name prefix, or the generic `com.microsoft.dotnet.aspire.container.name` label.
 - [ ] Running `Test.Aspire` boots the graph **once**; running `Test.Integration` boots **no** graph.
 - [ ] `EnableResourceLogging` defaults to **false**; the `{APP}_ASPIRE_RESOURCE_LOGGING=true` override re-enables it. Failure diagnostics read `ResourceNotifications` state; `DumpResourceLogsAsync` resolves `ResourceLoggerService` with `GetService` and no-ops (never throws) when logging is off.

@@ -180,7 +180,7 @@ jobs:
       - if: ${{ github.event_name == 'workflow_dispatch' && inputs.includeIntegration == true }}
         run: dotnet test tests/Test.Integration/Test.Integration.csproj --no-build --configuration Release
       - if: ${{ github.event_name == 'workflow_dispatch' && inputs.includeAspireMesh == true }}
-        run: dotnet test tests/Test.Aspire/Test.Aspire.csproj --no-build --configuration Release
+        run: dotnet test tests/Test.Aspire/Test.Aspire.csproj --no-build --configuration Release -m:1
       - if: ${{ github.event_name == 'workflow_dispatch' && inputs.includeE2E == true }}
         run: dotnet test tests/Test.E2E/Test.E2E.csproj --no-build --configuration Release
 
@@ -225,6 +225,8 @@ Fast tiers run automatically on PRs; everything else is a default-off `workflow_
 toggle (only emitted for tiers this scaffold generated). The trigger column maps each
 category to its `inputs.*` switch.
 
+Treat Aspire, Playwright, and WasmUI projects as resource-heavy. Keep their workflow steps/jobs non-overlapping, and use `-m:1` for every solution-wide or heavy-project `dotnet test` command. The scheduled/manual acceptance lane must also run the unfiltered solution command `dotnet test {SolutionName}.slnx --no-build -m:1`; filtered fast tiers do not prove scaffold acceptance.
+
 | Category | Trigger | Prerequisite / notes |
 |---|---|---|
 | `Unit` | Auto (PR) | none |
@@ -242,7 +244,7 @@ category to its `inputs.*` switch.
 
 ### Hosted-Stack Orchestration (`Test.PlaywrightUI`)
 
-Playwright tests cannot use `WebApplicationFactory` - they drive a real browser and need real Kestrel + UI host. The CI job must launch the stack, wait for health, run the tests, then tear down. For React/Vite, pass the actual UI resource URL from the hosted stack into the test project (for example `{APP}_REACT_BASE_URL`); do not assume the local Vite default port.
+Playwright tests cannot use `WebApplicationFactory` - they drive a real browser and need real Kestrel + UI host. The generated `Test.PlaywrightUI` fixture self-hosts Aspire through the shared `AspireTestHostContext`, waits named resources, resolves dynamic endpoints, and owns bounded cleanup. CI provisions Node/browser/WASM prerequisites, then runs the test project; do not start a second AppHost in the workflow.
 
 ```yaml
 playwright:
@@ -252,32 +254,16 @@ playwright:
   steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-dotnet@v4
-    - run: dotnet build {SolutionName}.slnx --configuration Release
-    - name: Start Aspire AppHost
-      run: |
-        dotnet run --project src/Host/Aspire/AppHost --configuration Release &
-        echo "APPHOST_PID=$!" >> $GITHUB_ENV
-    - name: Wait for stack health
-      run: |
-        for i in {1..30}; do
-          if curl -sf http://localhost:5100/health; then exit 0; fi
-          sleep 2
-        done
-        exit 1
+    - run: dotnet build {SolutionName}.slnx --configuration Release -m:1
     - name: Install Playwright browsers
       run: pwsh tests/Test.PlaywrightUI/bin/Release/$(TargetFramework)/playwright.ps1 install --with-deps
     - name: Run Playwright tests
-      env:
-        PLAYWRIGHT_BASE_URL: http://localhost:5100
-      run: dotnet test tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj --no-build --configuration Release
-    - name: Stop AppHost
-      if: always()
-      run: kill $APPHOST_PID || true
+      run: dotnet test tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj --no-build --configuration Release -m:1
 ```
 
 For PR-time runs, gate `Test.PlaywrightUI` to nightly to keep PR loops fast.
 
-If `Test.PlaywrightUI` is a Node Playwright suite for React/Vite, replace the browser install/run steps with `npm ci`, `npx playwright install --with-deps`, and one `node node_modules/@playwright/test/cli.js test --project <name>` process per project. Keep the same hosted-stack startup/teardown contract, capture stdout/stderr, and bound each project with `{APP}_PLAYWRIGHT_PROJECT_TIMEOUT_SECONDS`.
+If `Test.PlaywrightUI` wraps Node Playwright for React/Vite, run `npm ci`, install browsers, then let the C# test adapter invoke one `node node_modules/@playwright/test/cli.js test --project <name>` process per project. Capture stdout/stderr and pass the shared remaining startup-deadline token; `{APP}_PLAYWRIGHT_PROJECT_TIMEOUT_SECONDS` is only a shorter subordinate cap.
 
 ### Special-Runtime Jobs (`Test.Mobile`, `Test.FoundryLocal`)
 
@@ -318,7 +304,7 @@ foundry-local:
         # Install the Foundry Local runtime per its docs, then warm the model.
         # foundry model run <model>   # bootstrap before the RID-bound test loads the native SDK
     - name: Run live AI smoke (RID-bound)
-      run: dotnet test tests/Test.FoundryLocal/Test.FoundryLocal.csproj --configuration Release --filter "TestCategory=LiveAI"
+      run: dotnet test tests/Test.FoundryLocal/Test.FoundryLocal.csproj --configuration Release --filter "TestCategory=LiveAI" -m:1
 ```
 
 ---
@@ -588,7 +574,8 @@ For `scaffoldMode: lite`:
 
 - [ ] `ci.yml` runs the fast tiers (`Unit`/`Endpoint`/`Architecture`) on PR with no Docker and no `if:` gate
 - [ ] `ci.yml` declares a `workflow_dispatch` boolean (default false) for every manual tier it references, and emits one only for tiers this scaffold generated; every `inputs.*` referenced in an `if:` is declared
-- [ ] heavy tiers carry the `workflow_dispatch && inputs.<x>` gate; Benchmarks use `dotnet run` and Mutation uses `dotnet stryker` (never `dotnet test`); disk reclaim covers Integration/Aspire/E2E
+- [ ] heavy tiers carry the `workflow_dispatch && inputs.<x>` gate, do not overlap, and use `-m:1`; Benchmarks use `dotnet run` and Mutation uses `dotnet stryker` (never `dotnet test`); disk reclaim covers Integration/Aspire/E2E
+- [ ] scheduled/manual acceptance provisions generated prerequisites, then runs unfiltered `dotnet test {SolutionName}.slnx --no-build -m:1`; filtered fast tiers remain diagnostic lanes, not acceptance
 - [ ] `cd.yml` defaults to `workflow_dispatch` only (push-to-main is opt-in, added after infra exists)
 - [ ] `cd.yml` logs in with OIDC and pushes SHA-tagged images (ACR or GHCR per scaffold choice)
 - [ ] GHCR path: private package has `az containerapp registry set` pull cred per app
