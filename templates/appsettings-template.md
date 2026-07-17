@@ -13,6 +13,7 @@ This is a complete reference of all configuration sections used across the solut
 ```json
 {
   "AppName": "{Host}.Api",
+  "AuthMode": "Scaffold",
 
   "ConnectionStrings": {
     "{Project}DbContextTrxn": "Server=localhost,1433;Database={Project}Db;Integrated Security=True;TrustServerCertificate=True",
@@ -80,6 +81,7 @@ This is a complete reference of all configuration sections used across the solut
 ```json
 {
   "AppName": "{Gateway}.Gateway",
+  "AuthMode": "Scaffold",
 
   "Gateway_EntraExt": {
     "Instance": "https://{tenant-name}.ciamlogin.com/",
@@ -185,5 +187,6 @@ This is a complete reference of all configuration sections used across the solut
 - `ForwardedClaims:TrustedGatewayClientIds` is the API allowlist for gateway service-token `azp`/`appid` values; omit the section when claim relay is unused, and fail startup if claim relay is registered with an empty list
 - Leave both Data Protection URLs empty in development and isolated test hosts. Deployed configuration must supply both together; see [security.md](../skills/security.md#data-protection). Supply credentials through managed identity, never URL query strings.
 - `ServiceAuth` section in Gateway maps cluster IDs to OAuth2 client credential configs
+- `AuthMode` belongs on each auth-owning host and must be one validated value (`Scaffold`, `Local`, or `Entra`); production hosts use the same intended mode across the chain
 - `AiServices:RequireFoundryLocal` stays false in normal appsettings; set true only in `Test.FoundryLocal`
 - For production/Azure: use Key Vault references or App Configuration for secrets

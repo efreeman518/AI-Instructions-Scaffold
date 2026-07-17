@@ -48,7 +48,11 @@ Populated by the **final enabled Phase 5 sub-phase session** as the first sectio
 - [ ] Provision live Azure infrastructure (hand-written Bicep deploy or `azd provision` - see `skills/iac.md`)
 - [ ] Set CI/CD secrets, variables, and environments; enable `push` triggers on `cd.yml`/`provision.yml` (currently `workflow_dispatch`-only)
 - [ ] Flip each deployment-only stub: provision the resource (auth tenant, AI endpoints, ...), fill its config section, remove/gate the `// TODO: [CONFIGURE]` stub, re-enable its `[Ignore]`/inconclusive tests
+- [ ] When auth is enabled, provision every public/admin client registration, roles, consent, and local CIAM acceptance user; complete one real interactive sign-in per enabled UI head from its published `Release` build
+- [ ] When Uno browser-WASM is enabled, prove first-visit Release startup with empty site data; refresh-only success does not pass
+- [ ] For self-hosted/multi-proxy deployment, verify forwarded public scheme/host/path base and OIDC redirects from the public URL
 - [ ] Run the production DB migration path
+- [ ] When native assets exist, publish every declared RID and run the final-image P/Invoke smoke
 
 ## Last Session Summary
 

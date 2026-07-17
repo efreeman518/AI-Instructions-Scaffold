@@ -20,7 +20,11 @@ public class DesignTimeDbContextFactoryTrxn : IDesignTimeDbContextFactory<{Proje
             ?? throw new InvalidOperationException("Set EFCORETOOLSDB env var");
 
         var optionsBuilder = new DbContextOptionsBuilder<{Project}DbContextTrxn>();
-        optionsBuilder.UseSqlServer(connectionString, sql => sql.UseCompatibilityLevel(170));
+        optionsBuilder.UseSqlServer(connectionString, sql =>
+        {
+            sql.UseCompatibilityLevel(170);
+            sql.MigrationsHistoryTable("__EFMigrationsHistory", "{app}");
+        });
 
         var context = new {Project}DbContextTrxn(optionsBuilder.Options);
         context.AuditId = "design-time";
@@ -38,7 +42,11 @@ public class DesignTimeDbContextFactoryQuery : IDesignTimeDbContextFactory<{Proj
             ?? throw new InvalidOperationException("Set EFCORETOOLSDB env var");
 
         var optionsBuilder = new DbContextOptionsBuilder<{Project}DbContextQuery>();
-        optionsBuilder.UseSqlServer(connectionString, sql => sql.UseCompatibilityLevel(170));
+        optionsBuilder.UseSqlServer(connectionString, sql =>
+        {
+            sql.UseCompatibilityLevel(170);
+            sql.MigrationsHistoryTable("__EFMigrationsHistory", "{app}");
+        });
 
         var context = new {Project}DbContextQuery(optionsBuilder.Options);
         context.AuditId = "design-time";
@@ -171,7 +179,8 @@ Rules:
 
 - **Fail fast.** Each target logs its database + context before migrating. An unhandled failure terminates the process with nonzero exit; later targets do not run. No catch-and-ignore, no retry loops around migration ownership.
 - **Migrator-only timeouts.** Long SQL command timeouts belong only in the migrator's DbContext registrations. Do not copy migration timeout defaults into API, Scheduler, Functions, or any request-path registration.
-- **Schema + history isolation.** Each context keeps its own schema and migrations history table (`sql.MigrationsHistoryTable(name, schema)`), even when local Aspire maps every logical connection to one physical database. Design-time factories must match the runner configuration exactly: schema, history table, migrations assembly, provider, SQL compatibility level. Add or update the design-time factory whenever a migration target is added.
+- **Schema + history isolation.** Each context keeps its own schema and migrations history table (`MigrationsHistoryTable("__EFMigrationsHistory", schema)`), even when local Aspire maps every logical connection to one physical database. Configure it inside the central provider-options extension used by runtime, migrator, tests, and design-time factories. Design-time factories must match the runner configuration exactly: schema, history table, migrations assembly, provider, SQL compatibility level. Add or update the design-time factory whenever a migration target is added.
+- **Npgsql requires an explicit history schema.** PostgreSQL resolves an unqualified `__EFMigrationsHistory` through `search_path`, commonly `"$user", public`. If the database user name equals the app schema, resolution changes as soon as the first migration creates that schema, and the next run can miss history and replay `InitialCreate`. Configure every Npgsql context with `npgsql.MigrationsHistoryTable("__EFMigrationsHistory", schema)`; never depend on `search_path` for migration ownership.
 - **Stable logical connection names.** One name per logical store: `{App}DbContextTrxn`, `{App}DbContextQuery`, `{App}FlowEngineDbContext`, `{ThirdPartyStore}DbContext`. Development config may point them all at one local database; Azure splits physical databases later through configuration only, never runtime code. Hosts fail fast when a required connection string is missing; do not infer one logical store from another (the only deliberate fallback lives in migrator-only registration).
 - **Data movement is a deployment unit.** Pre/post-schema steps (C# steps needing EF services, or SQL steps for staging, backfill, compatibility copies, cleanup) run inside the migrator as ordered work, never hidden in runtime hosted services. Data that must survive between steps lives in durable staging tables in the migration schema, dropped when the migration completes - do not rely on temp tables surviving across connections.
 

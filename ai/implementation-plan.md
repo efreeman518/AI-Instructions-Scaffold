@@ -93,9 +93,11 @@ Run this check before writing Phase 4 tasks. Fix source artifacts first, not gen
 **Authentication finalization:**
 - [ ] Prompt for identity provider scenario (see options below)
 - [ ] Replace auth stubs with real identity configuration (config-driven scaffold principal as default)
+- [ ] Gate every auth mode across DI registration, endpoint mapping, and client affordances
+- [ ] Add anonymous `GET /auth/mode`; local login/register/refresh routes exist only in Scaffold/Local modes
 - [ ] Wire auth middleware, token validation, and role/scope checks
 - [ ] Update appsettings with provider-specific configuration
-- [ ] **Checkpoint:** authenticated endpoints respond correctly under `AuthMode` toggle
+- [ ] **Checkpoint:** mode-matrix tests prove DI, route presence/absence, `/auth/mode`, and UI adaptation under every `AuthMode`
 
 **Identity Provider Options:**
 - **Enterprise / internal users:** Microsoft Entra ID - SSO, conditional access, group-based roles

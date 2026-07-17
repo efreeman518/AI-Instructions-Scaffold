@@ -11,6 +11,7 @@ Gateway is a YARP reverse proxy in front of API/backends. It handles user-facing
 3. Treat `X-Orig-Request` as a gateway-owned header: strip any inbound value, regenerate it from the authenticated user principal, and let the API consume it only after validating the gateway service identity.
 4. Keep pipeline order deterministic (security -> routing/auth -> endpoints -> proxy).
 5. Normalize path prefixes consistently between UI, gateway transforms, and backend routes.
+6. Normalize trusted forwarded scheme/host before OIDC or YARP so redirects use the public origin.
 
 Reference patterns: [../patterns/api-host-wiring.md](../patterns/api-host-wiring.md) (Gateway Claim Relay).
 
@@ -219,6 +220,37 @@ public static WebApplication ConfigurePipeline(this WebApplication app)
 
 ---
 
+## Multi-Hop Forwarded Headers and Path-Base Hosting
+
+A chain such as edge proxy -> YARP Gateway -> app has two separate trust boundaries. Each process must adopt the public request values from its immediate trusted upstream before redirects, authentication, link generation, or proxying.
+
+1. The edge proxy removes caller-supplied forwarding headers and writes the canonical `X-Forwarded-For`, `X-Forwarded-Proto`, and `X-Forwarded-Host` values.
+2. Gateway runs `UseForwardedHeaders()` before HTTPS redirection, authentication/OIDC, routing, and YARP. This changes `Request.Scheme` and `Request.Host` to the public values before YARP's default X-Forwarded transform re-stamps the downstream request.
+3. The downstream app also runs `UseForwardedHeaders()` before HTTPS redirection, static files, authentication/OIDC, routing, and endpoints, with `XForwardedProto` and `XForwardedHost` enabled.
+
+The blanket `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true` switch is not the complete chain pattern: it has a one-hop default and does not enable `X-Forwarded-Host`. Configure the middleware explicitly:
+
+```csharp
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor
+        | ForwardedHeaders.XForwardedProto
+        | ForwardedHeaders.XForwardedHost;
+
+    // Preferred: trust the immediate proxy IP/network and keep a finite hop limit.
+    options.ForwardLimit = 1;
+    options.KnownProxies.Add(IPAddress.Parse(configuration["ReverseProxy:TrustedProxyIp"]!));
+});
+```
+
+Prefer explicit `KnownProxies`/`KnownIPNetworks` and a finite `ForwardLimit`. Container networks with dynamic proxy addresses may instead use `ForwardLimit = null` plus cleared `KnownIPNetworks`/`KnownProxies` only when network policy makes the app port unreachable except through the controlled Gateway. Clearing trust lists on a publicly reachable port lets clients forge scheme and host.
+
+For an externally prefixed app such as `/admin`, preserve that prefix to the downstream host and call `UsePathBase` (for example, `UsePathBase("/admin")`) before static files, routing, auth, and endpoints. Derive the served HTML `<base href>` from the effective `Request.PathBase` and include the same prefix in redirect/logout URIs. If YARP strips the external prefix, `UsePathBase` cannot rediscover it; either preserve the prefix or set `Request.PathBase` from controlled deployment configuration. ASP.NET Core forwarded-header middleware does not infer it from `X-Forwarded-Prefix`.
+
+Deployment proof uses the public URL: an unauthenticated challenge redirects to public `https://<host>/<path-base>/...`, and prefixed UI root, framework, content, API, and OIDC callback paths return the expected status. Internal `http://container:port` must not appear in a redirect.
+
+---
+
 ## Path Prefix Normalization Rule
 
 The `PathRemovePrefix` transform removes a prefix **before forwarding to the backend**. Only use it when the backend routes do NOT include that prefix.
@@ -264,7 +296,9 @@ Pick one convention per project and apply it everywhere. Never use dual-prefix p
 - [ ] `TokenService` caches cluster tokens with expiry buffer
 - [ ] gateway auth section matches intended identity provider config
 - [ ] pipeline order is security -> middleware -> endpoints -> reverse proxy
+- [ ] forwarded proto and host are applied before OIDC and YARP; downstream app trusts only its controlled proxy chain
 - [ ] CORS origins match UI local/deployed origins
 - [ ] path-prefix convention is documented and consistent across UI/gateway/API
+- [ ] path-prefixed UI derives `<base href>` and redirect URIs from the effective `PathBase`
 - [ ] health checks and startup warmup are registered
 - [ ] cross-check with [aspire.md](aspire.md) and [iac.md](iac.md)

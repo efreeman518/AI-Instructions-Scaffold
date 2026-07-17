@@ -113,6 +113,17 @@ The goal is a small, owned dependency surface - every package added is one the t
 
 If `applicationStyle` is `cqrs` or `switch`, include `CQRS` in `localPackageLayers` for `packageStrategy: local`/`hybrid`. The generated project is `src/Packages/<packagePrefix>.CQRS/<packagePrefix>.CQRS.csproj` and is referenced by `{Project}.Application.Cqrs` and CQRS-focused tests via `<ProjectReference>`.
 
+### Vendored Native Assets and Package Content
+
+Apply this only when an approved dependency has no maintained package for every deployment RID. Prefer an upstream multi-RID package first; compiling and vendoring native source creates patch, provenance, and ABI ownership.
+
+1. Record the source repository, license, pinned tag/commit, checksum, supported RIDs, and rebuild owner in `.scaffold/DESIGN-DECISIONS.md`.
+2. Build each native binary in a container whose OS/libc baseline matches the runtime image family. For example, a Noble chiseled runtime uses an Ubuntu 24.04-compatible glibc build environment. A binary built on a newer glibc may load locally and fail on the server.
+3. Declare the supported build/publish RIDs (`<RuntimeIdentifiers>` or an equivalent CI matrix) and pack native binaries under `runtimes/<rid>/native/`, one asset per RID such as `win-x64` and `linux-x64`. Do not place a Windows DLL in a generic content folder and claim cross-platform support.
+4. Keep P/Invoke behind one class. In its static constructor, call `NativeLibrary.SetDllImportResolver` when the managed import name must map to platform-specific filenames or packaged paths. Fail with the requested RID and attempted asset name when unsupported.
+5. For non-code runtime data packaged through `contentFiles`, set `PackageCopyToOutput=true`. A plain `Content` item in the package project does not guarantee the file reaches a consuming app's build or publish output. Direct project content also sets `CopyToOutputDirectory`/`CopyToPublishDirectory` as applicable.
+6. Pack, then restore the `.nupkg` into a clean consumer. Run `dotnet publish -r <rid>` for every supported RID, assert native and data files exist in publish output, and execute one minimal P/Invoke smoke inside the final runtime image. A successful compile alone does not prove native loadability.
+
 > **CPM + floating versions = NU1011.** When `ManagePackageVersionsCentrally=true`, every `<PackageVersion>` entry must use an exact version (e.g. `Version="<latest-stable>"` resolved at scaffold time). Wildcard/floating versions (e.g. `1.0.*`, `*`) are prohibited and cause restore to fail with NU1011. To use floating versions, set `ManagePackageVersionsCentrally=false` and add `Version="*"` directly to each `<PackageReference>`. This rule applies regardless of `packageStrategy`.
 
 > **Every `<PackageVersion>` row maps to a real, referenced feed package.** A central version belongs in `Directory.Packages.props` only when the package exists on a configured feed **and** at least one project consumes it via `<PackageReference>`. Do not pre-seed rows from the contract map ([../support/ef-packages-reference.md](../support/ef-packages-reference.md)) for names no project pulls as a package, and never add a row for a layer consumed via `<ProjectReference>` (see the local-mode rule above). Resolve versions by restoring against the configured feed at scaffold time - never guess or invent a version string. These exact rows are latest-at-scaffold snapshots (CPM forbids floating - see NU1011 rule above); on an intentional dependency refresh, re-resolve `<packagePrefix>.*` to the current feed latest rather than hand-editing pins. Remove orphan `<PackageVersion>` rows when no project references them.
@@ -383,6 +394,7 @@ Pattern reference: [external-api.md](external-api.md)
 - [ ] Internal message bus namespaces are correct
 - [ ] If `applicationStyle` is `cqrs` or `switch`: `<packagePrefix>.CQRS` is sourced by feed or local project, and no MediatR/dispatcher package was added
 - [ ] Azure client factories and package-required DI wiring are registered
+- [ ] Vendored native packages, when present, pass clean-consumer publish and runtime smoke for every declared RID; packaged data reaches consumer publish output
 
 ## Pitfalls
 
@@ -391,3 +403,4 @@ Pattern reference: [external-api.md](external-api.md)
 - Adding MediatR or a similar dispatcher when `applicationStyle` is `cqrs` or `switch` - the scaffold ships `<packagePrefix>.CQRS` for exactly that role; layering MediatR on top fragments the request pipeline.
 - Pinning a private-feed PAT into `nuget.config` instead of `%NUGET_AUTH_TOKEN%` / `$NUGET_AUTH_TOKEN` - leaks the credential into source control on the next push.
 - Skipping `dotnet restore` verification after generating `src/Packages/<packagePrefix>.*` projects in `local`/`hybrid` mode - the first hint of a missing layer otherwise surfaces as a build error mid-Phase-5 with no easy diff to read.
+- Shipping one platform's native binary in a generic content folder - publish can succeed while another RID fails at first P/Invoke or silently misses required data.

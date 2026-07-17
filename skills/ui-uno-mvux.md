@@ -463,9 +463,25 @@ server-side and client-side, by the same types.
 
 Scaffold with `.AddCustom()` (no external identity provider required). When ready for production:
 
-1. Register app in **Entra External ID** (CIAM) - get `ClientId` + `Authority`
+1. Complete the admin/interactive-client registration runbook in [identity-management.md](identity-management.md), including redirect URIs, roles, admin consent, and a local CIAM acceptance user
 2. Update `appsettings.json` `EntraExternal` section with real tenant values
 3. Replace `.AddCustom(...)` with `.AddMsal()` in `App.xaml.host.cs`
 4. Change `<UnoFeatures>` in `.csproj`: `AuthenticationCustom` to `AuthenticationMsal`
 5. `AuthTokenHandler` (reads `ITokenCache`) works identically with both providers
-6. Configure Gateway with `TaskFlowGateway_EntraID` config section (see [identity-management.md](identity-management.md))
+6. Configure Gateway with its Entra External ID section (see [identity-management.md](identity-management.md))
+
+The login model first reads anonymous `GET /auth/mode` from the auth-owning host. Show the development email form only for `Scaffold`/`Local`; show the Entra interactive action only for `Entra`. A build/runtime mismatch is a configuration error, not permission to fall back to local login.
+
+### Browser-WASM MSAL Custom Web UI
+
+Uno's Skia runtime flavor can serve a browserwasm target while `WithUnoHelpers()` still selects desktop OS-browser behavior. In the browser sandbox that path can throw `PlatformNotSupportedException` surfaced as a generic `Browser` failure.
+
+For every MSAL-enabled `#if __WASM__` target, ship all three browser-specific pieces:
+
+1. **`WasmPopupWebUi.cs`:** implement `ICustomWebUi`, open the authorize URL through `globalThis.open`, and pass the completed callback URL to MSAL. Do not fall back to desktop `WithUnoHelpers()` inside browserwasm.
+2. **`login-callback.htm`:** publish a same-origin callback page. CIAM can send `Cross-Origin-Opener-Policy` headers that permanently sever `window.opener` and the app's popup reference, so polling `popup.location` never observes the final redirect. The callback page writes its `location.href` to a per-attempt `localStorage` key; the app polls that key from its own origin.
+3. **`EntraAuthService.cs`:** configure interactive acquisition with the custom UI and supply `.WithHttpClientFactory(...)` an `IMsalHttpClientFactory` that returns a plain browser-safe `HttpClient`. Do not configure `HttpClientHandler` proxy, certificate, decompression, or other unsupported knobs; browser-WASM uses the fetch-backed handler and MSAL's default handler configuration can throw `PlatformNotSupportedException`.
+
+The return channel is one-time state, not token storage. Correlate the key to the current auth attempt, clear it before opening and immediately after success/failure, validate the callback origin/path and correlation value before returning it to MSAL, never store access/refresh tokens, and keep popup/poll cancellation bounded. Fail clearly on popup blocking, timeout, malformed callback, or unexpected origin.
+
+Automated auth bypass and local-session `WasmUI` tests do not execute these pieces. Before deployment, complete one real interactive sign-in per enabled UI head from its published `Release` build, including browserwasm, and verify the resulting token reaches the Gateway. Debug-only proof is insufficient because browser-WASM timing and trimming differ in Release.

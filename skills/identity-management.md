@@ -11,7 +11,7 @@ Reference patterns: [../patterns/api-host-wiring.md](../patterns/api-host-wiring
 - Phase 5e authentication finalization is complete when the app boots end-to-end with the scaffold principal and endpoint tests pass.
 - Live Entra setup is a `deployment-only` dependency: log it in `HANDOFF.md` and continue.
 - The config key (`AuthMode` or equivalent) must be present in `appsettings.Development.json` with value `Scaffold` by default.
-- Production/staging environments override `AuthMode` to the live provider name; the application code path is identical - only the token source changes.
+- Production/staging environments override `AuthMode` to the live provider name. That mode must control registration, mapped routes, and visible client sign-in choices together.
 
 ## Identity Provider Scenarios
 
@@ -22,6 +22,19 @@ Prompt the user at the start of this phase to select the appropriate scenario:
 | Enterprise / internal users | Microsoft Entra ID | Internal apps, admin portals, SSO, conditional access, group-based roles |
 | External / consumer users | Microsoft Entra External ID, Google, Facebook, Apple, OAuth2/OIDC | Customer-facing apps, self-service portals |
 | Hybrid | Entra ID + Entra External ID / social providers | Public UI for external users + enterprise back-office for internal users |
+
+### Admin Portal / Entra External ID Deployment Runbook
+
+Apply this runbook when a deployed admin portal or other interactive client signs users in through an Entra External ID (CIAM) tenant. Scaffold completion may defer it, but production deployment may not.
+
+1. Create a separate interactive-client app registration when the admin portal has different redirect URIs, roles, or operators from the public client. Record its client ID in deployment configuration, not source placeholders.
+2. Register the exact public HTTPS redirect and post-logout URIs, including any path base and callback path. Do not register an internal container host or HTTP URI as the production callback.
+3. Define the required app roles, make user/group assignment required when appropriate, create the enterprise application/service principal, and assign the admin user or group.
+4. Request the OIDC `openid` and `profile` delegated permissions used by the client. CIAM commonly disables user consent, so grant tenant admin consent before testing the user flow.
+5. Use `https://<tenant-subdomain>.ciamlogin.com/` as the interactive CIAM instance/authority. Do not substitute `login.microsoftonline.com` for an External ID user flow.
+6. Create a local CIAM user for portal acceptance and assign its app role. Guest or personal Microsoft account administrators may administer the tenant but generally cannot sign in through CIAM local-user flows.
+7. If automation creates the service principal and operators need it to appear under the portal's default Enterprise Applications filter, add the `WindowsAzureActiveDirectoryIntegratedApp` tag.
+8. From the deployed public URL, complete one real interactive sign-in and verify the expected role claim and authorized admin page. A client-credentials token or scaffold auth test is not equivalent evidence.
 
 ## Pre-Auth Stub Pattern (Phases 5a-5d)
 
@@ -57,6 +70,28 @@ Replace the pre-auth stub with a config-driven toggle that defaults to scaffold 
 }
 ```
 
+### Three-Leg Auth-Mode Contract
+
+Every auth mode gate has three legs. A mode implementation is incomplete unless all three move together:
+
+1. **DI registration:** register only the authentication handlers, token services, and local-session services used by the selected mode.
+2. **Endpoint mapping:** map provider-specific anonymous endpoints only in their owning mode. Conventional local-session routes such as `/auth/login`, `/auth/register`, and `/auth/refresh` exist in `Scaffold`/`Local`; they are not mapped under `Entra`.
+3. **Client affordances:** the client reads the runtime mode before rendering sign-in and exposes only compatible actions. Do not show a development email form under `Entra`, or an Entra button when that client build has no live provider configured.
+
+The auth-owning host always exposes anonymous `GET /auth/mode`. Return only a validated public value such as `{ "mode": "Scaffold" }`, `{ "mode": "Local" }`, or `{ "mode": "Entra" }`; do not return tenant IDs, client IDs, authorities, or secrets. Reject unknown configured modes at startup. Clients may use this signal for presentation, but the backend authorization gate remains the security boundary.
+
+Representative mapping shape:
+
+```csharp
+app.MapGet("/auth/mode", () => TypedResults.Ok(new { mode = authMode.ToString() }))
+    .AllowAnonymous();
+
+if (authMode is AuthMode.Scaffold or AuthMode.Local)
+    app.MapLocalSessionEndpoints();
+```
+
+Add a mode-matrix test for every supported value. Assert the selected handler resolves, `GET /auth/mode` stays anonymous, local-session routes exist only in local modes, and the client presentation model selects the matching sign-in surface.
+
 ```csharp
 // File: Host/{Host}.Api/Auth/AuthConfiguration.cs
 public static class AuthConfiguration
@@ -73,14 +108,20 @@ public static class AuthConfiguration
             return services;
         }
 
-        // Production path - wire real JWT validation
-        var section = config.GetSection($"{mode}Auth");
+        if (mode.Equals("Local", StringComparison.OrdinalIgnoreCase))
+            return services.AddLocalSessionAuthentication(config);
+
+        if (!mode.Equals("Entra", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException($"Unsupported AuthMode '{mode}'");
+
+        // Selected live mode fails fast when required configuration is missing.
+        var section = config.GetRequiredSection("AzureAd");
+        _ = section["TenantId"]
+            ?? throw new InvalidOperationException("AzureAd:TenantId is required");
+        _ = section["ClientId"]
+            ?? throw new InvalidOperationException("AzureAd:ClientId is required");
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-            .AddJwtBearer(options =>
-            {
-                options.Authority = section["Authority"];
-                options.Audience = section["ClientId"];
-            });
+            .AddMicrosoftIdentityWebApi(section);
         return services;
     }
 }
@@ -147,21 +188,28 @@ Upgrade to production: replace `.AddCustom(...)` with `.AddMsal()`, change cspro
 
 ### Gateway: Config-Driven Auth Toggle
 
-Gateway's `AddAuthentication` checks for a config section (e.g., `TaskFlowGateway_EntraID`). If the section is **absent or empty**, auth is registered as a no-op passthrough. When real values are provided, JWT Bearer validation activates:
+Gateway selects auth from `AuthMode`, not from accidental config-section presence. `Scaffold` and `Local` register their owned development/session schemes. `Entra` requires a complete Entra section and fails startup when it is missing; it must never fall back to anonymous passthrough.
 
 ```csharp
 public static void AddAuthentication(this IServiceCollection services, IConfiguration config)
 {
-    var entraSection = config.GetSection("TaskFlowGateway_EntraID");
-    if (!entraSection.Exists())
+    var mode = config["AuthMode"] ?? "Scaffold";
+    if (mode.Equals("Scaffold", StringComparison.OrdinalIgnoreCase))
     {
-        // Dev mode: register empty auth so middleware doesn't reject requests
-        services.AddAuthentication().AddJwtBearer();
+        services.AddScaffoldAuthentication();
         return;
     }
-    // Production: wire real JWT validation
+    if (mode.Equals("Local", StringComparison.OrdinalIgnoreCase))
+    {
+        services.AddLocalSessionAuthentication(config);
+        return;
+    }
+    if (!mode.Equals("Entra", StringComparison.OrdinalIgnoreCase))
+        throw new InvalidOperationException($"Unsupported AuthMode '{mode}'");
+
+    var entraSection = config.GetRequiredSection("Gateway_EntraExt");
     services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-        .AddJwtBearer(options => { /* bind from config */ });
+        .AddMicrosoftIdentityWebApi(entraSection);
 }
 ```
 
@@ -169,7 +217,7 @@ Config shape when enabled:
 
 ```json
 {
-  "TaskFlowGateway_EntraID": {
+  "Gateway_EntraExt": {
     "Instance": "https://YOUR-TENANT.ciamlogin.com/",
     "TenantId": "YOUR-TENANT-ID",
     "ClientId": "YOUR-CLIENT-ID",
@@ -355,7 +403,7 @@ Rule: secrets come from Key Vault/User Secrets only.
 4. Use `Microsoft.Graph` v5+ with `GraphServiceClient`.
 5. In lite mode, skip identity infrastructure and use a local/mock request context.
 6. For regulated/sensitive classifications, enforce least-privilege roles and trace access decisions with auditable correlation IDs.
-7. Entra/Graph DI registration must be conditional on config presence. Missing config -> no-op stub, not a startup exception.
+7. Optional Entra/Graph admin integrations use a no-op stub when their capability is not selected. A selected `AuthMode: Entra` with missing auth configuration is a startup error, never a no-op fallback.
 8. Internal execution routes must use service-scoped policies, not admin role policies. See the Internal vs Admin Routes section.
 
 ## Verification
@@ -363,10 +411,15 @@ Rule: secrets come from Key Vault/User Secrets only.
 - [ ] App boots and all endpoints are reachable with `AuthMode: Scaffold` and no live identity provider
 - [ ] Config-driven auth toggle present in `appsettings.Development.json` (`AuthMode: Scaffold`)
 - [ ] `ScaffoldAuthHandler` (or equivalent) registered only when `AuthMode` is `Scaffold`
-- [ ] Entra/Graph DI registration is conditional - absent config -> no-op stub registered, no startup exception
+- [ ] Auth mode controls all three legs: DI registration, endpoint mapping, and client affordances
+- [ ] Anonymous `GET /auth/mode` returns only a validated public mode in every supported mode
+- [ ] `/auth/login`, `/auth/register`, and `/auth/refresh` are not mapped under `AuthMode: Entra`
+- [ ] Mode-matrix endpoint and presentation tests prove route presence/absence and the matching sign-in UI
+- [ ] Optional Entra/Graph admin DI is conditional; selected `AuthMode: Entra` fails startup on missing auth config
 - [ ] `Infrastructure.EntraExt` and/or `Infrastructure.Graph` builds cleanly when config is populated
 - [ ] `Microsoft.Graph` and `Azure.Identity` are in `Directory.Packages.props`
 - [ ] Settings POCOs match configuration sections
 - [ ] No hardcoded secrets
 - [ ] Internal execution routes use service-scoped authorization policies, not admin role policies
 - [ ] Live Entra setup logged in `HANDOFF.md` as a deployment-only dependency if not yet performed
+- [ ] Deployed interactive clients follow the Admin Portal / Entra External ID Deployment Runbook when applicable

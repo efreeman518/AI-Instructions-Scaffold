@@ -408,6 +408,8 @@ Wrapper rules:
 - Guard the `BuildUnoWasm` target with **both** `'$(SkipUnoWasmBuild)' != 'true'` **and** `'$(BuildingInsideVisualStudio)' != 'true'`. In Visual Studio the Uno SDK project and the wrapper are both solution projects, so VS already builds `{Project}.Uno` (browserwasm) while the wrapper's `BeforeBuild` target rebuilds the same project -> CS2012 file-lock on the output assembly. `SkipUnoWasmBuild` does not cover this case because it is not set on a plain VS build; the `BuildingInsideVisualStudio` guard is required alongside it.
 - `Program.cs` loads the Uno static-web-assets manifest with `StaticWebAssetsLoader.UseStaticWebAssets`.
 - Map `.dat`, `.dll`, `.wasm`, and `.pdb` as binary/static files and verify `/_framework` plus `/_content` return 200 with non-empty bodies.
+- For path-prefixed hosting, call `UsePathBase` before static files/routing and generate or rewrite the served entry page's `<base href>` from `Request.PathBase` with a trailing slash. Verify prefixed framework/content assets and the OIDC callback from the public URL.
+- When Entra/MSAL is enabled for browser-WASM, publish same-origin `login-callback.htm` and verify it returns 200 at the exact registered redirect path in the wrapper's `Release` output.
 - In Aspire, register the wrapper, not the Uno SDK project:
 
 ```csharp

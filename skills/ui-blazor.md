@@ -174,6 +174,8 @@ No `UseAntiforgery`/`UseHttpsRedirection` - WASM host is a static SPA.
 </html>
 ```
 
+`<base href="/" />` is correct only for root hosting. For a deployed path base such as `/admin`, generate or derive a trailing-slash base (`/admin/`) from the effective `Request.PathBase`; keep framework assets, navigation, API URLs, and OIDC callbacks under the same prefix. See [gateway.md](gateway.md) section Multi-Hop Forwarded Headers and Path-Base Hosting.
+
 ```razor
 @* Routes.razor *@
 <Router AppAssembly="typeof(Program).Assembly">

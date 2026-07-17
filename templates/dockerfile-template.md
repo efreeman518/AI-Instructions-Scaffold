@@ -91,6 +91,12 @@ docker build -f src/Host/{Host}.Api/Dockerfile .
 
 The build context must match the Dockerfile's `COPY` roots. If you rewrite `COPY` lines to be `src/`-relative, build from `src/` instead. Keep the CI build context ([skills/cicd.md](../skills/cicd.md)) aligned with whichever rooting this Dockerfile uses - do not assume `src/`.
 
+## Variant: Vendored Native Source
+
+Use a native-build stage only when [package-dependencies.md](../skills/package-dependencies.md) section Vendored Native Assets and Package Content applies. Pin the source revision and build it in a distro/libc environment matching the selected runtime family; for the Noble runtime below, use an Ubuntu 24.04-compatible glibc builder. Copy the result into the owning package's `runtimes/linux-x64/native/` before `dotnet pack` or publish. Do not compile against the workstation and copy an unverified `.so` into the image.
+
+Publish with the target RID, then run the minimal P/Invoke smoke in the final image. Chiseled images have no shell or `ldd`, so inspect linkage in a matching non-chiseled build/test stage and prove actual loading through the application smoke.
+
 ## Chiseled variant selection
 
 Always ship the **smallest chiseled variant the app actually needs** - smaller image, smaller attack surface, faster pulls. Start at the most-chiseled rung and step up only when a runtime need forces it:
@@ -121,3 +127,4 @@ Prefer `-chiseled` and set `<InvariantGlobalization>true</InvariantGlobalization
 - [ ] `EXPOSE` port matches Container Apps / Aspire configuration
 - [ ] `ENTRYPOINT` matches the published assembly name
 - [ ] No `HEALTHCHECK` in image - health probes configured at orchestrator level (Container Apps / K8s)
+- [ ] When native assets exist, build environment matches runtime libc, publish uses the target RID, and the final image passes a P/Invoke smoke

@@ -84,6 +84,9 @@ private static void ConfigureSqlDatabase(IServiceCollection services,
 **Azure vs local detection + ReadOnly intent for Query:**
 
 ```csharp
+private const string SchemaName = "{app}";
+private const string HistoryTableName = "__EFMigrationsHistory";
+
 private static void ConfigureSqlOptions(DbContextOptionsBuilder options, string connectionString)
 {
     if (connectionString.Contains("database.windows.net"))
@@ -91,6 +94,7 @@ private static void ConfigureSqlOptions(DbContextOptionsBuilder options, string 
         options.UseAzureSql(connectionString, sqlOptions =>
         {
             sqlOptions.UseCompatibilityLevel(170);
+            sqlOptions.MigrationsHistoryTable(HistoryTableName, SchemaName);
             sqlOptions.EnableRetryOnFailure(maxRetryCount: 5,
                 maxRetryDelay: TimeSpan.FromSeconds(30), errorNumbersToAdd: null);
         });
@@ -100,6 +104,7 @@ private static void ConfigureSqlOptions(DbContextOptionsBuilder options, string 
         options.UseSqlServer(connectionString, sqlOptions =>
         {
             sqlOptions.UseCompatibilityLevel(170);
+            sqlOptions.MigrationsHistoryTable(HistoryTableName, SchemaName);
             sqlOptions.EnableRetryOnFailure(maxRetryCount: 5,
                 maxRetryDelay: TimeSpan.FromSeconds(30), errorNumbersToAdd: null);
         });
@@ -115,6 +120,8 @@ private static void ConfigureQueryDbContext(DbContextOptionsBuilder options, str
     ConfigureSqlOptions(options, readOnlyConnectionString);
 }
 ```
+
+Keep schema and history-table configuration inside this central provider-options helper so runtime, migrator, tests, and design-time factories cannot drift. Non-default providers use the same rule; Npgsql must call `MigrationsHistoryTable(HistoryTableName, SchemaName)` explicitly rather than relying on PostgreSQL `search_path`.
 
 ---
 

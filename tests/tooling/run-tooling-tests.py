@@ -187,6 +187,17 @@ class ValidatorHelperTests(unittest.TestCase):
                 text = "\n".join(required) + "\n"
             path.write_text(text, encoding="utf-8")
 
+    def _make_deployment_hardening_contract_root(self, root: Path) -> None:
+        for rel, required in validator.DEPLOYMENT_HARDENING_CONTRACT_REQUIREMENTS.items():
+            path = root / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("\n".join(required) + "\n", encoding="utf-8")
+        for rel in validator.DEPLOYMENT_HARDENING_FORBIDDEN_CLAIMS:
+            path = root / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if not path.exists():
+                path.write_text("current policy\n", encoding="utf-8")
+
     def test_optional_ai_contract_guard_requires_owner_policy_and_prehost_order(self):
         with tempfile.TemporaryDirectory(prefix="tooling-optional-ai-") as tmp:
             root = Path(tmp)
@@ -224,6 +235,58 @@ class ValidatorHelperTests(unittest.TestCase):
                 validator.check_optional_ai_contract(findings)
 
             self.assertTrue(any("deprecated failure claim" in message for _, message in findings.errors))
+
+    def test_deployment_hardening_guard_requires_wasm_interactive_policy(self):
+        with tempfile.TemporaryDirectory(prefix="tooling-deployment-hardening-") as tmp:
+            root = Path(tmp)
+            self._make_deployment_hardening_contract_root(root)
+            with mock.patch.object(validator, "INSTRUCTIONS_ROOT", root):
+                findings = validator.Findings()
+                validator.check_deployment_hardening_contract(findings)
+                self.assertEqual(findings.errors, [])
+
+                uno = root / "skills" / "ui-uno-mvux.md"
+                uno.write_text(
+                    uno.read_text(encoding="utf-8").replace(
+                        "`Cross-Origin-Opener-Policy`",
+                        "popup header",
+                    ),
+                    encoding="utf-8",
+                )
+                findings = validator.Findings()
+                validator.check_deployment_hardening_contract(findings)
+
+            self.assertTrue(any("Cross-Origin-Opener-Policy" in message for _, message in findings.errors))
+
+    def test_deployment_hardening_guard_requires_release_cold_start_policy(self):
+        with tempfile.TemporaryDirectory(prefix="tooling-deployment-hardening-") as tmp:
+            root = Path(tmp)
+            self._make_deployment_hardening_contract_root(root)
+            platform = root / "skills" / "ui-uno-platforms.md"
+            platform.write_text(
+                platform.read_text(encoding="utf-8").replace(
+                    "`BrowserRenderer.requestRender`",
+                    "renderer callback",
+                ),
+                encoding="utf-8",
+            )
+            with mock.patch.object(validator, "INSTRUCTIONS_ROOT", root):
+                findings = validator.Findings()
+                validator.check_deployment_hardening_contract(findings)
+
+            self.assertTrue(any("BrowserRenderer.requestRender" in message for _, message in findings.errors))
+
+    def test_deployment_hardening_guard_rejects_ungated_local_login_claim(self):
+        with tempfile.TemporaryDirectory(prefix="tooling-deployment-hardening-") as tmp:
+            root = Path(tmp)
+            self._make_deployment_hardening_contract_root(root)
+            platform = root / "skills" / "ui-uno-platforms.md"
+            platform.write_text("The development login is intentionally ungated.\n", encoding="utf-8")
+            with mock.patch.object(validator, "INSTRUCTIONS_ROOT", root):
+                findings = validator.Findings()
+                validator.check_deployment_hardening_contract(findings)
+
+            self.assertTrue(any("forbidden claim" in message for _, message in findings.errors))
 
     def test_estimate_unique_tokens_deduplicates_across_loadset_groups(self):
         with tempfile.TemporaryDirectory(prefix="tooling-loadset-") as tmp:

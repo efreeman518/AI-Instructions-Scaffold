@@ -270,9 +270,15 @@ public class {Entity}RepositoryIntegrationTests
 
     [TestMethod]
     [Timeout(120000)]
-    public async Task Migrations_ApplyCleanly_ToSqlContainer()
+    public async Task Migrations_ApplyCleanlyTwice_WithHistoryInOwnedSchema()
     {
         var ct = TestContext.CancellationToken;
+        await using (var firstRun = SqlContainerFixture.CreateTrxnContext())
+        {
+            await firstRun.Database.MigrateAsync(ct);
+        }
+
+        // Fresh context catches unqualified history-table lookup and accidental InitialCreate replay.
         await using var db = SqlContainerFixture.CreateTrxnContext();
         await db.Database.MigrateAsync(ct);
 
@@ -285,6 +291,10 @@ public class {Entity}RepositoryIntegrationTests
         var tableCount = (int)(await cmd.ExecuteScalarAsync(ct))!;
         Assert.IsGreaterThanOrEqualTo(tableCount, {ExpectedTableCount},
             $"Expected >= {ExpectedTableCount} tables in {app} schema, found {tableCount}");
+
+        cmd.CommandText = "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = '{app}' AND TABLE_NAME = '__EFMigrationsHistory'";
+        var historyTableCount = (int)(await cmd.ExecuteScalarAsync(ct))!;
+        Assert.AreEqual(1, historyTableCount, "Migration history table must be pinned to the owned schema");
     }
 
     [TestMethod]

@@ -68,6 +68,7 @@ Rules:
 6. **Reset support.** `{app}TestReset=true` clears test-local persisted auth/onboarding state before boot so reruns do not inherit an old browser session.
 7. **Publish on every state transition.** Re-publish `__{app}TestState` after navigation, auth change, and onboarding change so the harness can await the next state without a full reboot.
 8. **Startup error shape.** In the WASM startup path, publish exception type and message only. Avoid `Exception.ToString()` there; Mono can double fault while formatting stack traces after runtime/class-library mismatches.
+9. **Local-auth scope only.** This bridge proves the configured local Gateway auth path. It does not execute MSAL interactive browser behavior, the COOP-proof `localStorage` callback channel, the browser HTTP factory, or a WASM `ICustomWebUi`; require one real interactive sign-in per enabled head from the published `Release` build before live-provider deployment.
 
 ## Bridge (representative shape)
 

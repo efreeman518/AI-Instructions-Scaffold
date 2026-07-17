@@ -217,6 +217,7 @@ await repoTrxn.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, ct);
 - [ ] Update paths use updater sync pattern for child collections
 - [ ] Design-time factory exists and uses `EFCORETOOLSDB` env var
 - [ ] Migration name follows `YYYYMMDD_Description` format
+- [ ] Each migration context pins `__EFMigrationsHistory` to its owned schema in the central provider-options helper; Npgsql never relies on `search_path`
 - [ ] One migration per feature/slice -- no mega-migrations
 - [ ] CLI commands use `--context {App}DbContextTrxn` (never query context)
 - [ ] Data backfill uses background job (not inline migration SQL) for complex transforms

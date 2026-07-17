@@ -211,6 +211,82 @@ OPTIONAL_AI_FORBIDDEN_CLAIMS = (
     "missing ai configuration, runtime, or model timeout must fail red",
 )
 
+DEPLOYMENT_HARDENING_CONTRACT_REQUIREMENTS: dict[str, tuple[str, ...]] = {
+    "skills/identity-management.md": (
+        "### Three-Leg Auth-Mode Contract",
+        "DI registration, endpoint mapping, and client affordances",
+        "`GET /auth/mode`",
+        "`/auth/login`, `/auth/register`, and `/auth/refresh`",
+        "### Admin Portal / Entra External ID Deployment Runbook",
+        "`WindowsAzureActiveDirectoryIntegratedApp`",
+    ),
+    "skills/gateway.md": (
+        "## Multi-Hop Forwarded Headers and Path-Base Hosting",
+        "`X-Forwarded-Host`",
+        "`ForwardLimit = null`",
+        "`UsePathBase`",
+    ),
+    "support/data-persistence-advanced.md": (
+        "npgsql.MigrationsHistoryTable(\"__EFMigrationsHistory\", schema)",
+        '"$user", public',
+    ),
+    "skills/package-dependencies.md": (
+        "`runtimes/<rid>/native/`",
+        "`NativeLibrary.SetDllImportResolver`",
+        "`PackageCopyToOutput=true`",
+        "glibc",
+    ),
+    "skills/ui-uno-mvux.md": (
+        "`ICustomWebUi`",
+        "`#if __WASM__`",
+        "`globalThis.open`",
+        "`Cross-Origin-Opener-Policy`",
+        "`login-callback.htm`",
+        "`localStorage`",
+        "`.WithHttpClientFactory(...)`",
+        "one real interactive sign-in per enabled UI head",
+        "published `Release` build",
+    ),
+    "skills/ui-uno-platforms.md": (
+        "### Skia Browser-WASM Cold-Start Renderer Race",
+        "`BrowserRenderer.requestRender`",
+        "latest stable Uno packages",
+        "refresh is diagnostic evidence only",
+    ),
+    "skills/testing-quality.md": (
+        "### Uno WASM: Published Release Cold-Start Proof",
+        "`BrowserRenderer.requestRender`",
+        "site data empty",
+    ),
+    "patterns/expected-output-index.md": (
+        "login-callback.htm",
+        "EntraAuthService.cs",
+    ),
+    "support/execution-gates.md": (
+        "DI registration, endpoint mapping, and client affordances",
+        "one real interactive sign-in per enabled UI head",
+        "published `Release` build",
+        "`login-callback.htm`",
+        "`localStorage`",
+    ),
+    "support/final-scaffold-checklist.md": (
+        "Prove Uno WASM first-visit Release startup",
+        "`BrowserRenderer.requestRender`",
+        "Refresh-only success does not pass",
+    ),
+    "templates/test-templates-integration.md": (
+        "Fresh context catches unqualified history-table lookup",
+        "Migration history table must be pinned to the owned schema",
+    ),
+}
+
+DEPLOYMENT_HARDENING_FORBIDDEN_CLAIMS: dict[str, tuple[str, ...]] = {
+    "skills/ui-uno-platforms.md": (
+        "intentionally ungated",
+        "refresh is the fix",
+    ),
+}
+
 
 class Findings:
     def __init__(self) -> None:
@@ -570,6 +646,29 @@ def check_optional_ai_contract(findings: Findings) -> None:
                     INSTRUCTIONS_ROOT / rel,
                     f"optional live-AI contract contains deprecated failure claim: {claim!r}",
                 )
+
+
+def check_deployment_hardening_contract(findings: Findings) -> None:
+    """Keep auth, proxy, migration, WASM, and native deployment lessons from regressing."""
+    for rel, required in DEPLOYMENT_HARDENING_CONTRACT_REQUIREMENTS.items():
+        path = INSTRUCTIONS_ROOT / rel
+        if not path.exists():
+            findings.err(path, "deployment-hardening contract file is missing")
+            continue
+        text = path.read_text(encoding="utf-8")
+        for phrase in required:
+            if phrase not in text:
+                findings.err(path, f"deployment-hardening contract is missing required policy: {phrase!r}")
+
+    for rel, forbidden in DEPLOYMENT_HARDENING_FORBIDDEN_CLAIMS.items():
+        path = INSTRUCTIONS_ROOT / rel
+        if not path.exists():
+            findings.err(path, "deployment-hardening contract file is missing")
+            continue
+        text = path.read_text(encoding="utf-8").lower()
+        for phrase in forbidden:
+            if phrase.lower() in text:
+                findings.err(path, f"deployment-hardening contract contains forbidden claim: {phrase!r}")
 
 
 # Matches x.y.z(-suffix) but not segments of 4-part dotted quads (IP addresses).
@@ -1122,6 +1221,7 @@ def main() -> int:
     check_payload_shape(findings)
     check_readme_install_table(findings)
     check_optional_ai_contract(findings)
+    check_deployment_hardening_contract(findings)
     check_phase5_load_set(findings)
     check_phase5_template_coverage(findings)
     check_loadset_token_budget(findings)

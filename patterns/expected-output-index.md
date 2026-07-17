@@ -152,6 +152,7 @@ Source: [../skills/ui-uno.md](../skills/ui-uno.md), [../skills/ui-uno-shell.md](
 | Android platform glue | `src/UI/{Project}.Uno/Platforms/Android/AndroidManifest.xml`, `Main.Android.cs`, `MainActivity.Android.cs`, `Resources/` |
 | iOS platform glue | `src/UI/{Project}.Uno/Platforms/iOS/Info.plist`, `Entitlements.plist`, `Main.iOS.cs`, `PrivacyInfo.xcprivacy` |
 | WASM platform glue | `src/UI/{Project}.Uno/Platforms/WebAssembly/WasmScripts/AppManifest.js` |
+| WASM MSAL browser path (when Entra/MSAL is supported) | `src/UI/{Project}.Uno/Platforms/WebAssembly/WasmPopupWebUi.cs` (`ICustomWebUi`, `#if __WASM__`); `login-callback.htm` in the Uno head's static-web-assets root, published at the registered callback path; `src/UI/{Project}.Uno/Services/EntraAuthService.cs` (`.WithHttpClientFactory(...)`) |
 
 ## React UI (Phase 5c, optional - `includeReactUI: true`)
 

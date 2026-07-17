@@ -246,6 +246,12 @@ Browser diagnostics are part of the harness, not an optional debugging add-on. C
 
 Install the `window.onerror` / `unhandledrejection` capture with `AddInitScriptAsync` before navigating so early Mono/WASM failures are retained.
 
+### Uno WASM: Published Release Cold-Start Proof
+
+At least one preview/deployment smoke uses the published `Release` Skia browser-WASM output and a fresh browser profile/context with cache, service workers, local storage, and other site data empty. Install console/page-error capture before the first navigation, then require the splash to clear and the first canvas/bridge-ready state to appear without a fatal startup exception.
+
+If the first load reports `BrowserRenderer.requestRender` / `NullReferenceException` but refresh succeeds, keep the cold-start smoke red and follow [ui-uno-platforms.md](ui-uno-platforms.md) section Skia Browser-WASM Cold-Start Renderer Race. Warm-storage or refresh-only proof cannot substitute for first-visit acceptance.
+
 ### Uno WASM: Slow Router After Many Navigations
 
 Increase late-lifecycle assertions to `60000` when page loads occur after several navigations in same shared page.
@@ -314,6 +320,7 @@ All test projects must be registered in the `.slnx` so both Test Explorers disco
 - [ ] `WasmUI` tests use named Aspire endpoints and `CreateHttpClient(resource, "http")`, not fixed local ports.
 - [ ] `WasmUI` assemblies are `[assembly: DoNotParallelize]`.
 - [ ] WASM browser diagnostics capture console, errors, failed requests, response errors, URL, HTML, scripts, canvas count, body text, and bridge state.
+- [ ] Published Release Uno WASM cold-start smoke begins with empty browser site data and reaches first render without `BrowserRenderer.requestRender` startup failure.
 - [ ] Selector strategy is stable for the target UI tech.
 - [ ] UI assertions are structural, not seed/count-dependent.
 - [ ] Uno WASM uses one startup budget, default at least 1800 s for cold restore/build plus AppHost and browser launch; step caps never extend it.

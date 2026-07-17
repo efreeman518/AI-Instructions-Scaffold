@@ -366,8 +366,9 @@ Delivery checks:
 
 | Mode | Required |
 |---|---|
-| Scaffold (default) | `AuthMode` toggle present in config (`Scaffold` vs provider name); app boots and all endpoints reachable with scaffold principal; auth stubs/no-op passthrough removed or gated behind `AuthMode`; endpoint tests pass against the scaffold auth path |
-| Live provider (only when intentionally provisioned) | Auth provider configured with real tenant values; authenticated endpoint behavior verified against live tokens; scaffold stub gated by config so it does not activate in production |
+| Scaffold/Local (default) | `AuthMode` toggle present; app boots with scaffold/local principal; DI registration, endpoint mapping, and client affordances select the local path; anonymous `GET /auth/mode` reports the selected public mode; local login/register/refresh routes exist; endpoint and presentation tests pass |
+| Entra code path (provider may still be deferred) | Entra handler selected; anonymous `GET /auth/mode` reports `Entra`; local login/register/refresh routes return 404 because they are not mapped; clients hide the local email form and expose only the Entra action; mode-matrix tests pass without requiring a live tenant; Uno browser-WASM includes `ICustomWebUi`, same-origin `login-callback.htm` using the COOP-proof `localStorage` return channel, and a plain browser `HttpClient` factory |
+| Live provider (only when intentionally provisioned) | Auth provider configured with real tenant values; registration/roles/consent complete; authenticated endpoint behavior verified against live tokens; scaffold stub cannot activate; one real interactive sign-in per enabled UI head from the published `Release` build verifies its actual browser/mobile/desktop mechanism |
 
 Commands:
 
@@ -376,7 +377,7 @@ dotnet build
 dotnet test --filter "TestCategory=Endpoint"
 ```
 
-If live Entra setup is not yet performed, log it in `HANDOFF.md` as a deployment-only dependency and continue.
+If live Entra setup is not yet performed, log registration/roles/consent plus per-head published-Release interactive sign-in in `HANDOFF.md` as deployment-only dependencies and continue. Automated auth bypass or Debug-only sign-in cannot satisfy the live interactive gate.
 
 ### AI Integration (within 5e, when `includeAiServices: true`)
 
