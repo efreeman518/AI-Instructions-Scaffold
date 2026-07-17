@@ -392,10 +392,12 @@ Use the class name from the output - the generated name cannot be predicted from
 
 Treat this as an upstream-runtime candidate only when the exact evidence is present: a published `Release` Skia browser-WASM build hangs on the splash during a first visit with empty site storage, and the early console trace shows `BrowserRenderer.requestRender` in `Uno.Runtime.Wasm.js` entering managed rendering before renderer state exists, followed by `NullReferenceException`. A later refresh or warm-storage visit may succeed because initialization timing changed; that does not make the first-load failure acceptable.
 
+Known reproduced case (2026-07-17): `Uno.Sdk` `6.5.36` produced `BrowserRenderer.requestRender` followed by managed `Arg_NullReferenceException` on published `Release` cold start. A temporary `6.6.0-dev.166` pin passed the same fresh-profile proof without refresh or retry. Treat that preview pin only as a time-boxed upstream workaround: record it and its removal criterion in `HANDOFF.md`, then replace it with a compatible stable `Uno.Sdk` 6.6 or later as soon as one is available and rerun the cold-start proof.
+
 Diagnosis and response:
 
 1. Capture console/page errors before navigation, preserve the full JS/managed stack, and reproduce from a fresh browser profile or context with cache, service workers, and site storage empty.
-2. Rebuild/publish cleanly in `Release`, update to the latest stable Uno packages, and repeat the cold-load proof. Do not infer a framework bug from a stale Debug build or mixed `bin`/`obj` output.
+2. Rebuild/publish cleanly in `Release`, update to the latest unaffected stable Uno packages, and repeat the cold-load proof. Do not infer a framework bug from a stale Debug build or mixed `bin`/`obj` output.
 3. If the exact race remains, create or update the upstream Uno issue with a minimal reproduction, package versions, browser/OS, Release publish command, cold-profile steps, and trace. Record the issue/owner in `HANDOFF.md` and `.scaffold/INSTRUCTION-GAPS.md` when it blocks deployment.
 4. Do not add sleeps, retry loops, exception suppression, or a forced refresh to app startup. A manual refresh is diagnostic evidence only, not a production fix or passing acceptance result.
 

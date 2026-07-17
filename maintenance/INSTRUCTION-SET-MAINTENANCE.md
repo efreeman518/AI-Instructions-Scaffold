@@ -83,6 +83,7 @@ CANARIES = {
     "NU1011": "skills/package-dependencies.md",  # CPM + floating-version restore-failure rule tied to the central-package-version mandate
     "10.9.1": "support/tech-design-diagrams.md",  # @mermaid-js/mermaid-cli pin for deterministic SVG render; volatile
     "1.12.1": "skills/ui-uno-platforms.md",  # Resizetizer WASM manifest-path workaround pin (drop when upstream fixes); volatile
+    "6.6.0-dev.166": "skills/ui-uno-platforms.md",  # temporary renderer-race pin; replace with stable 6.6+; volatile
     "Never rename a migration after it has been shared": "support/data-persistence-advanced.md",  # migration-immutability rule owned with the migration content
     "SKIP_ALWAYS_ENCRYPTED_SETUP": "support/data-persistence-advanced.md",  # Always Encrypted local-green gating + full mechanics live once here; interview/domain-spec point in by topic name only
     "4 GB swap": "support/troubleshooting.md",  # Aspire mesh container resource floor; operator-setup/testing point here without the number

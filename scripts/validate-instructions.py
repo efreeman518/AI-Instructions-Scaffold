@@ -22,9 +22,8 @@ Checks:
     and every dir in INSTRUCTIONS_DIRS appears in README.md's "What it places"
     table (catches "installer copies GROUND-RULES.md, README table forgot it").
   - Bare-version prose guard (GR-08): no unallowlisted semver-looking string
-    (x.y.z) in payload markdown. IP addresses are excluded; the quarantined
-    version-pin owner (skills/ai-integration.md) and reasoned constraints are
-    allowlisted in VERSION_PROSE_ALLOWLIST.
+    (x.y.z) in payload markdown. IP addresses are excluded; quarantined or
+    reasoned version constraints are allowlisted in VERSION_PROSE_ALLOWLIST.
   - Deprecated-layout guard: generated solutions/config stay at the repo root,
     production projects stay under src/, and test projects stay under tests/.
   - Section-anchor existence: when prose says ``[label](file.md) section Section Name``
@@ -87,7 +86,7 @@ VERSION_PROSE_ALLOWLIST: dict[str, set[str] | None] = {
     "skills/ai-integration.md": None,  # quarantined preview-pin owner (canary-guarded)
     "skills/package-dependencies.md": {"9.2.0", "1.0.104", "0.1.0"},  # GR-08 rule's own counter-examples + packable default
     "skills/azure-data-storage.md": {"1.12.0", "10.0.2"},  # minimum-version constraints with inline reasons
-    "skills/ui-uno-platforms.md": {"1.12.1"},  # upstream Resizetizer bug citation
+    "skills/ui-uno-platforms.md": {"1.12.1", "6.5.36", "6.6.0-dev.166"},  # upstream Uno WASM bug evidence/workarounds
     "ai/implementation-plan.md": {"0.1.0"},  # packable project default version
     "GROUND-RULES.md": {"1.0.104"},  # GR-08 rule's own counter-example
     "support/tech-design-diagrams.md": {"10.9.1"},  # mermaid-cli pin for deterministic SVG rendering (inline reason)
@@ -250,7 +249,10 @@ DEPLOYMENT_HARDENING_CONTRACT_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "skills/ui-uno-platforms.md": (
         "### Skia Browser-WASM Cold-Start Renderer Race",
         "`BrowserRenderer.requestRender`",
-        "latest stable Uno packages",
+        "`Uno.Sdk` `6.5.36`",
+        "`6.6.0-dev.166`",
+        "stable `Uno.Sdk` 6.6 or later",
+        "latest unaffected stable Uno packages",
         "refresh is diagnostic evidence only",
     ),
     "skills/testing-quality.md": (
