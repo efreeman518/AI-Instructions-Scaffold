@@ -475,6 +475,9 @@ def verify_install(target_root: Path, instructions_only: bool) -> int:
 
     managed_files: dict[str, str] = manifest["managedFiles"]
     managed_blocks: dict[str, str] = manifest["managedBlocks"]
+    # The manifest's recorded scope narrows verification alongside the CLI flag:
+    # an instructions-only manifest simply has no harness records to verify.
+    instructions_only = instructions_only or manifest.get("scope") == "instructions-only"
     required = list(SMOKE_CHECK_PAYLOAD)
     if not instructions_only:
         required += SMOKE_CHECK_HARNESS_ENTRYPOINTS
@@ -623,6 +626,15 @@ def main() -> int:
         print(f"error: {manifest_error}", file=sys.stderr)
         return 1
     expected_manifest = build_manifest(repo_root, args.instructions_only)
+    if args.instructions_only and previous_manifest and previous_manifest.get("scope") == "full":
+        # This run does not touch harness content; dropping the prior full-scope
+        # records would orphan those files from ownership and future pruning.
+        for rel, digest in previous_manifest["managedFiles"].items():
+            if not rel.startswith(".instructions/"):
+                expected_manifest["managedFiles"][rel] = digest
+        expected_manifest["managedFiles"] = dict(sorted(expected_manifest["managedFiles"].items()))
+        expected_manifest["managedBlocks"] = dict(sorted(previous_manifest["managedBlocks"].items()))
+        expected_manifest["scope"] = "full"
     removed_files, removed_blocks, prune_conflicts = plan_pruning(
         target_root,
         previous_manifest,

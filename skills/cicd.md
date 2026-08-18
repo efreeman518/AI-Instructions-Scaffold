@@ -45,7 +45,7 @@ ACR vs GHCR is a scaffold decision, not a default. Each path has a different aut
 
 ## Action References
 
-At generation time, query each action repository for its latest stable release, resolve that release tag to its commit, and write `owner/action@<resolved-commit-sha> # <stable-release-tag>` into the generated workflow. The instruction examples use `owner/action@<latest-stable-sha>` placeholders so source guidance never freezes a release or SHA. Add GitHub Actions Dependabot updates to generated repositories; review and merge its immutable-ref updates through normal CI.
+At generation time, query each action repository for its latest stable release, resolve that release tag to its commit, and write `owner/action@<resolved-commit-sha> # <stable-release-tag>` into the generated workflow. The instruction examples use `owner/action@<latest-stable-sha>` placeholders so source guidance never freezes a release or SHA. Action refs follow the same moving baseline as packages: re-resolve each action to its latest stable release during normal maintenance touches. Automated update PRs are an opt-in, not a default - see [security.md](security.md) section GitHub Dependabot for the configuration and its CI-breaking caveats.
 
 A temporary action rollback is allowed only for a specific documented issue. Record the issue or failing behavior, selected temporary release, removal condition, and validating test beside the generated ref. Remove the exception as soon as that test passes on the latest stable release.
 

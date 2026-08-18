@@ -81,9 +81,6 @@ CANARIES = {
     "intentionally blocked to force use of the concurrency-safe path": "skills/data-persistence.md",  # SaveChangesAsync 1-param NotImplementedException rule; NotImplementedException is a scan hotspot
     "Body was inferred but the method does not allow inferred body parameters": "skills/api.md",  # runtime failure behind the [FromServices] endpoint-param non-negotiable
     "NU1011": "skills/package-dependencies.md",  # CPM + floating-version restore-failure rule tied to the central-package-version mandate
-    "10.9.1": "support/tech-design-diagrams.md",  # @mermaid-js/mermaid-cli pin for deterministic SVG render; volatile
-    "1.12.1": "skills/ui-uno-platforms.md",  # Resizetizer WASM manifest-path workaround pin (drop when upstream fixes); volatile
-    "6.6.0-dev.166": "skills/ui-uno-platforms.md",  # temporary renderer-race pin; replace with stable 6.6+; volatile
     "Never rename a migration after it has been shared": "support/data-persistence-advanced.md",  # migration-immutability rule owned with the migration content
     "SKIP_ALWAYS_ENCRYPTED_SETUP": "support/data-persistence-advanced.md",  # Always Encrypted local-green gating + full mechanics live once here; interview/domain-spec point in by topic name only
     "4 GB swap": "support/troubleshooting.md",  # Aspire mesh container resource floor; operator-setup/testing point here without the number
@@ -96,6 +93,7 @@ CANARIES = {
     "Your mono runtime and class libraries are out of sync": "support/troubleshooting.md",  # WASM mono/class-lib mismatch symptom; ui-uno-platforms.md points here for the fix
     "so mesh coverage never duplicates infrastructure graphs": "skills/testing.md",  # one-AppHost-graph-per-mesh-run rule; test-templates-aspire.md + testing-quality.md point here, never restate
     "leftover manual snapshots": "support/context-tooling.md",  # graphify-out dated-snapshot cleanup rule; AGENTS.md (outside scan roots) carries only the concise end-of-session step + pointer
+    "package-ecosystem:": "skills/security.md",  # Dependabot opt-in config + CI-breaking caveats live once with the dependency-scanning owner; cicd.md points here
     "Pipeline order alone does not reject anonymous callers": "skills/gateway.md",  # forwarded-claims trust boundary lives with Gateway; API wiring points here
 }
 roots = ["skills", "patterns", "ai", "support", "schemas", "profiles", "templates"]

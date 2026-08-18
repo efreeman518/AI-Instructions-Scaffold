@@ -73,7 +73,7 @@ Flags:
 | `--update` | Deprecated no-op, kept for compatibility. Installs are always content-aware: identical target files are skipped (`[unchanged]`), differing ones are overwritten and listed (installed `.instructions/` is read-only per GR-07, so the source is SSOT). `HANDOFF.md` is always left untouched. |
 | `--instructions-only` | Copy only `<app>/.instructions/`; skip `AGENTS.md`, `.claude/commands/`, and `.github/agents/` placement (useful if you manage those separately). |
 | `--verify` | After install, verify every manifest-managed file and marker block against its SHA-256 hash. Missing or changed managed content fails; unmanifested files warn and remain untouched. |
-| `--verify-only` | Skip install entirely; run the same manifest integrity check against an existing target. Useful in CI or to confirm an unfamiliar repo is correctly wired. |
+| `--verify-only` | Skip install entirely; run the same manifest integrity check against an existing target. Verification scope follows the manifest's recorded scope (`full` or `instructions-only`). Useful in CI or to confirm an unfamiliar repo is correctly wired. |
 
 After install:
 
@@ -408,7 +408,7 @@ These references are for **maintaining and developing the instruction set itself
 
 Useful script entrypoints:
 
-- `scripts/install-to-project.py` - copy the runtime payload into a consumer app's `.instructions/` directory and place harness entrypoints at the app root. The bounded install manifest enables full managed-content verification and safe pruning of upstream-removed content; a locally changed removed file or managed block is preserved and reported as a conflict. `--verify-only` checks integrity without copying.
+- `scripts/install-to-project.py` - copy the runtime payload into a consumer app's `.instructions/` directory and place harness entrypoints at the app root. The bounded install manifest enables full managed-content verification and safe pruning of upstream-removed content; a locally changed removed file or managed block is preserved and reported as a conflict, and the install aborts before copying anything. `--verify-only` checks integrity without copying.
 - `scripts/configure-ef-packages-feed.py` - create/update target-app `nuget.config` for any private NuGet feed without writing PATs. Pass `--prefix <packagePrefix>` to map the appropriate `<packagePrefix>.*` pattern; the canonical EF.* example is the default. Only run for `packageStrategy: feed` or `hybrid`.
 - `scripts/validate-instructions.py` - author-side sanity check: relative-link integrity, phase-label canonical set, harness command-file shape, payload shape vs installer declaration, and golden-path YAML vs `schemas/*.schema.json` (full jsonschema validation when `pyyaml` + `jsonschema` are installed; stdlib structural checks otherwise). Run before committing edits to instruction files; CI runs it on every push via `.github/workflows/validate.yml`.
 - `scripts/validate-reference.py --reference-root <path>` - validate TaskFlow contracts against current schemas, tracked Markdown links, proof-map paths, explicit feature flags, high-value feature sentinels, and immutable workflow action refs. TaskFlow CI checks out the scaffold's current `main` branch and records the exact commit used as diagnostic evidence.

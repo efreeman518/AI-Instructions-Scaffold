@@ -19,48 +19,90 @@ ACTION_REF_RE = re.compile(r"\buses:\s*([^\s@]+)@([^\s#]+)")
 SHA_REF_RE = re.compile(r"^[0-9a-f]{40}$")
 PROOF_ROOTS = (".scaffold/", ".github/", "src/", "tests/", "infra/")
 
-EXPECTED_FLAGS: dict[str, object] = {
-    "scaffoldMode": "full",
-    "testingProfile": "comprehensive",
-    "applicationStyle": "switch",
-    "includeApi": True,
-    "includeGateway": True,
-    "includeFunctionApp": True,
-    "includeScheduler": True,
-    "includeUnoUI": True,
-    "includeBlazorUI": True,
-    "includeReactUI": True,
-    "includeNotifications": False,
-    "includeFlowEngine": True,
-    "flowEngineDbStrategy": "same-db-separate-schema",
-    "includeIaC": True,
-    "includeGitHubActions": True,
-    "includeAzd": False,
-    "includeAiServices": True,
-    "includeKeyVault": True,
-    "useAspire": True,
-    "migrationLifecycle": "preserved-append-only",
-    "databaseProviders": ["SqlServer"],
-    "includeArchitectureTests": True,
-    "includeE2ETests": True,
-    "includeLoadTests": True,
-    "includeBenchmarkTests": True,
-    "includeMutationTests": True,
-    "includeAspireTests": True,
-    "includePlaywrightUITests": True,
-    "includeMobileTests": True,
-}
+# Evidence is conditional on what the reference app itself declares in
+# .scaffold/resource-implementation.yaml: schema validation owns shape and
+# enums, this file owns declared-vs-wired agreement. Each entry is
+# (conditions, sentinels, paths) - conditions is an OR-list of AND-dicts over
+# declared keys; when one dict fully matches, every sentinel and path in the
+# entry is required. Undeclared or falsy capabilities require nothing, so a
+# deliberate reference config change needs no scaffold-side edit.
+CONDITIONAL_EVIDENCE: tuple[
+    tuple[tuple[dict[str, object], ...], tuple[tuple[str, str], ...], tuple[str, ...]], ...
+] = (
+    (
+        ({"applicationStyle": "switch"},),
+        (
+            ("src/Application/TaskFlow.Application.Contracts/ApplicationStyle.cs", "TASKFLOW_APPLICATION_STYLE"),
+            ("src/Host/TaskFlow.Api/WebApplicationBuilderExtensions.cs", "ApplicationStyleResolver"),
+        ),
+        (),
+    ),
+    (
+        ({"includeFlowEngine": True},),
+        (
+            ("src/Host/TaskFlow.Bootstrapper/Registration/RegisterServices.FlowEngine.cs", "AddFlowEngine"),
+            ("src/Host/TaskFlow.Api/WebApplicationBuilderExtensions.cs", "MapFlowEngineAdmin"),
+        ),
+        (
+            "src/Host/TaskFlow.Api/Workflows/ai-task-triage.json",
+            "src/Host/TaskFlow.Api/Workflows/ai-task-decomposer.json",
+            "src/Host/TaskFlow.Api/Workflows/compliance-check.json",
+            "src/Infrastructure/TaskFlow.Infrastructure.Data/Migrations/FlowEngine",
+            "tests/Test.Integration.FlowEngine/Test.Integration.FlowEngine.csproj",
+        ),
+    ),
+    (
+        ({"includeKeyVault": True, "useAspire": True},),
+        (("src/Host/Aspire/AppHost/AppHost.cs", "AddAzureKeyVault"),),
+        (),
+    ),
+    (
+        ({"includeFunctionApp": True, "includeFlowEngine": True},),
+        (("src/Host/TaskFlow.Functions/FunctionServiceBusTrigger.cs", "IWorkflowTrigger"),),
+        (),
+    ),
+    (
+        ({"includeGitHubActions": True, "includeFlowEngine": True},),
+        ((".github/workflows/ci.yml", "Test.Integration.FlowEngine"),),
+        (),
+    ),
+    (
+        ({"includeGitHubActions": True, "includeAspireTests": True},),
+        ((".github/workflows/ci.yml", "Test.Aspire"),),
+        (),
+    ),
+    (
+        ({"includeGitHubActions": True, "includePlaywrightUITests": True},),
+        ((".github/workflows/ci.yml", "Test.PlaywrightUI"),),
+        (),
+    ),
+    (
+        ({"includeAiServices": True},),
+        (),
+        ("tests/Test.FoundryLocal/Test.FoundryLocal.csproj",),
+    ),
+    (
+        ({"includeArchitectureTests": True},),
+        (),
+        ("tests/Test.Architecture/Test.Architecture.csproj",),
+    ),
+    (({"includeE2ETests": True},), (), ("tests/Test.E2E/Test.E2E.csproj",)),
+    (({"includeLoadTests": True},), (), ("tests/Test.Load/Test.Load.csproj",)),
+    (({"includeBenchmarkTests": True},), (), ("tests/Test.Benchmarks/Test.Benchmarks.csproj",)),
+    (({"includeMutationTests": True},), (), ("tests/Test.Mutation/Test.Mutation.csproj",)),
+    (({"includeAspireTests": True},), (), ("tests/Test.Aspire/Test.Aspire.csproj",)),
+    (({"includePlaywrightUITests": True},), (), ("tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj",)),
+    (({"includeMobileTests": True},), (), ("tests/Test.Mobile/Test.Mobile.csproj",)),
+    (
+        ({"includeUnoUI": True}, {"includeBlazorUI": True}, {"includeReactUI": True}),
+        (),
+        ("tests/Test.UI/Test.UI.csproj",),
+    ),
+)
 
-SENTINELS: tuple[tuple[str, str], ...] = (
-    ("src/Application/TaskFlow.Application.Contracts/ApplicationStyle.cs", "TASKFLOW_APPLICATION_STYLE"),
-    ("src/Host/TaskFlow.Api/WebApplicationBuilderExtensions.cs", "ApplicationStyleResolver"),
-    ("src/Host/TaskFlow.Bootstrapper/Registration/RegisterServices.FlowEngine.cs", "AddFlowEngine"),
-    ("src/Host/TaskFlow.Api/WebApplicationBuilderExtensions.cs", "MapFlowEngineAdmin"),
-    ("src/Host/Aspire/AppHost/AppHost.cs", "AddAzureKeyVault"),
-    ("src/Host/TaskFlow.Functions/FunctionServiceBusTrigger.cs", "IWorkflowTrigger"),
-    (".github/workflows/ci.yml", "Test.Integration.FlowEngine"),
-    (".github/workflows/ci.yml", "Test.Aspire"),
-    (".github/workflows/ci.yml", "Test.PlaywrightUI"),
+# Required regardless of declared capabilities: the terminal handoff contract,
+# the capability-status legend, and the base test suites every scaffold carries.
+ALWAYS_SENTINELS: tuple[tuple[str, str], ...] = (
     ("HANDOFF.md", "workflowStatus: complete"),
     (".scaffold/REFERENCE-STATUS.md", "- `proven`:"),
     (".scaffold/REFERENCE-STATUS.md", "- `deployment-only`:"),
@@ -68,25 +110,10 @@ SENTINELS: tuple[tuple[str, str], ...] = (
     (".scaffold/REFERENCE-STATUS.md", "- `not enabled`:"),
 )
 
-REQUIRED_PATHS: tuple[str, ...] = (
-    "src/Host/TaskFlow.Api/Workflows/ai-task-triage.json",
-    "src/Host/TaskFlow.Api/Workflows/ai-task-decomposer.json",
-    "src/Host/TaskFlow.Api/Workflows/compliance-check.json",
-    "src/Infrastructure/TaskFlow.Infrastructure.Data/Migrations/FlowEngine",
+ALWAYS_PATHS: tuple[str, ...] = (
     "tests/Test.Unit/Test.Unit.csproj",
-    "tests/Test.Architecture/Test.Architecture.csproj",
     "tests/Test.Endpoints/Test.Endpoints.csproj",
-    "tests/Test.E2E/Test.E2E.csproj",
     "tests/Test.Integration/Test.Integration.csproj",
-    "tests/Test.Integration.FlowEngine/Test.Integration.FlowEngine.csproj",
-    "tests/Test.Aspire/Test.Aspire.csproj",
-    "tests/Test.FoundryLocal/Test.FoundryLocal.csproj",
-    "tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj",
-    "tests/Test.UI/Test.UI.csproj",
-    "tests/Test.Mobile/Test.Mobile.csproj",
-    "tests/Test.Load/Test.Load.csproj",
-    "tests/Test.Mutation/Test.Mutation.csproj",
-    "tests/Test.Benchmarks/Test.Benchmarks.csproj",
 )
 
 
@@ -160,31 +187,40 @@ def load_and_validate_yaml(reference_root: Path) -> tuple[dict, list[str]]:
     return resource, errors
 
 
-def check_flags(resource: dict) -> list[str]:
+def _sentinel_errors(reference_root: Path, sentinels: tuple[tuple[str, str], ...], label: str) -> list[str]:
     errors: list[str] = []
-    for key, expected in EXPECTED_FLAGS.items():
-        if key not in resource:
-            errors.append(f".scaffold/resource-implementation.yaml: explicit flag '{key}' is missing")
-        elif resource[key] != expected:
-            errors.append(
-                f".scaffold/resource-implementation.yaml: {key}={resource[key]!r}, expected {expected!r}"
-            )
-    if resource.get("includeNotifications") is False and resource.get("notifications"):
-        errors.append(".scaffold/resource-implementation.yaml: disabled notifications must not define notification entries")
+    for rel, expected in sentinels:
+        path = reference_root / rel
+        if not path.is_file():
+            errors.append(f"{label}: missing sentinel file: {rel}")
+        elif expected not in path.read_text(encoding="utf-8"):
+            errors.append(f"{label}: {rel}: missing feature sentinel '{expected}'")
     return errors
 
 
-def check_sentinels(reference_root: Path) -> list[str]:
+def check_declared_evidence(reference_root: Path, resource: dict) -> list[str]:
+    """Declared-vs-wired agreement: every capability the reference declares must show its evidence."""
     errors: list[str] = []
-    for rel in REQUIRED_PATHS:
+    if resource.get("includeNotifications") is False and resource.get("notifications"):
+        errors.append(".scaffold/resource-implementation.yaml: disabled notifications must not define notification entries")
+
+    errors.extend(_sentinel_errors(reference_root, ALWAYS_SENTINELS, "always"))
+    for rel in ALWAYS_PATHS:
         if not (reference_root / rel).exists():
-            errors.append(f"missing reference proof path: {rel}")
-    for rel, expected in SENTINELS:
-        path = reference_root / rel
-        if not path.is_file():
-            errors.append(f"missing sentinel file: {rel}")
-        elif expected not in path.read_text(encoding="utf-8"):
-            errors.append(f"{rel}: missing feature sentinel '{expected}'")
+            errors.append(f"always: missing reference proof path: {rel}")
+
+    for conditions, sentinels, paths in CONDITIONAL_EVIDENCE:
+        matched = next(
+            (cond for cond in conditions if all(resource.get(k) == v for k, v in cond.items())),
+            None,
+        )
+        if matched is None:
+            continue
+        label = ", ".join(f"{k}={v}" for k, v in matched.items())
+        errors.extend(_sentinel_errors(reference_root, sentinels, label))
+        for rel in paths:
+            if not (reference_root / rel).exists():
+                errors.append(f"{label}: missing declared-capability path: {rel}")
     return errors
 
 
@@ -228,15 +264,62 @@ def check_action_refs(reference_root: Path) -> list[str]:
     return errors
 
 
+DEPENDABOT_REL = ".github/dependabot.yml"
+DEPENDABOT_ECOSYSTEM_RE = re.compile(r"package-ecosystem:\s*[\"']?([A-Za-z-]+)[\"']?")
+DEPENDABOT_DIRECTORY_RE = re.compile(r"directory:\s*[\"']?([^\s\"']+)[\"']?")
+NUGET_FEED_RE = re.compile(r'<add key="[^"]+" value="(https?://[^"]+)"')
+
+
+def check_dependabot(reference_root: Path) -> list[str]:
+    """Dormant guard: a Dependabot opt-in must be configured so its update jobs and PRs can pass."""
+    path = reference_root / DEPENDABOT_REL
+    if not path.is_file():
+        return []
+    errors: list[str] = []
+    text = path.read_text(encoding="utf-8")
+    entries: list[tuple[str, str]] = []
+    ecosystem: str | None = None
+    for line in text.splitlines():
+        eco_match = DEPENDABOT_ECOSYSTEM_RE.search(line)
+        if eco_match:
+            ecosystem = eco_match.group(1)
+            continue
+        dir_match = DEPENDABOT_DIRECTORY_RE.search(line)
+        if dir_match and ecosystem:
+            entries.append((ecosystem, dir_match.group(1)))
+            ecosystem = None
+
+    for eco, directory in entries:
+        root = reference_root / directory.lstrip("/")
+        if eco == "npm" and not (root / "package.json").is_file():
+            errors.append(f"{DEPENDABOT_REL}: npm directory '{directory}' has no package.json")
+        if eco == "nuget" and not (
+            list(root.glob("*.csproj")) or list(root.glob("*.sln*"))
+            or (root / "Directory.Packages.props").is_file()
+        ):
+            errors.append(f"{DEPENDABOT_REL}: nuget directory '{directory}' has no project or packages file")
+
+    nuget_config = reference_root / "nuget.config"
+    private_feed = nuget_config.is_file() and any(
+        "nuget.org" not in feed for feed in NUGET_FEED_RE.findall(nuget_config.read_text(encoding="utf-8"))
+    )
+    if private_feed and any(eco == "nuget" for eco, _ in entries) and "registries:" not in text:
+        errors.append(
+            f"{DEPENDABOT_REL}: nuget ecosystem with a private feed in nuget.config requires a "
+            "registries block backed by a Dependabot secret"
+        )
+    return errors
+
+
 def validate_reference(reference_root: Path) -> list[str]:
     if not reference_root.is_dir():
         return [f"reference root is not a directory: {reference_root}"]
     resource, errors = load_and_validate_yaml(reference_root)
     errors.extend(check_markdown_links(reference_root))
     errors.extend(check_proof_map(reference_root))
-    errors.extend(check_flags(resource))
-    errors.extend(check_sentinels(reference_root))
+    errors.extend(check_declared_evidence(reference_root, resource))
     errors.extend(check_action_refs(reference_root))
+    errors.extend(check_dependabot(reference_root))
     return errors
 
 
@@ -251,7 +334,7 @@ def main() -> int:
             print(f"[fail] {error}")
         print(f"\n[fail] reference validation found {len(errors)} issue(s)")
         return 1
-    print(f"[ok] reference contracts, links, proof paths, feature sentinels, and action refs match {root}")
+    print(f"[ok] reference contracts, links, proof paths, declared-capability evidence, action refs, and dependabot config match {root}")
     return 0
 
 

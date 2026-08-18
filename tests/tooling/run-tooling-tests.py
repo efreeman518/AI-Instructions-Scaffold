@@ -141,28 +141,32 @@ class InstallerTests(unittest.TestCase):
         )
         self.assertIn("[README.md](README.md)", untouched)
 
-    def _make_complete_install(self, root: Path) -> None:
+    def _make_complete_install(self, root: Path, scope: str = "full") -> None:
         managed_files: dict[str, str] = {}
         managed_blocks: dict[str, str] = {}
         merge_targets = {
             dst_rel for _src, dst_rel, kind in installer.AGENT_COPIES if kind == "merge"
         }
-        for rel in installer.SMOKE_CHECK_PAYLOAD + installer.SMOKE_CHECK_HARNESS_ENTRYPOINTS:
+        expected = list(installer.SMOKE_CHECK_PAYLOAD)
+        if scope == "full":
+            expected += installer.SMOKE_CHECK_HARNESS_ENTRYPOINTS
+        for rel in expected:
             p = root / rel
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text("x\n", encoding="utf-8")
             if rel not in merge_targets:
                 managed_files[rel] = installer.hash_file(p)
-        for _src, dst_rel, kind in installer.AGENT_COPIES:
-            if kind == "merge":
-                (root / dst_rel).write_text(
-                    installer.MERGE_SENTINEL_START + "\nx\n" + installer.MERGE_SENTINEL_END + "\n",
-                    encoding="utf-8",
-                )
-                managed_blocks[dst_rel] = installer.hash_bytes(b"x")
+        if scope == "full":
+            for _src, dst_rel, kind in installer.AGENT_COPIES:
+                if kind == "merge":
+                    (root / dst_rel).write_text(
+                        installer.MERGE_SENTINEL_START + "\nx\n" + installer.MERGE_SENTINEL_END + "\n",
+                        encoding="utf-8",
+                    )
+                    managed_blocks[dst_rel] = installer.hash_bytes(b"x")
         manifest = {
             "format": installer.MANIFEST_FORMAT,
-            "scope": "full",
+            "scope": scope,
             "sourceRepository": "https://example.test/scaffold",
             "managedFiles": managed_files,
             "managedBlocks": managed_blocks,
@@ -383,6 +387,37 @@ class InstallerTests(unittest.TestCase):
             self.assertEqual(installer.main(), 0)
         self.assertFalse((dry / installer.MANIFEST_REL).exists())
 
+    def test_verify_install_honors_manifest_scope(self):
+        root = self.tmp / "scoped"
+        self._make_complete_install(root, scope="instructions-only")
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(installer.verify_install(root, False), 0)
+
+    def test_instructions_only_reinstall_preserves_full_scope_records(self):
+        app = self.tmp / "rescoped"
+        app.mkdir()
+        with (
+            mock.patch.object(sys, "argv", ["install-to-project.py", "--target", str(app)]),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(installer.main(), 0)
+        with (
+            mock.patch.object(
+                sys,
+                "argv",
+                ["install-to-project.py", "--target", str(app), "--instructions-only"],
+            ),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(installer.main(), 0)
+        manifest, error = installer.load_manifest(app)
+        self.assertIsNone(error)
+        self.assertEqual(manifest["scope"], "full")
+        self.assertTrue(manifest["managedBlocks"])
+        self.assertTrue(any(not rel.startswith(".instructions/") for rel in manifest["managedFiles"]))
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(installer.verify_install(app, False), 0)
+
 
 class WorkflowStateContractTests(unittest.TestCase):
     def test_handoff_template_uses_explicit_active_terminal_contract(self):
@@ -409,14 +444,45 @@ class ReferenceValidatorTests(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp(prefix="tooling-reference-"))
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
 
-    def test_feature_flags_require_explicit_current_values(self):
-        resource = dict(reference_validator.EXPECTED_FLAGS)
-        self.assertEqual(reference_validator.check_flags(resource), [])
-        resource.pop("includeFlowEngine")
-        resource["includeGitHubActions"] = False
-        errors = reference_validator.check_flags(resource)
-        self.assertTrue(any("includeFlowEngine" in error and "missing" in error for error in errors))
-        self.assertTrue(any("includeGitHubActions=False" in error for error in errors))
+    def _make_always_evidence(self) -> None:
+        (self.tmp / "HANDOFF.md").write_text("workflowStatus: complete\n", encoding="utf-8")
+        status = self.tmp / ".scaffold" / "REFERENCE-STATUS.md"
+        status.parent.mkdir(parents=True, exist_ok=True)
+        status.write_text(
+            "- `proven`:\n- `deployment-only`:\n- `documented-only`:\n- `not enabled`:\n",
+            encoding="utf-8",
+        )
+        for rel in reference_validator.ALWAYS_PATHS:
+            p = self.tmp / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text("x", encoding="utf-8")
+
+    def test_declared_evidence_is_flag_conditional(self):
+        self._make_always_evidence()
+        # Undeclared capabilities require nothing beyond the always set.
+        self.assertEqual(reference_validator.check_declared_evidence(self.tmp, {}), [])
+        # A declared capability without its wiring evidence is an error.
+        errors = reference_validator.check_declared_evidence(
+            self.tmp, {"includeKeyVault": True, "useAspire": True}
+        )
+        self.assertTrue(any("missing sentinel file: src/Host/Aspire/AppHost/AppHost.cs" in error for error in errors))
+        apphost = self.tmp / "src" / "Host" / "Aspire" / "AppHost" / "AppHost.cs"
+        apphost.parent.mkdir(parents=True, exist_ok=True)
+        apphost.write_text("// no key vault wiring", encoding="utf-8")
+        errors = reference_validator.check_declared_evidence(
+            self.tmp, {"includeKeyVault": True, "useAspire": True}
+        )
+        self.assertTrue(any("AddAzureKeyVault" in error for error in errors))
+        # Turning the capability off removes the requirement - no scaffold edit needed.
+        self.assertEqual(
+            reference_validator.check_declared_evidence(self.tmp, {"includeKeyVault": False, "useAspire": True}),
+            [],
+        )
+        # Declared-config self-consistency is retained.
+        errors = reference_validator.check_declared_evidence(
+            self.tmp, {"includeNotifications": False, "notifications": [{"name": "x"}]}
+        )
+        self.assertTrue(any("notification entries" in error for error in errors))
 
     def test_markdown_links_detect_missing_tracked_target(self):
         docs = self.tmp / "docs"
@@ -439,6 +505,48 @@ class ReferenceValidatorTests(unittest.TestCase):
             encoding="utf-8",
         )
         self.assertEqual(reference_validator.check_action_refs(self.tmp), [])
+
+    def test_dependabot_config_requires_manifests_and_registries(self):
+        # No config file: nothing to check (dormant guard).
+        self.assertEqual(reference_validator.check_dependabot(self.tmp), [])
+        gh = self.tmp / ".github"
+        gh.mkdir(parents=True)
+        config = gh / "dependabot.yml"
+        config.write_text(
+            "version: 2\n"
+            "updates:\n"
+            "  - package-ecosystem: npm\n"
+            "    directory: /web\n"
+            '  - package-ecosystem: "nuget"\n'
+            '    directory: "/"\n',
+            encoding="utf-8",
+        )
+        (self.tmp / "nuget.config").write_text(
+            '<add key="private" value="https://nuget.pkg.github.com/x/index.json" />',
+            encoding="utf-8",
+        )
+        errors = reference_validator.check_dependabot(self.tmp)
+        self.assertTrue(any("no package.json" in error for error in errors))
+        self.assertTrue(any("no project or packages file" in error for error in errors))
+        self.assertTrue(any("registries block" in error for error in errors))
+
+        web = self.tmp / "web"
+        web.mkdir()
+        (web / "package.json").write_text("{}", encoding="utf-8")
+        (self.tmp / "Directory.Packages.props").write_text("<Project/>", encoding="utf-8")
+        config.write_text(
+            "version: 2\n"
+            "registries:\n"
+            "  private-feed:\n"
+            "    type: nuget-feed\n"
+            "updates:\n"
+            "  - package-ecosystem: npm\n"
+            "    directory: /web\n"
+            "  - package-ecosystem: nuget\n"
+            "    directory: /\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(reference_validator.check_dependabot(self.tmp), [])
 
     def test_proof_path_extraction_ignores_identifiers(self):
         proof = self.tmp / "proof.md"
@@ -667,6 +775,27 @@ class ValidatorHelperTests(unittest.TestCase):
         self.assertEqual(len(findings.errors), 1)
 
         path.write_text("- uses: actions/checkout@<latest-stable-sha>\n", encoding="utf-8")
+        findings = validator.Findings()
+        validator.check_action_reference_policy(path, findings)
+        self.assertEqual(findings.errors, [])
+
+        # Owner-agnostic: any uses: ref is checked, and concrete refs in
+        # backticked prose are rejected while <...> placeholders pass.
+        path.write_text(
+            "- uses: google-github-actions/auth@v3\n"
+            "Pin `some-owner/some-action@v2` in prose.\n",
+            encoding="utf-8",
+        )
+        findings = validator.Findings()
+        validator.check_action_reference_policy(path, findings)
+        self.assertEqual(len(findings.errors), 2)
+
+        path.write_text(
+            "- uses: ./.github/actions/local@v1\n"
+            "Write `owner/action@<resolved-commit-sha> # <stable-release-tag>` into the workflow.\n"
+            "See `azure/login@<latest-stable-sha>` for OIDC.\n",
+            encoding="utf-8",
+        )
         findings = validator.Findings()
         validator.check_action_reference_policy(path, findings)
         self.assertEqual(findings.errors, [])

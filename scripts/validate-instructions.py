@@ -333,6 +333,14 @@ DEPLOYMENT_HARDENING_CONTRACT_REQUIREMENTS: dict[str, tuple[str, ...]] = {
         "functional CRUD smoke",
         "without rebuilding",
         "`%NUGET_AUTH_TOKEN%`",
+        "re-resolve each action to its latest stable release",
+    ),
+    "skills/security.md": (
+        "### GitHub Dependabot",
+        "Optional, not a default.",
+        "Dependabot secrets store, never repository Actions secrets",
+        "must contain its manifest",
+        "`registries:` entry with a Dependabot-secret token",
     ),
     "support/context-tooling.md": (
         "## Optional-tool contract",
@@ -740,10 +748,14 @@ def check_deployment_hardening_contract(findings: Findings) -> None:
 
 
 # Matches x.y.z(-suffix) but not segments of 4-part dotted quads (IP addresses).
-BARE_VERSION_PATTERN = re.compile(r"(?<![\d.])\d+\.\d+\.\d+(?:-[A-Za-z0-9.]+)?(?![.\d])")
-ACTION_REFERENCE_PATTERN = re.compile(
-    r"\b((?:actions|azure|Azure|docker|reactivecircus|jlumbroso)/[A-Za-z0-9_.-]+)@([^\s`\"']+)"
-)
+# A trailing sentence period does not shield a version: only a dot followed by
+# another digit (a fourth numeric part) blocks the match.
+BARE_VERSION_PATTERN = re.compile(r"(?<![\d.])\d+\.\d+\.\d+(?:-[A-Za-z0-9.]+)?(?!\.?\d)")
+# Action-ref policy, owner-agnostic: every `uses:` ref must be the literal
+# placeholder, and a backticked owner/name@ref in prose may only carry a
+# `<...>` placeholder (so policy text can show `owner/action@<resolved-commit-sha>`).
+USES_REFERENCE_PATTERN = re.compile(r"\buses:\s*([^\s@]+)@([^\s#]+)")
+TICKED_ACTION_PATTERN = re.compile(r"`([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)@([^`]+)`")
 
 
 def check_version_prose(path: Path, findings: Findings) -> None:
@@ -768,12 +780,21 @@ def check_version_prose(path: Path, findings: Findings) -> None:
 def check_action_reference_policy(path: Path, findings: Findings) -> None:
     """Generated-action examples resolve latest stable at generation, never in source."""
     for line_no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-        for match in ACTION_REFERENCE_PATTERN.finditer(line):
+        for match in USES_REFERENCE_PATTERN.finditer(line):
+            if match.group(1).startswith("./"):
+                continue
             if match.group(2) != "<latest-stable-sha>":
                 findings.err(
                     path,
                     f"line {line_no}: action reference '{match.group(0)}' must use "
                     "<latest-stable-sha>; generation resolves the current stable release to a full SHA",
+                )
+        for match in TICKED_ACTION_PATTERN.finditer(line):
+            if not match.group(2).startswith("<"):
+                findings.err(
+                    path,
+                    f"line {line_no}: concrete action ref '{match.group(0)}' in prose - "
+                    "use a <...> placeholder; generation resolves the current stable release",
                 )
 
 

@@ -204,10 +204,19 @@ Add `dotnet nuget audit` to CI builds:
 
 ### GitHub Dependabot
 
+Optional, not a default. The baseline freshness path is refresh-on-touch plus the vulnerability audit gate ([../support/execution-gates.md](../support/execution-gates.md) section Vulnerability Audit): dependencies and action refs are re-resolved to latest stable during normal maintenance, and the audit blocks known-vulnerable resolutions. Enable Dependabot only when the team owns the resulting PR churn, and account for two CI-breaking caveats:
+
+- Dependabot-triggered workflow runs read the separate Dependabot secrets store, never repository Actions secrets. Register every restore credential the CI workflow requires (e.g. `NUGET_PAT`) as a Dependabot secret too, or every Dependabot PR fails CI.
+- Each `npm`/`nuget` ecosystem `directory:` must contain its manifest (`package.json`, or a project/props file), and a `nuget` ecosystem restoring from a private feed needs a `registries:` entry with a Dependabot-secret token.
+
 ```yaml
 # .github/dependabot.yml
 version: 2
 updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
   - package-ecosystem: "nuget"
     directory: "/"
     schedule:
@@ -259,7 +268,7 @@ Secrets must be stored in Azure Key Vault (see [configuration-secrets.md](config
 - [ ] Security headers middleware added (X-Content-Type-Options, X-Frame-Options)
 - [ ] CORS configured in Gateway only - API rejects direct browser requests
 - [ ] `dotnet nuget audit` included in CI pipeline
-- [ ] Dependabot configured for NuGet ecosystem
+- [ ] Dependabot enabled only deliberately and configured per the GitHub Dependabot section (Dependabot secrets, manifest-per-directory, private-feed registries)
 - [ ] Data Protection configured with Azure Blob key storage and Key Vault key encryption
 - [ ] Secrets stored in Key Vault with rotation workflow documented
 - [ ] `ValidateOnStart()` used for critical configuration sections
