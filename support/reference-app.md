@@ -2,7 +2,7 @@
 
 A companion reference app that provides executable proof for selected high-value patterns without claiming universal coverage.
 
-**Repository:** <https://github.com/efreeman518/AI-Instructions-ReferenceApp>
+**Repository:** <https://github.com/efreeman518/scaffold-proof>
 
 TaskFlow is a scaffolded task-management application built by following this instruction set end-to-end. It covers dual DbContext pooling, YARP gateway with claims transformation, Aspire orchestration, FusionCache with Redis backplane, TickerQ scheduling, Azure Functions, multi-tenancy, scaffold-mode auth, Uno WASM UI, Blazor UI, and React/Vite UI.
 
@@ -29,7 +29,7 @@ For a phase-by-phase pointer map into the reference app, use [taskflow-proof-map
 
 ## How the AI accesses it
 
-- **Local clone preferred:** if `../AI-Instructions-ReferenceApp/` exists relative to the target project's parent, the AI reads TaskFlow files via the Read tool.
+- **Local clone preferred:** if `../scaffold-proof/` exists relative to the target project's parent, the AI reads TaskFlow files via the Read tool.
 - **Fallback:** GitHub MCP. Use only when the local clone is absent.
 
 ## Rules

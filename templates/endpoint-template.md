@@ -204,8 +204,8 @@ For kebab-case route segments, use `{entity-route}` in route definitions.
 
 ---
 
-**TaskFlow proof (local):** `../AI-Instructions-ReferenceApp/src/Host/TaskFlow.Api/Endpoints/TaskItemEndpoints.cs`
-**TaskFlow proof (remote fallback):** <https://github.com/efreeman518/AI-Instructions-ReferenceApp/blob/main/src/Host/TaskFlow.Api/Endpoints/TaskItemEndpoints.cs>
+**TaskFlow proof (local):** `../scaffold-proof/src/Host/TaskFlow.Api/Endpoints/TaskItemEndpoints.cs`
+**TaskFlow proof (remote fallback):** <https://github.com/efreeman518/scaffold-proof/blob/main/src/Host/TaskFlow.Api/Endpoints/TaskItemEndpoints.cs>
 
 ## CQRS Endpoint Variant
 

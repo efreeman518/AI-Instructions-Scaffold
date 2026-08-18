@@ -1,4 +1,4 @@
-# Maintaining AI-Instructions-Scaffold (source repo only)
+# Maintaining scaffold-ai (source repo only)
 
 Maintainer guide for **this** repository - the single source of truth for the instruction set. None of this ships to scaffolded apps: the `maintenance/` folder and the `.claude/skills/` maintainer skills are not in `scripts/install-to-project.py`'s copy allowlist, so they never appear under a target's `.instructions/`. (Same reason they are not linked from the shipped `README.md`/`AGENTS.md` - a link would dangle in every target app.)
 
@@ -27,7 +27,7 @@ For Claude Code these are skills under `.claude/skills/` (auto-discovered, sourc
 |---|---|---|
 | Install / update the payload into an app | `/install-instructions` | `py -3 scripts/install-to-project.py --target "<app>" --verify` |
 | SSOT / drift audit after a refactor | `/maintain-instructions` | `py -3 scripts/validate-instructions.py`, then the audit in [INSTRUCTION-SET-MAINTENANCE.md](INSTRUCTION-SET-MAINTENANCE.md) |
-| Validate TaskFlow against current scaffold | n/a | `py -3 scripts/validate-reference.py --reference-root ..\AI-Instructions-ReferenceApp` |
+| Validate TaskFlow against current scaffold | n/a | `py -3 scripts/validate-reference.py --reference-root ..\scaffold-proof` |
 | Fold feedback / a gap back into the set | `/fold-feedback` | edit the owner file -> validate -> reinstall |
 | Golden-path extraction smoke | `/golden-path` | `py -3 tests/golden-path/run-golden-path.py --dry-run` |
 

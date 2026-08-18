@@ -6,7 +6,7 @@ Scaffold a new C#/.NET business application using the phased instruction set und
 
 All instruction files (skills, templates, support docs, schemas, scripts) live under `.instructions/` in the project root. All file references below are relative to that folder.
 
-> **Maintenance-repo note:** This command is designed to run in a target app where the instruction set has been installed at `.instructions/`. If `.instructions/` is missing in the current working directory, you are likely inside the AI-Instructions-Scaffold maintenance repo itself - stop and confirm with the developer rather than trying to scaffold here. (See `START-AI.md` section Harness Adapter Rule for the dual-path rule.)
+> **Maintenance-repo note:** This command is designed to run in a target app where the instruction set has been installed at `.instructions/`. If `.instructions/` is missing in the current working directory, you are likely inside the scaffold-ai maintenance repo itself - stop and confirm with the developer rather than trying to scaffold here. (See `START-AI.md` section Harness Adapter Rule for the dual-path rule.)
 
 ## Instructions
 

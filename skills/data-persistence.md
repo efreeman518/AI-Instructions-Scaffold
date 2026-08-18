@@ -242,5 +242,5 @@ await repoTrxn.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, ct);
 
 ---
 
-**TaskFlow proof (local):** `../AI-Instructions-ReferenceApp/src/Infrastructure/TaskFlow.Infrastructure.Repositories/TaskItemRepositoryTrxn.cs` + `TaskItemRepositoryQuery.cs`, plus `../AI-Instructions-ReferenceApp/src/Host/TaskFlow.Bootstrapper/Registration/RegisterServices.Database.cs`
-**TaskFlow proof (remote fallback):** <https://github.com/efreeman518/AI-Instructions-ReferenceApp/blob/main/src/Infrastructure/TaskFlow.Infrastructure.Repositories/TaskItemRepositoryTrxn.cs>
+**TaskFlow proof (local):** `../scaffold-proof/src/Infrastructure/TaskFlow.Infrastructure.Repositories/TaskItemRepositoryTrxn.cs` + `TaskItemRepositoryQuery.cs`, plus `../scaffold-proof/src/Host/TaskFlow.Bootstrapper/Registration/RegisterServices.Database.cs`
+**TaskFlow proof (remote fallback):** <https://github.com/efreeman518/scaffold-proof/blob/main/src/Infrastructure/TaskFlow.Infrastructure.Repositories/TaskItemRepositoryTrxn.cs>

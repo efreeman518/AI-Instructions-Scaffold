@@ -319,7 +319,7 @@ services.AddScoped<I{Entity}RepositoryQuery, {Entity}RepositoryQuery>();        
 **Reference-app proof:** `TaskItemTag` (pure join) resolves the generic pair on both sides with no
 per-entity class; `Tag` / `Comment` / `ChecklistItem` fold their pure-CRUD write side into the generic
 pair (bespoke Trxn interfaces deleted) and keep a bespoke `Search`-bearing query repo. See
-`../AI-Instructions-ReferenceApp/src/Infrastructure/TaskFlow.Infrastructure.Repositories/TaskFlowGenericRepositories.cs`
+`../scaffold-proof/src/Infrastructure/TaskFlow.Infrastructure.Repositories/TaskFlowGenericRepositories.cs`
 (closed-over-context subclasses; the generic impls they extend come from the EF.Data package).
 
 ## Critical: Query Repos MUST Use QueryPageProjectionAsync
@@ -440,5 +440,5 @@ The 2-param overload retries on `DbUpdateConcurrencyException` using the specifi
 
 ---
 
-**TaskFlow proof (local):** `../AI-Instructions-ReferenceApp/src/Infrastructure/TaskFlow.Infrastructure.Repositories/TaskItemRepositoryTrxn.cs` + `TaskItemRepositoryQuery.cs`
-**TaskFlow proof (remote fallback):** <https://github.com/efreeman518/AI-Instructions-ReferenceApp/blob/main/src/Infrastructure/TaskFlow.Infrastructure.Repositories/TaskItemRepositoryTrxn.cs>
+**TaskFlow proof (local):** `../scaffold-proof/src/Infrastructure/TaskFlow.Infrastructure.Repositories/TaskItemRepositoryTrxn.cs` + `TaskItemRepositoryQuery.cs`
+**TaskFlow proof (remote fallback):** <https://github.com/efreeman518/scaffold-proof/blob/main/src/Infrastructure/TaskFlow.Infrastructure.Repositories/TaskItemRepositoryTrxn.cs>

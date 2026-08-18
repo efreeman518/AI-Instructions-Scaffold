@@ -281,8 +281,8 @@ After generating the Bootstrapper, confirm:
 
 ---
 
-**TaskFlow proof (local):** `../AI-Instructions-ReferenceApp/src/Host/TaskFlow.Bootstrapper/RegisterServices.cs` + `../AI-Instructions-ReferenceApp/src/Host/TaskFlow.Bootstrapper/Registration/RegisterServices.*.cs` (Application, Infrastructure, Database, Caching, RequestContext partials)
-**TaskFlow proof (remote fallback):** <https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/src/Host/TaskFlow.Bootstrapper>
+**TaskFlow proof (local):** `../scaffold-proof/src/Host/TaskFlow.Bootstrapper/RegisterServices.cs` + `../scaffold-proof/src/Host/TaskFlow.Bootstrapper/Registration/RegisterServices.*.cs` (Application, Infrastructure, Database, Caching, RequestContext partials)
+**TaskFlow proof (remote fallback):** <https://github.com/efreeman518/scaffold-proof/tree/main/src/Host/TaskFlow.Bootstrapper>
 
 ## Application Style Registration
 

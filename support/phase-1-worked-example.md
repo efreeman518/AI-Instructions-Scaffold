@@ -196,9 +196,9 @@ The lesson: the AI doesn't quietly accept an answer that contradicts an earlier 
 
 After all twelve branches, the YAML and the two markdown docs are written. See the full files in the reference app:
 
-- [TaskFlow `.scaffold/domain-specification.yaml`](https://github.com/efreeman518/AI-Instructions-ReferenceApp/blob/main/.scaffold/domain-specification.yaml)
-- [TaskFlow `.scaffold/UBIQUITOUS-LANGUAGE.md`](https://github.com/efreeman518/AI-Instructions-ReferenceApp/blob/main/.scaffold/UBIQUITOUS-LANGUAGE.md)
-- [TaskFlow `.scaffold/DESIGN-DECISIONS.md`](https://github.com/efreeman518/AI-Instructions-ReferenceApp/blob/main/.scaffold/DESIGN-DECISIONS.md)
+- [TaskFlow `.scaffold/domain-specification.yaml`](https://github.com/efreeman518/scaffold-proof/blob/main/.scaffold/domain-specification.yaml)
+- [TaskFlow `.scaffold/UBIQUITOUS-LANGUAGE.md`](https://github.com/efreeman518/scaffold-proof/blob/main/.scaffold/UBIQUITOUS-LANGUAGE.md)
+- [TaskFlow `.scaffold/DESIGN-DECISIONS.md`](https://github.com/efreeman518/scaffold-proof/blob/main/.scaffold/DESIGN-DECISIONS.md)
 
 Trimmed YAML fragment showing how the conversation lands as schema:
 

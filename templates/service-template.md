@@ -261,5 +261,5 @@ public interface I{Entity}Service
 
 ---
 
-**TaskFlow proof (local):** `../AI-Instructions-ReferenceApp/src/Application/TaskFlow.Application.Services/TaskItemService.cs` + companion `Rules/TaskItemStructureValidator.cs` (multi-tenant variant) and `Rules/ServiceErrorMessages.cs`
-**TaskFlow proof (remote fallback):** <https://github.com/efreeman518/AI-Instructions-ReferenceApp/blob/main/src/Application/TaskFlow.Application.Services/TaskItemService.cs>
+**TaskFlow proof (local):** `../scaffold-proof/src/Application/TaskFlow.Application.Services/TaskItemService.cs` + companion `Rules/TaskItemStructureValidator.cs` (multi-tenant variant) and `Rules/ServiceErrorMessages.cs`
+**TaskFlow proof (remote fallback):** <https://github.com/efreeman518/scaffold-proof/blob/main/src/Application/TaskFlow.Application.Services/TaskItemService.cs>

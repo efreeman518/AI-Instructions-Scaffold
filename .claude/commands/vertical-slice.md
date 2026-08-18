@@ -6,7 +6,7 @@ Add a new entity vertical slice to an existing C#/.NET solution.
 
 All instruction files live under `.instructions/` in the project root. All file references below are relative to that folder.
 
-> **Maintenance-repo note:** This command is designed to run in a target app where the instruction set has been installed at `.instructions/`. If `.instructions/` is missing in the current working directory, you are likely inside the AI-Instructions-Scaffold maintenance repo itself - stop and confirm with the developer rather than trying to add a slice here.
+> **Maintenance-repo note:** This command is designed to run in a target app where the instruction set has been installed at `.instructions/`. If `.instructions/` is missing in the current working directory, you are likely inside the scaffold-ai maintenance repo itself - stop and confirm with the developer rather than trying to add a slice here.
 
 ## Instructions
 

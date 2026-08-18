@@ -2,7 +2,7 @@
 
 Scaffold output: `docs/tech-design.md` and `docs/tech-design.html` in the target project, with rendered SVGs under `docs/assets/tech-design-diagrams/`. Diagrams follow the source-plus-SVG pattern in [../support/tech-design-diagrams.md](../support/tech-design-diagrams.md).
 
-Reference example: <https://github.com/efreeman518/AI-Instructions-ReferenceApp/blob/main/docs/tech-design.md>.
+Reference example: <https://github.com/efreeman518/scaffold-proof/blob/main/docs/tech-design.md>.
 
 ## What This Template Owns
 

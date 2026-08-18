@@ -409,8 +409,8 @@ interaction checks; prove create/update/delete through the API.
 ---
 
 **TaskFlow proof (local):**
-- `../AI-Instructions-ReferenceApp/tests/Test.E2E/SqlApiFactory.cs`
-- `../AI-Instructions-ReferenceApp/tests/Test.E2E/TaskItemCrudE2ETests.cs`
+- `../scaffold-proof/tests/Test.E2E/SqlApiFactory.cs`
+- `../scaffold-proof/tests/Test.E2E/TaskItemCrudE2ETests.cs`
 
 **TaskFlow proof (remote fallback):**
-<https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/tests/Test.E2E>
+<https://github.com/efreeman518/scaffold-proof/tree/main/tests/Test.E2E>

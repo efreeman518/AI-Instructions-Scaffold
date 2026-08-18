@@ -434,5 +434,5 @@ group.MapGet("/{id:guid}", GetById)
 
 ---
 
-**TaskFlow proof (local):** `../AI-Instructions-ReferenceApp/src/Host/TaskFlow.Api/RegisterApiServices.cs` + `../AI-Instructions-ReferenceApp/src/Host/TaskFlow.Api/Endpoints/TaskItemEndpoints.cs`
-**TaskFlow proof (remote fallback):** <https://github.com/efreeman518/AI-Instructions-ReferenceApp/blob/main/src/Host/TaskFlow.Api/Endpoints/TaskItemEndpoints.cs>
+**TaskFlow proof (local):** `../scaffold-proof/src/Host/TaskFlow.Api/RegisterApiServices.cs` + `../scaffold-proof/src/Host/TaskFlow.Api/Endpoints/TaskItemEndpoints.cs`
+**TaskFlow proof (remote fallback):** <https://github.com/efreeman518/scaffold-proof/blob/main/src/Host/TaskFlow.Api/Endpoints/TaskItemEndpoints.cs>

@@ -414,5 +414,5 @@ env: [
 
 ---
 
-**TaskFlow proof (local):** `../AI-Instructions-ReferenceApp/src/Host/TaskFlow.Api/appsettings.json` + `appsettings.Development.json` for the layered hierarchy; gateway/scheduler/functions hosts at `../AI-Instructions-ReferenceApp/src/Host/TaskFlow.Gateway/appsettings.json`, `TaskFlow.Scheduler/appsettings.json`, `TaskFlow.Functions/appsettings.json`
-**TaskFlow proof (remote fallback):** <https://github.com/efreeman518/AI-Instructions-ReferenceApp/blob/main/src/Host/TaskFlow.Api/appsettings.json>
+**TaskFlow proof (local):** `../scaffold-proof/src/Host/TaskFlow.Api/appsettings.json` + `appsettings.Development.json` for the layered hierarchy; gateway/scheduler/functions hosts at `../scaffold-proof/src/Host/TaskFlow.Gateway/appsettings.json`, `TaskFlow.Scheduler/appsettings.json`, `TaskFlow.Functions/appsettings.json`
+**TaskFlow proof (remote fallback):** <https://github.com/efreeman518/scaffold-proof/blob/main/src/Host/TaskFlow.Api/appsettings.json>

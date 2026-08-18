@@ -815,12 +815,12 @@ Skip this template when the project does not have a projection service / read-mo
 ---
 
 **TaskFlow proof (local):**
-- `../AI-Instructions-ReferenceApp/tests/Test.Integration/Infrastructure/SqlContainerFixture.cs`
-- `../AI-Instructions-ReferenceApp/tests/Test.Integration/Infrastructure/AzuriteContainerFixture.cs`
-- `../AI-Instructions-ReferenceApp/tests/Test.Integration/Infrastructure/IntegrationTestSetup.cs`
-- `../AI-Instructions-ReferenceApp/tests/Test.Integration/MigrationAndRepositoryTests.cs`
-- `../AI-Instructions-ReferenceApp/tests/Test.Integration/AuditLogRepositoryAzuriteTests.cs`
-- `../AI-Instructions-ReferenceApp/tests/Test.Integration/DomainEventPipelineTests.cs`
+- `../scaffold-proof/tests/Test.Integration/Infrastructure/SqlContainerFixture.cs`
+- `../scaffold-proof/tests/Test.Integration/Infrastructure/AzuriteContainerFixture.cs`
+- `../scaffold-proof/tests/Test.Integration/Infrastructure/IntegrationTestSetup.cs`
+- `../scaffold-proof/tests/Test.Integration/MigrationAndRepositoryTests.cs`
+- `../scaffold-proof/tests/Test.Integration/AuditLogRepositoryAzuriteTests.cs`
+- `../scaffold-proof/tests/Test.Integration/DomainEventPipelineTests.cs`
 
 **TaskFlow proof (remote fallback):**
-<https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/tests/Test.Integration>
+<https://github.com/efreeman518/scaffold-proof/tree/main/tests/Test.Integration>

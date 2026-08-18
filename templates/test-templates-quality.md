@@ -150,7 +150,7 @@ public sealed class AggregateBoundaryTests : BaseTest
 
 > Requires `ApplicationContractsAssembly` and `ApplicationCqrsAssembly` on `BaseTest` (the CQRS assembly exists when `applicationStyle` is `cqrs` or `switch`). For a pure `service`-style scaffold with no CQRS layer, drop `OwnedChildren_HaveNoStandaloneWriteCommandsOrHandlers` and keep the repository-contract and service-surface assertions, which are style-independent.
 
-**TaskFlow proof (local):** `../AI-Instructions-ReferenceApp/tests/Test.Architecture/AggregateBoundaryTests.cs`
+**TaskFlow proof (local):** `../scaffold-proof/tests/Test.Architecture/AggregateBoundaryTests.cs`
 
 ---
 

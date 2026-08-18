@@ -1,6 +1,6 @@
 # Tech Design Diagrams - Format, Source-Plus-SVG, and Viewer Controls
 
-Canonical rules for the **GitHub-facing technical design doc** the scaffold generates at `docs/tech-design.md` and its sibling viewer `docs/tech-design.html`. Reference shape: <https://github.com/efreeman518/AI-Instructions-ReferenceApp/blob/main/docs/tech-design.md>.
+Canonical rules for the **GitHub-facing technical design doc** the scaffold generates at `docs/tech-design.md` and its sibling viewer `docs/tech-design.html`. Reference shape: <https://github.com/efreeman518/scaffold-proof/blob/main/docs/tech-design.md>.
 
 The scaffold owns the **format and viewer controls**, not the diagram list. Which diagrams to include is a per-project decision driven by `.scaffold/domain-specification.yaml`, `.scaffold/resource-implementation.yaml`, and what the app actually generates.
 

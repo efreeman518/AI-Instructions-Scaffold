@@ -569,7 +569,7 @@ def verify_install(target_root: Path, instructions_only: bool) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Install AI-Instructions runtime payload into a consumer app.",
+        description="Install Scaffold AI runtime payload into a consumer app.",
     )
     parser.add_argument(
         "--target", required=True,

@@ -9,7 +9,7 @@ Scaffold a Blazor UI (Server or WebAssembly) that calls the **Gateway** (YARP), 
 - **Client**: Refit (`Refit.HttpClientFactory`) against the Gateway base URL
 - **Auth**: MSAL WebAssembly for WASM builds; JWT bearer cookie/claims for Server. Scaffold auth-off and add after first vertical slice works
 
-Reference app: [TaskFlow.Blazor](https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/src/UI/TaskFlow.Blazor) and the Caller Portal ([Portal.UI1](https://github.com/efreeman518/Portal/tree/main/src/Portal/Portal.UI1)) - canonical source of the FloatService + Refit + MudBlazor layering.
+Reference app: [TaskFlow.Blazor](https://github.com/efreeman518/scaffold-proof/tree/main/src/UI/TaskFlow.Blazor) and the Caller Portal ([Portal.UI1](https://github.com/efreeman518/Portal/tree/main/src/Portal/Portal.UI1)) - canonical source of the FloatService + Refit + MudBlazor layering.
 
 Companion file:
 - [ui-blazor-forms.md](ui-blazor-forms.md) - on-demand: editable `init`-only forms, unsaved-changes prompt, parent-aggregate child editing, file uploads, server-side paging, `ShowMessageBoxAsync` fallback. Load when building an `{Entity}Page` (add/edit), upload, or paged list. This file is the always-needed spine.

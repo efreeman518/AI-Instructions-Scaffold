@@ -2,7 +2,7 @@
 
 Use this file when you need to prove that an instruction, pattern, or scaffolded output already exists in the TaskFlow reference app.
 
-**Local sibling clone preferred:** if `../AI-Instructions-ReferenceApp/` exists relative to the target project's parent, read TaskFlow files via the Read tool - paths in the proof table below are relative to the TaskFlow repo root, so prefix with `../AI-Instructions-ReferenceApp/`. Fall back to GitHub MCP only when the local clone is absent: <https://github.com/efreeman518/AI-Instructions-ReferenceApp>
+**Local sibling clone preferred:** if `../scaffold-proof/` exists relative to the target project's parent, read TaskFlow files via the Read tool - paths in the proof table below are relative to the TaskFlow repo root, so prefix with `../scaffold-proof/`. Fall back to GitHub MCP only when the local clone is absent: <https://github.com/efreeman518/scaffold-proof>
 
 Load this file on demand. Keep it out of the default phase context.
 
@@ -73,45 +73,45 @@ Use these links first. If a branch or path has moved, search inside the same rep
 
 | Concern | Direct link |
 |---|---|
-| Ubiquitous language | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/blob/main/.scaffold/UBIQUITOUS-LANGUAGE.md> |
-| Design decisions | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/blob/main/.scaffold/DESIGN-DECISIONS.md> |
-| Domain model | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/src/Domain/TaskFlow.Domain.Model> |
-| Domain shared | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/src/Domain/TaskFlow.Domain.Shared> |
-| Application contracts | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/src/Application/TaskFlow.Application.Contracts> |
-| Application models | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/src/Application/TaskFlow.Application.Models> |
-| Application services | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/src/Application/TaskFlow.Application.Services> |
-| Application mappers | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/src/Application/TaskFlow.Application.Mappers> |
-| Application CQRS features | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/src/Application/TaskFlow.Application.Cqrs/Features> |
-| Application message handlers | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/src/Application/TaskFlow.Application.MessageHandlers> |
-| Data infrastructure | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/src/Infrastructure/TaskFlow.Infrastructure.Data> |
-| Database migrator host | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/src/Host/TaskFlow.DatabaseMigrator> |
-| Repositories | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/src/Infrastructure/TaskFlow.Infrastructure.Repositories> |
-| Storage / external infrastructure | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/src/Infrastructure/TaskFlow.Infrastructure.Storage> |
-| AI infrastructure | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/src/Infrastructure/TaskFlow.Infrastructure.AI> |
-| API host | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/src/Host/TaskFlow.Api> |
-| Bootstrapper | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/src/Host/TaskFlow.Bootstrapper> |
-| Aspire AppHost | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/src/Host/Aspire/AppHost> |
-| Aspire service defaults | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/src/Host/Aspire/ServiceDefaults> |
-| Gateway | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/src/Host/TaskFlow.Gateway> |
-| Scheduler | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/src/Host/TaskFlow.Scheduler> |
-| Functions | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/src/Host/TaskFlow.Functions> |
-| Uno UI | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/src/UI/TaskFlow.Uno> |
-| Uno core (testable) | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/src/UI/TaskFlow.Uno.Core> |
-| Blazor host | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/src/UI/TaskFlow.Blazor> |
-| React UI | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/src/UI/TaskFlow.React> |
-| Test support | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/tests/Test.Support> |
-| Unit tests | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/tests/Test.Unit> |
-| Architecture tests | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/tests/Test.Architecture> |
-| Endpoint tests | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/tests/Test.Endpoints> |
-| E2E tests | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/tests/Test.E2E> |
-| Playwright UI tests (TaskFlow uses Node; scaffold may use Node or C# MSTest) | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/tests/Test.PlaywrightUI> |
-| Mobile UI tests (MSTest + Appium) | <https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/tests/Test.Mobile> |
+| Ubiquitous language | <https://github.com/efreeman518/scaffold-proof/blob/main/.scaffold/UBIQUITOUS-LANGUAGE.md> |
+| Design decisions | <https://github.com/efreeman518/scaffold-proof/blob/main/.scaffold/DESIGN-DECISIONS.md> |
+| Domain model | <https://github.com/efreeman518/scaffold-proof/tree/main/src/Domain/TaskFlow.Domain.Model> |
+| Domain shared | <https://github.com/efreeman518/scaffold-proof/tree/main/src/Domain/TaskFlow.Domain.Shared> |
+| Application contracts | <https://github.com/efreeman518/scaffold-proof/tree/main/src/Application/TaskFlow.Application.Contracts> |
+| Application models | <https://github.com/efreeman518/scaffold-proof/tree/main/src/Application/TaskFlow.Application.Models> |
+| Application services | <https://github.com/efreeman518/scaffold-proof/tree/main/src/Application/TaskFlow.Application.Services> |
+| Application mappers | <https://github.com/efreeman518/scaffold-proof/tree/main/src/Application/TaskFlow.Application.Mappers> |
+| Application CQRS features | <https://github.com/efreeman518/scaffold-proof/tree/main/src/Application/TaskFlow.Application.Cqrs/Features> |
+| Application message handlers | <https://github.com/efreeman518/scaffold-proof/tree/main/src/Application/TaskFlow.Application.MessageHandlers> |
+| Data infrastructure | <https://github.com/efreeman518/scaffold-proof/tree/main/src/Infrastructure/TaskFlow.Infrastructure.Data> |
+| Database migrator host | <https://github.com/efreeman518/scaffold-proof/tree/main/src/Host/TaskFlow.DatabaseMigrator> |
+| Repositories | <https://github.com/efreeman518/scaffold-proof/tree/main/src/Infrastructure/TaskFlow.Infrastructure.Repositories> |
+| Storage / external infrastructure | <https://github.com/efreeman518/scaffold-proof/tree/main/src/Infrastructure/TaskFlow.Infrastructure.Storage> |
+| AI infrastructure | <https://github.com/efreeman518/scaffold-proof/tree/main/src/Infrastructure/TaskFlow.Infrastructure.AI> |
+| API host | <https://github.com/efreeman518/scaffold-proof/tree/main/src/Host/TaskFlow.Api> |
+| Bootstrapper | <https://github.com/efreeman518/scaffold-proof/tree/main/src/Host/TaskFlow.Bootstrapper> |
+| Aspire AppHost | <https://github.com/efreeman518/scaffold-proof/tree/main/src/Host/Aspire/AppHost> |
+| Aspire service defaults | <https://github.com/efreeman518/scaffold-proof/tree/main/src/Host/Aspire/ServiceDefaults> |
+| Gateway | <https://github.com/efreeman518/scaffold-proof/tree/main/src/Host/TaskFlow.Gateway> |
+| Scheduler | <https://github.com/efreeman518/scaffold-proof/tree/main/src/Host/TaskFlow.Scheduler> |
+| Functions | <https://github.com/efreeman518/scaffold-proof/tree/main/src/Host/TaskFlow.Functions> |
+| Uno UI | <https://github.com/efreeman518/scaffold-proof/tree/main/src/UI/TaskFlow.Uno> |
+| Uno core (testable) | <https://github.com/efreeman518/scaffold-proof/tree/main/src/UI/TaskFlow.Uno.Core> |
+| Blazor host | <https://github.com/efreeman518/scaffold-proof/tree/main/src/UI/TaskFlow.Blazor> |
+| React UI | <https://github.com/efreeman518/scaffold-proof/tree/main/src/UI/TaskFlow.React> |
+| Test support | <https://github.com/efreeman518/scaffold-proof/tree/main/tests/Test.Support> |
+| Unit tests | <https://github.com/efreeman518/scaffold-proof/tree/main/tests/Test.Unit> |
+| Architecture tests | <https://github.com/efreeman518/scaffold-proof/tree/main/tests/Test.Architecture> |
+| Endpoint tests | <https://github.com/efreeman518/scaffold-proof/tree/main/tests/Test.Endpoints> |
+| E2E tests | <https://github.com/efreeman518/scaffold-proof/tree/main/tests/Test.E2E> |
+| Playwright UI tests (TaskFlow uses Node; scaffold may use Node or C# MSTest) | <https://github.com/efreeman518/scaffold-proof/tree/main/tests/Test.PlaywrightUI> |
+| Mobile UI tests (MSTest + Appium) | <https://github.com/efreeman518/scaffold-proof/tree/main/tests/Test.Mobile> |
 
 ---
 
 ## High-Value Proof Checks
 
-- **Current reference status:** authoritative counts, dates, capability classifications, and scaffold-compatibility evidence live only in the reference app's `.scaffold/REFERENCE-STATUS.md` (<https://github.com/efreeman518/AI-Instructions-ReferenceApp/blob/main/.scaffold/REFERENCE-STATUS.md>) - not restated here.
+- **Current reference status:** authoritative counts, dates, capability classifications, and scaffold-compatibility evidence live only in the reference app's `.scaffold/REFERENCE-STATUS.md` (<https://github.com/efreeman518/scaffold-proof/blob/main/.scaffold/REFERENCE-STATUS.md>) - not restated here.
 
 - **Multi-tenant proof:** TaskFlow demonstrates full multi-tenancy - `ITenantEntity<TenantId>` (typed domain ID), `ITenantBoundaryValidator`, `ValidationHelper`, `TenantBoundaryLoggingExtensions`, tenant query filters, tenant stamping, and global-admin bypass. Not all scaffolds require multi-tenancy.
 - **Service pattern proof:** TaskFlow services use `BuildResponse` helper, `ErrorConstants.ERROR_ITEM_NOTFOUND`, `nameof(Entity)`, `[LoggerMessage]` source-gen logging, and `DefaultRequest<T>`/`DefaultResponse<T>` as `record` types.

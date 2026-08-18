@@ -258,5 +258,5 @@ After generating domain entities, confirm:
 
 ---
 
-**TaskFlow proof (local):** `../AI-Instructions-ReferenceApp/src/Domain/TaskFlow.Domain.Model/TaskItem/TaskItem.cs` and `../AI-Instructions-ReferenceApp/src/Domain/TaskFlow.Domain.Model/Rules/TaskItemStatusTransitionRule.cs`
-**TaskFlow proof (remote fallback):** <https://github.com/efreeman518/AI-Instructions-ReferenceApp/blob/main/src/Domain/TaskFlow.Domain.Model/TaskItem/TaskItem.cs>
+**TaskFlow proof (local):** `../scaffold-proof/src/Domain/TaskFlow.Domain.Model/TaskItem/TaskItem.cs` and `../scaffold-proof/src/Domain/TaskFlow.Domain.Model/Rules/TaskItemStatusTransitionRule.cs`
+**TaskFlow proof (remote fallback):** <https://github.com/efreeman518/scaffold-proof/blob/main/src/Domain/TaskFlow.Domain.Model/TaskItem/TaskItem.cs>

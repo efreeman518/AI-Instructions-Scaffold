@@ -58,7 +58,7 @@ Implementation rules:
 3. `Attach` records the built `DistributedApplication`. Named waits call `ResourceNotifications.WaitForResourceHealthyAsync` through `RunStartupStepAsync`.
 4. Every wait/startup failure prints state, health, exit code, start timestamp, and stop timestamp before rethrowing. Resource logs are additive and opt-in via `{APP}_ASPIRE_RESOURCE_LOGGING=true`; state diagnostics are always on.
 5. Cleanup has one separate bounded wall-clock budget across both `StopAsync` and `DisposeAsync`. Restore fixture-owned environment in a caller `finally` even when cleanup fails.
-6. Reference proof: `AI-Instructions-ReferenceApp/tests/Test.Support/Aspire/AspireTestHostContext.cs`. Copy behavior, not TaskFlow names.
+6. Reference proof: `scaffold-proof/tests/Test.Support/Aspire/AspireTestHostContext.cs`. Copy behavior, not TaskFlow names.
 
 ---
 
@@ -610,10 +610,10 @@ Aspire's emulators (Service Bus, Azurite) are best-effort under `DistributedAppl
 ---
 
 **TaskFlow proof (local):**
-- `../AI-Instructions-ReferenceApp/tests/Test.Aspire/AspireTestHost.cs`
-- `../AI-Instructions-ReferenceApp/tests/Test.Aspire/AspireMeshLifecycle.cs`
-- `../AI-Instructions-ReferenceApp/tests/Test.Aspire/ApiAuditPipelineTests.cs`
-- `../AI-Instructions-ReferenceApp/tests/Test.Aspire/FunctionAuditPipelineTests.cs`
+- `../scaffold-proof/tests/Test.Aspire/AspireTestHost.cs`
+- `../scaffold-proof/tests/Test.Aspire/AspireMeshLifecycle.cs`
+- `../scaffold-proof/tests/Test.Aspire/ApiAuditPipelineTests.cs`
+- `../scaffold-proof/tests/Test.Aspire/FunctionAuditPipelineTests.cs`
 
 **TaskFlow proof (remote fallback):**
-<https://github.com/efreeman518/AI-Instructions-ReferenceApp/tree/main/tests/Test.Aspire>
+<https://github.com/efreeman518/scaffold-proof/tree/main/tests/Test.Aspire>

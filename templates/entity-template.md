@@ -333,5 +333,5 @@ builder.HasOne(e => e.{Related})
 
 ---
 
-**TaskFlow proof (local):** `../AI-Instructions-ReferenceApp/src/Domain/TaskFlow.Domain.Model/TaskItem/TaskItem.cs` (full entity with factory + rules), and the `Category/`, `Tag/`, `Comment/`, `ChecklistItem/` sibling folders for relationship variants
-**TaskFlow proof (remote fallback):** <https://github.com/efreeman518/AI-Instructions-ReferenceApp/blob/main/src/Domain/TaskFlow.Domain.Model/TaskItem/TaskItem.cs>
+**TaskFlow proof (local):** `../scaffold-proof/src/Domain/TaskFlow.Domain.Model/TaskItem/TaskItem.cs` (full entity with factory + rules), and the `Category/`, `Tag/`, `Comment/`, `ChecklistItem/` sibling folders for relationship variants
+**TaskFlow proof (remote fallback):** <https://github.com/efreeman518/scaffold-proof/blob/main/src/Domain/TaskFlow.Domain.Model/TaskItem/TaskItem.cs>

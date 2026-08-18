@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Author-side sanity check for the AI-Instructions-Scaffold repo.
+Author-side sanity check for the scaffold-ai repo.
 
 Catches drift before it reaches a consumer app. Run from the repo root:
 
