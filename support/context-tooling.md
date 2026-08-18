@@ -1,23 +1,27 @@
-# Context Tooling - Per-Repo Graphify Layer Selection
+# Context Tooling - Optional Per-Repo Graphify Layer Selection
 
 How to decide which graphify LAYER to build per repository, and how to wire it in.
 graphify is the single knowledge-graph tool: it reduces orientation token cost by
 letting an agent query relationships instead of grepping/reading raw files. It sits
 upstream of the compression tools (headroom, rtk) and does not overlap with them.
 
+## Optional-tool contract
+
+The scaffold never installs, enables, or requires RTK, Headroom, graphify, or another context optimizer. An operator/global instruction may require one and wins when present, but generated-project build, test, GitHub, and delivery commands must also work when every optional tool is absent. Setup helpers must preserve the primary command's exit code and diagnostics; never swallow a build/test/GitHub failure because optional setup failed.
+
 ## Tool stack roles (no overlap)
 
-- rtk - compresses CLI command output. Enforced via the `rtk` Bash prefix rule.
-- headroom - compresses prompt inputs (tool outputs, history) before the API call.
+- rtk - optionally compresses CLI command output unless operator policy requires it.
+- headroom - optionally compresses prompt inputs (tool outputs, history) before the API call.
 - Output compression (caveman style) - enforced via instruction rules, not a tool.
 - Knowledge graph (graphify) - reduces what gets loaded by enabling relationship
   queries. This file governs which graphify layer to build, per repo.
 
 Pipeline: graph (what to load) -> headroom (compress inputs) -> rtk + output rules.
 
-graphify is installed/updated globally by your operator tooling, which installs the
-CLI only. It does not enable any repo harness and does not create a graph database.
-Per-harness enablement and per-repo graph creation are project-time actions.
+When an operator chooses graphify, install/update it globally. Global installation does
+not enable any repo harness and does not create a graph database. Per-harness enablement
+and per-repo graph creation are explicit operator actions, never scaffold prerequisites.
 
 ## Two layers: structure-only vs. full
 
@@ -87,7 +91,9 @@ $code = (Get-ChildItem -Path @('src','tests') -Recurse -File -Include *.cs,*.raz
 "KNOWLEDGE=$knowledge  CODE=$code  ratio(code/knowledge)={0:N2}" -f ($code / [math]::Max($knowledge,1))
 ```
 
-## Setup - graphify
+## Optional operator setup - graphify
+
+Do not run this section automatically from scaffold, build, test, or CI scripts.
 
 Global CLI install:
 
@@ -230,7 +236,7 @@ at the root.
   `2026-06-11/`) are leftover manual snapshots, not graph artifacts - they accumulate
   unbounded, so delete them as part of the end-of-session graph refresh.
 
-## Keeping the graph fresh (auto-update on commit)
+## Keeping the graph fresh (optional hook, not scaffold default)
 
 graphify ships a harness-agnostic git hook that rebuilds the graph after each commit.
 This is the answer to "update the graph after code changes for any harness" - it fires
@@ -244,6 +250,8 @@ graphify hook uninstall
 ```
 
 Behavior (read before enabling):
+
+- The scaffold does not install this hook. Prefer manual refresh after material code or architecture changes; enable the hook only when the operator accepts generated churn from small code commits.
 
 - **Post-commit**: re-extracts only the changed code files in the BACKGROUND (`git
   commit` returns immediately), **AST-only, no LLM, no API cost**. Skips during
@@ -285,14 +293,12 @@ entirely.
 `graphify .` at the phase boundaries below. For a structure-only repo the hook alone
 keeps the graph current.
 
-## Phase timing for scaffolded apps
+## Refresh timing for scaffolded apps
 
-Build/refresh the graph at phase boundaries, not continuously, to avoid churn during
-the volatile Phase 4-5 window where code lands and artifacts get superseded:
+Build/refresh only when graphify is already enabled and the change materially affects code structure, architecture, or the semantic knowledge layer. Do not refresh generated graph artifacts for action-version pins, prose-only edits, formatting, or other unrelated changes; keep graph churn out of those PRs.
 
 - After Phase 1 artifacts exist, run `graphify .` (full layer) if graphify was enabled.
-- After Phase 4 (`dotnet build` green, `contractsScaffolded: true`), run `graphify update .`.
-- After a Phase 5 sub-phase gate passes, run `graphify update .`.
+- After a material Phase 4/5 code or architecture change passes its gate, run `graphify update .` and regenerate the wiki only when its source graph materially changed.
 
 Drift rule (per START-AI.md, Phase-1 Artifact Lifecycle Rule, and
 support/OPERATIONS.md Mid-Session Rollback Protocol): when artifact and code

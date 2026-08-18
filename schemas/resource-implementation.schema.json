@@ -4,7 +4,7 @@
   "title": "Resource Implementation",
   "description": "Phase 2 output: maps domain to Aspire/Azure resources and datatypes. Schema reference: ai/resource-implementation-schema.md",
   "type": "object",
-  "required": ["scaffoldMode", "testingProfile", "entities", "externalDependencyModes", "packageStrategy", "packagePrefix"],
+  "required": ["scaffoldMode", "testingProfile", "entities", "externalDependencyModes", "packageStrategy", "packagePrefix", "migrationLifecycle", "databaseProviders"],
   "properties": {
     "scaffoldMode": {
       "type": "string",
@@ -83,6 +83,20 @@
       "type": "string",
       "enum": ["AzureSQL", "SQLServer"],
       "default": "AzureSQL"
+    },
+    "migrationLifecycle": {
+      "type": "string",
+      "enum": ["preserved-append-only", "unreleased-resettable"],
+      "default": "preserved-append-only",
+      "description": "Migration compatibility contract. preserved-append-only is required once any shared or preserved environment exists. unreleased-resettable permits guarded baseline regeneration only while no data or compatibility history must be preserved."
+    },
+    "databaseProviders": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 },
+      "default": ["SqlServer"],
+      "description": "Every EF Core provider that owns migrations for the application model, for example SqlServer or PostgreSQL. AzureSQL uses the SqlServer EF provider. Every listed provider must pass model-drift and migration-parity verification."
     },
     "caching": {
       "type": "string",

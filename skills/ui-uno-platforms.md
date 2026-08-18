@@ -171,6 +171,21 @@ COVERLET_PROFILER_PATH
 
 Also set `CORECLR_ENABLE_PROFILING=0`, `COR_ENABLE_PROFILING=0`, `MSBUILDDISABLENODEREUSE=1`, `DOTNET_CLI_TELEMETRY_OPTOUT=1`, and `DOTNET_NOLOGO=1` in the child process environment.
 
+### Published Release artifact and static-host contract
+
+Deployment and deployment-shaped tests stage a clean `dotnet publish -c Release` output, never `dotnet build` output. When a test fixture owns publishing, clean the target `bin` and `obj` first, publish once, and reuse that immutable artifact across host tests. Fail before launch unless the staged root contains a real `index.html` and exactly one current application assembly; a stale wrapper/host DLL is not proof that browser-WASM assets exist. Verify app-host-owned files such as configuration/bootstrap assets survive Uno publish and staging.
+
+Staging and lookup must use forward slashes plus case-correct paths so Windows cannot hide a Linux deployment failure. Fail the artifact-producing job when expected files are absent, and make artifact upload use `if-no-files-found: error`.
+
+Static hosting rules:
+
+- Content-hashed framework assets may use long-lived `public, immutable` caching.
+- `index.html`, generated bootstrap files, `package_*` configuration, manifests, and runtime configuration must revalidate or use `no-store`; never cache deployment-varying bootstrap configuration as immutable.
+- Parse `Accept-Encoding` tokens and quality values. Do not serve `br` or `gzip` when its `q=0`, and choose the highest supported acceptable encoding rather than substring matching the header.
+- When serving a `.br` or `.gz` variant, set `Content-Encoding` but preserve the original asset's content type.
+- Return 404 for a missing asset-looking path before SPA fallback. Fallback to `index.html` only for extensionless client routes.
+- Add host contract tests for cache classification, encoding quality, MIME preservation, asset 404 behavior, path separators/case, and survival of host-owned files in the final staged publish directory.
+
 ---
 
 ## Playwright Testing Against Uno WASM

@@ -104,12 +104,12 @@ dotnet test --filter "TestCategory=LiveAI" -m:1 # only when a live provider is i
 dotnet test tests/Test.FoundryLocal/Test.FoundryLocal.csproj --filter "TestCategory=LiveAI" -m:1 # local live lane
 ```
 
-Scaffold migration (remove old, create fresh baseline - see [../patterns/data-layer-wiring.md](../patterns/data-layer-wiring.md)):
+Scaffold migration (follow the lifecycle recorded in `.scaffold/resource-implementation.yaml`; see [data-persistence-advanced.md](data-persistence-advanced.md) section Migration lifecycle and provider parity):
 
-> **Flow guard (GR-13):** The remove/recreate path below is greenfield `/scaffold` only. In `/scaffold-adopt` and `/vertical-slice` (brownfield, established app) do **not** run `migrations remove --force` - preserve existing migration history and add an additive migration instead: `dotnet ef migrations add <Change> --project ... --startup-project ... --context {App}DbContextTrxn`.
+> **Lifecycle guard (GR-13):** Run the remove/recreate path below only when `migrationLifecycle: unreleased-resettable` is explicit and the affected environments have passed the reset/backup guard. `preserved-append-only`, `/scaffold-adopt`, and `/vertical-slice` flows never remove shared migrations; add an additive migration instead. The command must be repeated for every entry in `databaseProviders` using its provider-specific design-time factory and migration folder.
 
 ```powershell
-# Greenfield /scaffold only: remove any existing migrations first
+# unreleased-resettable only: remove the current provider baseline
 dotnet ef migrations remove --force `
   --project src/Infrastructure/{Project}.Infrastructure.Data `
   --startup-project src/Host/{Host}.Api
@@ -121,7 +121,7 @@ dotnet ef migrations add InitialCreate `
   --context {App}DbContextTrxn
 ```
 
-> **Scaffold rule (GR-13):** During a greenfield scaffold, always start fresh. Do not accumulate incremental migrations until the baseline is established and the project is in production. Brownfield/slice flows are additive - see the flow guard above.
+After generation, run `dotnet ef migrations has-pending-model-changes` for every configured provider/DbContext. Multi-provider apps must prove each provider from the same model. A single green provider does not pass the gate.
 
 ## 5b - App Core + Runtime/Edge (TDD for app/API, tests-after for runtime)
 
@@ -357,6 +357,9 @@ Delivery checks:
 - [ ] Architecture tests enforce layering rules
 - [ ] `az bicep build --file infra/main.bicep` succeeds *(if IaC enabled)*
 - [ ] Aspire <-> IaC names/connection strings are aligned
+- [ ] Every configured migration provider has a non-destructive pending-model-change/parity check
+- [ ] Browser-WASM delivery uses clean published `Release` output and passes the static-host contract in [../skills/ui-uno-platforms.md](../skills/ui-uno-platforms.md) section Published Release artifact and static-host contract
+- [ ] CI validates expected artifact presence, correct success/failure retention, green deployment SHA, immutable release identity, readiness order, functional smoke, and no-rebuild rollback metadata
 
 ## 5e - Integration (Auth + AI)
 
@@ -367,7 +370,7 @@ Delivery checks:
 | Mode | Required |
 |---|---|
 | Scaffold/Local (default) | `AuthMode` toggle present; app boots with scaffold/local principal; DI registration, endpoint mapping, and client affordances select the local path; anonymous `GET /auth/mode` reports the selected public mode; local login/register/refresh routes exist; endpoint and presentation tests pass |
-| Entra code path (provider may still be deferred) | Entra handler selected; anonymous `GET /auth/mode` reports `Entra`; local login/register/refresh routes return 404 because they are not mapped; clients hide the local email form and expose only the Entra action; mode-matrix tests pass without requiring a live tenant; Uno browser-WASM includes `ICustomWebUi`, same-origin `login-callback.htm` using the COOP-proof `localStorage` return channel, and a plain browser `HttpClient` factory |
+| Entra code path (provider may still be deferred) | Entra handler selected; anonymous `GET /auth/mode` reports `Entra`; local login/register/refresh routes return 404 because they are not mapped; clients hide the local email form and expose only the Entra action; mode-matrix tests pass without requiring a live tenant; deterministic PKCE/callback/issuer/endpoint/state/origin/path/popup/token-audience tests pass; Uno browser-WASM includes `ICustomWebUi`, same-origin `login-callback.htm` using the COOP-proof `localStorage` return channel, and a plain browser `HttpClient` factory |
 | Live provider (only when intentionally provisioned) | Auth provider configured with real tenant values; registration/roles/consent complete; authenticated endpoint behavior verified against live tokens; scaffold stub cannot activate; one real interactive sign-in per enabled UI head from the published `Release` build verifies its actual browser/mobile/desktop mechanism |
 
 Commands:

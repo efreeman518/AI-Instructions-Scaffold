@@ -331,6 +331,7 @@ private static void RegisterRoutes(IViewRegistry views, IRouteRegistry routes)
 - Put visual tokens and style overrides in `Styles/` dictionaries.
 - Use converters from `Converters/` for presentation-only formatting.
 - Keep reusable UI in `Views/Controls` and shared templates in `Views/Templates`.
+- Give meaningful images an accessible name. Mark purely decorative brand/art images as decorative with the platform-supported accessibility setting so screen readers do not announce filenames or duplicate nearby text; verify the effective accessibility tree on each enabled renderer.
 
 ### XAML Pitfalls
 
@@ -389,6 +390,8 @@ For **independently-editable in-page child lists** (checklist items, attachments
 
 Use `FeedView` for top-level page data that has distinct None/Error/Progress UX. Use bare `ItemsControl` for inline children whose UI just needs to track a list state.
 
+`FeedView.ErrorTemplate` receives the exception itself as its data context. Bind the message directly (`{Binding Message}`) or use a converter over the exception. `{Binding Error}` and nested paths such as `{Binding Error.Message}` render blank because there is no wrapper object at that boundary. Add one presentation/render test that supplies a known exception and asserts visible error text.
+
 ## Business Service Rules
 
 In `Business/Services`:
@@ -424,6 +427,12 @@ return await _http.GetFromJsonAsync<CategoryDto>(url, ct);
 ```
 
 **Search is different** - search endpoints accept `SearchRequest<TFilter>` directly (no wrapping) and return `PagedResponse<T>` with a `data` array (not `DefaultResponse`).
+
+#### Trimmed browser-WASM JSON contract
+
+Published trimmed browser-WASM builds cannot depend on reflection-based `System.Text.Json` metadata. The Uno client owns an internal source-generated `JsonSerializerContext` and lists every concrete wire type used by HTTP calls: request DTOs, `DefaultRequest<T>`, `DefaultResponse<T>`, `PagedResponse<T>`, collections, and any internal callback/envelope deserialized inside a method body. Public method return types alone are not a complete inventory.
+
+Wire every JSON call explicitly through generated metadata: use the `PostAsJsonAsync` / `PutAsJsonAsync` / `ReadFromJsonAsync` overload that accepts `JsonTypeInfo<T>`, or use one shared `JsonSerializerOptions` whose `TypeInfoResolver` is the generated context. Do not mix source-generated writes with reflection-based reads. A Release/trimming contract test must disable reflection, execute one request and response sample for every registered concrete type, and fail when a client method introduces an unregistered internal envelope.
 
 #### Pagination contract
 
@@ -478,10 +487,10 @@ Uno's Skia runtime flavor can serve a browserwasm target while `WithUnoHelpers()
 
 For every MSAL-enabled `#if __WASM__` target, ship all three browser-specific pieces:
 
-1. **`WasmPopupWebUi.cs`:** implement `ICustomWebUi`, open the authorize URL through `globalThis.open`, and pass the completed callback URL to MSAL. Do not fall back to desktop `WithUnoHelpers()` inside browserwasm.
+1. **`WasmPopupWebUi.cs`:** implement `ICustomWebUi`, use `globalThis.open` to synchronously pre-open a blank popup from the user's click, then navigate that retained handle to the authorize URL after async discovery. A popup first opened after an `await` loses the browser user gesture and may be blocked. Do not add `noopener` / `noreferrer` when the implementation requires the returned window handle; those features can make `window.open()` return `null` even when a window opened. Pass the completed callback URL to MSAL. Do not fall back to desktop `WithUnoHelpers()` inside browserwasm.
 2. **`login-callback.htm`:** publish a same-origin callback page. CIAM can send `Cross-Origin-Opener-Policy` headers that permanently sever `window.opener` and the app's popup reference, so polling `popup.location` never observes the final redirect. The callback page writes its `location.href` to a per-attempt `localStorage` key; the app polls that key from its own origin.
 3. **`EntraAuthService.cs`:** configure interactive acquisition with the custom UI and supply `.WithHttpClientFactory(...)` an `IMsalHttpClientFactory` that returns a plain browser-safe `HttpClient`. Do not configure `HttpClientHandler` proxy, certificate, decompression, or other unsupported knobs; browser-WASM uses the fetch-backed handler and MSAL's default handler configuration can throw `PlatformNotSupportedException`.
 
-The return channel is one-time state, not token storage. Correlate the key to the current auth attempt, clear it before opening and immediately after success/failure, validate the callback origin/path and correlation value before returning it to MSAL, never store access/refresh tokens, and keep popup/poll cancellation bounded. Fail clearly on popup blocking, timeout, malformed callback, or unexpected origin.
+The return channel is one-time state, not token storage. Require non-empty OIDC state, correlate the key to the current auth attempt, clear it before opening and immediately after success/failure, validate the callback origin/path and correlation value before returning it to MSAL, never store access/refresh tokens, and keep popup/poll cancellation bounded. Browser storage APIs can throw on managed devices or privacy-restricted profiles; catch that boundary and surface a recoverable "browser storage unavailable" sign-in error instead of hanging, crashing, or silently weakening correlation. Fail clearly on popup blocking, timeout, malformed callback, or unexpected origin.
 
 Automated auth bypass and local-session `WasmUI` tests do not execute these pieces. Before deployment, complete one real interactive sign-in per enabled UI head from its published `Release` build, including browserwasm, and verify the resulting token reaches the Gateway. Debug-only proof is insufficient because browser-WASM timing and trimming differ in Release.

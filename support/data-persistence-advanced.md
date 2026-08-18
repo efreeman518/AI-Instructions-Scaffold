@@ -112,6 +112,15 @@ Format: `YYYYMMDD_Description`.
 
 Never rename a migration after it has been shared with any environment or teammate.
 
+### Migration lifecycle and provider parity
+
+`.scaffold/resource-implementation.yaml` must declare `migrationLifecycle` and `databaseProviders` before Phase 5a changes migrations:
+
+- `preserved-append-only` is the default and is mandatory once any teammate, shared environment, or preserved dataset depends on migration history. Existing migrations are immutable; append a new migration.
+- `unreleased-resettable` is allowed only when the recorded project context confirms no compatibility or data history must survive. Baseline regeneration then requires an explicit list of affected environments, a verified backup for any data worth keeping, and a guarded reset. It is not permission to reset an environment merely because a migration is inconvenient.
+
+For multi-provider applications, generate and verify every provider named in `databaseProviders` from the same application model. Keep provider migration sets separate, run `has-pending-model-changes` for each context/provider, and regenerate each `InitialCreate` only under `unreleased-resettable`. A parity verifier may normalize only nondeterministic generated migration IDs/timestamps before diffing; it must not normalize schema, SQL, annotations, or provider-specific semantics. On drift, fail and upload regenerated files as evidence. Do not create self-modifying, self-deleting, or repository-branch workflows for routine migration repair.
+
 ### Canonical Commands
 
 ```powershell
@@ -146,6 +155,8 @@ dotnet ef migrations has-pending-model-changes `
 ```
 
 Use the same `--project` / `--startup-project` rooting that real migrations use. If the Data project itself carries the design-time factory and `Microsoft.EntityFrameworkCore.Design`, you may run with the Data project as startup instead. The result must be `No changes`. If EF reports pending model changes, reconcile the moved facet (max length, nullability, default value, column type, FK shape) in configuration. Do not blind-regenerate a migration for a mapping-foundation refactor.
+
+Repeat this gate for every configured migration provider and DbContext. A green SQL Server check does not prove a PostgreSQL migration set is current, or the reverse.
 
 ### Data Migrations
 

@@ -36,6 +36,28 @@ Apply this runbook when a deployed admin portal or other interactive client sign
 7. If automation creates the service principal and operators need it to appear under the portal's default Enterprise Applications filter, add the `WindowsAzureActiveDirectoryIntegratedApp` tag.
 8. From the deployed public URL, complete one real interactive sign-in and verify the expected role claim and authorized admin page. A client-credentials token or scaffold auth test is not equivalent evidence.
 
+### Live browser OIDC contract
+
+Apply these rules only when a browser head enables a live provider. They do not make live identity a scaffold-completion prerequisite.
+
+- Use authorization code with PKCE and the exact registered public HTTPS callback, including path base and callback path.
+- Keep authority and issuer validation strict. The configured authority host, tenant identifier, and discovery issuer must agree; do not disable issuer validation to hide a friendly-host/GUID-host mismatch.
+- Constrain outbound token attachment to exact allowed origins and path boundaries. Normalize the configured base with a trailing slash before prefix comparison so `https://api.example/a` cannot authorize `https://api.example/attacker`.
+- Request scopes for the resource being called. Do not call Graph or OIDC userinfo with an access token issued for the application's API audience. If the provider library would call userinfo with that token, set `LoadProfile=false` and use validated ID-token claims or acquire the correct resource token separately.
+- Attach diagnostics to the logger factory the OIDC provider instance actually uses. Configuring an unrelated application logger does not expose protocol diagnostics when the provider still owns a null logger factory.
+- Require non-empty state, exact callback origin, exact callback path, and per-attempt correlation before completing the flow. Popup pre-opening and window-handle rules are canonical in [ui-uno-mvux.md](ui-uno-mvux.md) section Browser-WASM MSAL Custom Web UI.
+
+Deterministic tests cover PKCE parameters, callback equality, issuer/authority mismatch, endpoint boundary/trailing slash, token audience, missing/mismatched state, wrong origin/path, popup sequencing, and logger wiring. One real interactive sign-in per enabled deployed UI head remains the release gate because headless automation may not reproduce browser popup policy.
+
+### Mutable authorization and external identity side effects
+
+When roles, tenant membership, institution membership, or resource scope can change in application data, resolve effective access server-side from that data on each authorization boundary. Token/cookie claims and client routing are UI hints, not continuing authorization after membership changes. Enforce resource access in the API/application layer even when the UI hides the route.
+
+- Validate request bodies at the endpoint trust boundary, including empty minimal-API bodies, before application services run.
+- Cache expected 401/403 no-access results only where the product intends that behavior. Never permanently cache a faulted access-context task or transient provider/database failure.
+- External identity mutations use an explicit local/external operation order, report partial failure, return stable user-safe errors, and emit sanitized structured server logs with correlation IDs. Do not return raw Graph/provider messages, identifiers, tenant configuration, or credentials to clients.
+- General smoke tests do not create users, assign roles, or mutate optional external identity providers. Put those actions in an explicit provider-specific acceptance lane with owned cleanup.
+
 ## Pre-Auth Stub Pattern (Phases 5a-5d)
 
 Until this phase is reached, authentication must be **stubbed** so the project compiles and runs:
@@ -405,6 +427,7 @@ Rule: secrets come from Key Vault/User Secrets only.
 6. For regulated/sensitive classifications, enforce least-privilege roles and trace access decisions with auditable correlation IDs.
 7. Optional Entra/Graph admin integrations use a no-op stub when their capability is not selected. A selected `AuthMode: Entra` with missing auth configuration is a startup error, never a no-op fallback.
 8. Internal execution routes must use service-scoped policies, not admin role policies. See the Internal vs Admin Routes section.
+9. Mutable application membership is the server-side authorization source of truth; client claims and route visibility never replace API authorization.
 
 ## Verification
 
@@ -423,3 +446,5 @@ Rule: secrets come from Key Vault/User Secrets only.
 - [ ] Internal execution routes use service-scoped authorization policies, not admin role policies
 - [ ] Live Entra setup logged in `HANDOFF.md` as a deployment-only dependency if not yet performed
 - [ ] Deployed interactive clients follow the Admin Portal / Entra External ID Deployment Runbook when applicable
+- [ ] Live browser heads pass deterministic PKCE, callback, issuer, endpoint-boundary, state/origin/path, popup-sequencing, token-audience, and provider-logger tests
+- [ ] External identity failures expose stable user-safe errors and sanitized correlated logs; general smoke does not mutate optional providers

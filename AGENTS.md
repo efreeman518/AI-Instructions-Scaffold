@@ -23,4 +23,4 @@ Conditional - active only when `graphify-out/graph.json` exists, inert otherwise
 
 - For codebase questions (architecture, where/what/how things relate), run `graphify query "<question>"` before grepping or reading raw files; use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for a concept.
 - If `graphify-out/wiki/index.md` exists, use it for broad navigation.
-- At end of session, refresh the graph: `graphify update .` then `graphify export wiki`. Also delete any stale dated snapshot folders under `graphify-out/` (e.g. `2026-06-11/`) - graphify has no prune command, so they accumulate unbounded (see `.instructions/support/context-tooling.md`).
+- After material code or architecture changes only, refresh with `graphify update .` and regenerate the wiki when needed. Do not refresh graph artifacts for prose-only edits, action pins, formatting, or unrelated changes. Also delete stale dated snapshot folders under `graphify-out/` (see `.instructions/support/context-tooling.md`).

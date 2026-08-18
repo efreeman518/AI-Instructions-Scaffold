@@ -199,6 +199,8 @@ includeAzd: false
 includeAiServices: false
 useAspire: true
 database: AzureSQL
+migrationLifecycle: preserved-append-only
+databaseProviders: [SqlServer]
 caching: FusionCache+Redis
 includeKeyVault: false
 deployTarget: ContainerApps
@@ -314,6 +316,8 @@ includeAzd: false
 includeAiServices: true
 useAspire: true
 database: AzureSQL
+migrationLifecycle: preserved-append-only
+databaseProviders: [SqlServer]
 caching: FusionCache+Redis
 includeKeyVault: false
 deployTarget: ContainerApps

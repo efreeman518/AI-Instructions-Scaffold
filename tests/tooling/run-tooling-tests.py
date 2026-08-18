@@ -288,6 +288,42 @@ class ValidatorHelperTests(unittest.TestCase):
 
             self.assertTrue(any("forbidden claim" in message for _, message in findings.errors))
 
+    def test_deployment_hardening_guard_requires_deterministic_paging_policy(self):
+        with tempfile.TemporaryDirectory(prefix="tooling-deployment-hardening-") as tmp:
+            root = Path(tmp)
+            self._make_deployment_hardening_contract_root(root)
+            repository = root / "templates" / "repository-template.md"
+            repository.write_text(
+                repository.read_text(encoding="utf-8").replace(
+                    "### Paged queries require a deterministic total order",
+                    "### Paging",
+                ),
+                encoding="utf-8",
+            )
+            with mock.patch.object(validator, "INSTRUCTIONS_ROOT", root):
+                findings = validator.Findings()
+                validator.check_deployment_hardening_contract(findings)
+
+            self.assertTrue(any("deterministic total order" in message for _, message in findings.errors))
+
+    def test_deployment_hardening_guard_requires_optional_tool_policy(self):
+        with tempfile.TemporaryDirectory(prefix="tooling-deployment-hardening-") as tmp:
+            root = Path(tmp)
+            self._make_deployment_hardening_contract_root(root)
+            context = root / "support" / "context-tooling.md"
+            context.write_text(
+                context.read_text(encoding="utf-8").replace(
+                    "never installs, enables, or requires RTK",
+                    "installs RTK",
+                ),
+                encoding="utf-8",
+            )
+            with mock.patch.object(validator, "INSTRUCTIONS_ROOT", root):
+                findings = validator.Findings()
+                validator.check_deployment_hardening_contract(findings)
+
+            self.assertTrue(any("never installs" in message for _, message in findings.errors))
+
     def test_estimate_unique_tokens_deduplicates_across_loadset_groups(self):
         with tempfile.TemporaryDirectory(prefix="tooling-loadset-") as tmp:
             base = Path(tmp) / "base.md"

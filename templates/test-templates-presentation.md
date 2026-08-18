@@ -93,6 +93,8 @@ Stub search responses with the shared paged shape:
 }
 ```
 
+Add one `JsonContractTests` class for a browser-WASM client. Set `<JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>` in the test project, enumerate every concrete request/response/envelope registered on `{Project}ApiJsonContext`, and round-trip representative JSON through the same generated `JsonTypeInfo<T>` used by the client. Include internal method-body envelopes and collection shapes; testing only public return types misses the common trimmed-Release failure.
+
 ## SourceContext Harness
 
 ```csharp

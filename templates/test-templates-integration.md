@@ -330,6 +330,63 @@ public class {Entity}RepositoryIntegrationTests
         Assert.IsNull(deleted);
     }
 
+    [TestMethod]
+    [Timeout(120000)]
+    public async Task Search_WithDuplicateSortKeys_HasStablePageMembership()
+    {
+        var ct = TestContext.CancellationToken;
+        await using var db = SqlContainerFixture.CreateTrxnContext();
+        await db.Database.MigrateAsync(ct);
+
+        // Seed at least three pages with the same business sort key. Keep the returned IDs.
+        var expectedIds = await SeedSearchRowsAsync(db, name: "Same sort key", count: 13, ct);
+        await using var queryDb = SqlContainerFixture.CreateQueryContext();
+        var repo = new {Entity}RepositoryQuery(queryDb);
+
+        var actualIds = new List<Guid>();
+        for (var pageIndex = 1; pageIndex <= 3; pageIndex++)
+        {
+            var page = await repo.Search{Entity}Async(new SearchRequest<{Entity}SearchFilter>
+            {
+                PageIndex = pageIndex,
+                PageSize = 5,
+                Sorts = [new Sort(nameof({Entity}.Name), SortOrder.Ascending)],
+                Filter = new {Entity}SearchFilter { Name = "Same sort key" }
+            }, ct);
+
+            Assert.AreEqual(expectedIds.Count, page.Total);
+            actualIds.AddRange(page.Data.Select(item => item.Id!.Value));
+        }
+
+        CollectionAssert.AreEquivalent(expectedIds, actualIds);
+        Assert.AreEqual(actualIds.Count, actualIds.Distinct().Count());
+
+        var repeatedFirstPage = await repo.Search{Entity}Async(new SearchRequest<{Entity}SearchFilter>
+        {
+            PageIndex = 1,
+            PageSize = 5,
+            Sorts = [new Sort(nameof({Entity}.Name), SortOrder.Ascending)],
+            Filter = new {Entity}SearchFilter { Name = "Same sort key" }
+        }, ct);
+        CollectionAssert.AreEqual(
+            actualIds.Take(5).ToList(),
+            repeatedFirstPage.Data.Select(item => item.Id!.Value).ToList());
+    }
+
+    private static async Task<List<Guid>> SeedSearchRowsAsync(
+        {Project}DbContextTrxn db,
+        string name,
+        int count,
+        CancellationToken ct)
+    {
+        var rows = Enumerable.Range(0, count)
+            .Select(_ => new {Entity}Builder().WithName(name).Build())
+            .ToList();
+        db.{Entities}.AddRange(rows);
+        await db.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, cancellationToken: ct);
+        return rows.Select(row => row.Id.Value).ToList();
+    }
+
     // The remaining methods in this class follow the same discipline: `var ct = TestContext.CancellationToken;`
     // then flow `ct` into every MigrateAsync / SaveChangesAsync / FindAsync / EF async call and any private helper.
 
@@ -478,6 +535,7 @@ public class {Entity}RepositoryIntegrationTests
 | Scenario | Generate when |
 |---|---|
 | `Migrations_ApplyCleanly_ToSqlContainer` | Always - once per schema, not per entity. |
+| `Search_WithDuplicateSortKeys_HasStablePageMembership` | Every repository with paging. Seed more than one page with the same business sort key and assert exact IDs, no omissions, and no duplicates. |
 | `{Entity}_CrudOperations_WorkAgainstRealSql` | Every entity with mutations. |
 | `{Entity}_WithChildren_PersistsCorrectly` | Entity has owned/dependent child collections (1:N). Persistence + includes only - seeds children via `db.{ChildEntities}.Add(...)`, so it does NOT exercise the updater/navigation-add path (see next row). |
 | `{Entity}_UpdateFromDto_AddsChildToReloadedParent_AgainstRealSql` | Entity has owned/dependent child collections (1:N) **and** an `{Entity}Updater`. Required regression guard for the `ValueGeneratedNever` key baseline (GR-16) - the only test that adds a NEW child through `repo.UpdateFromDto` against real SQL. A green `WithChildren_PersistsCorrectly` does not substitute for it. |

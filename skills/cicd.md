@@ -26,6 +26,9 @@ Use GitHub Actions for:
 6. **Private NuGet feed auth:** If the solution references packages from authenticated feeds (e.g., GitHub Packages), the workflow must authenticate before `dotnet restore`. Store a PAT as a repo secret (e.g., `NUGET_PAT`) and add an auth step. Without this, restore fails with `NU1301 / 401 Unauthorized`. See the NuGet auth step below.
 7. **ACA managed identity can pull ACR but NOT GHCR.** When images live in a **private** GHCR package, the ACA managed identity cannot authenticate to `ghcr.io`. Set an explicit registry credential on each app with a PAT that has `read:packages`: `az containerapp registry set --name <app> --server ghcr.io --username <gh-user> --password <PAT>`. `GITHUB_TOKEN` does NOT work as the ACA pull password - it is job-scoped and expires when the job ends. **Public** GHCR packages need no pull secret. State this tradeoff when offering GHCR as the registry.
 8. **DB migrations run as an explicit pipeline step, never in runtime hosts.** The `{App}.DatabaseMigrator` image runs as a one-shot Container Apps Job BEFORE the image swap so schema leads code; every runtime deploy job gates on its success (see the migrator job step below). Canonical migration rules: [data-persistence-advanced.md](../support/data-persistence-advanced.md) section Migration Ownership: Dedicated Migrator Host.
+9. Superseded CI may cancel. An environment deployment uses `cancel-in-progress: false`; never interrupt an in-flight migration or rollout.
+10. A deployment consumes one previously validated commit, builds each artifact once, records immutable image digests/artifact IDs, and rolls back from the previous release manifest without rebuilding.
+11. Tracked files contain no package credentials. Repository `nuget.config` may contain `%NUGET_AUTH_TOKEN%` only; secrets must not be echoed or included in diagnostic artifacts.
 
 ### Registry choice is a scaffold input
 
@@ -93,6 +96,7 @@ name: CI
 on:
   pull_request:
     branches: [main, develop]
+    types: [opened, synchronize, reopened, ready_for_review]
     paths-ignore: ['**.md', 'infra/**']
   workflow_dispatch:
     # Declare a toggle ONLY for a tier this scaffold generated (see testing.md capability table).
@@ -134,9 +138,16 @@ on:
         default: false
         description: "Run Test.Mutation (Stryker via dotnet stryker, not dotnet test)"
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-and-test:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    env:
+      NUGET_AUTH_TOKEN: ${{ secrets.NUGET_PAT }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -145,17 +156,6 @@ jobs:
 
       # Install extra workloads if solution includes WASM/Uno projects
       # - run: dotnet workload install wasm-tools
-
-      # Private NuGet feed auth (if nuget.config references authenticated feeds)
-      - name: Authenticate private NuGet feed
-        env:
-          NUGET_PAT: ${{ secrets.NUGET_PAT }}
-        if: env.NUGET_PAT != ''
-        run: >
-          dotnet nuget update source "{FeedName}"
-          --username "ci" --password "$NUGET_PAT"
-          --store-password-in-clear-text
-          --configfile nuget.config
 
       - run: dotnet restore {SolutionName}.slnx
 
@@ -197,6 +197,12 @@ jobs:
       # Test.PlaywrightUI / Test.Mobile / Test.FoundryLocal each need runner setup the main
       # job should not carry - see the separate jobs below.
 ```
+
+The committed `nuget.config` uses an environment placeholder such as `<add key="ClearTextPassword" value="%NUGET_AUTH_TOKEN%" />`; the value remains a placeholder in source. Never run a command that writes the resolved secret back into the tracked file. Mask credentials, keep them out of command lines, and exclude `nuget.config`, environment dumps, and credential-provider caches from uploaded diagnostics.
+
+Upload failure diagnostics with `if: failure() || cancelled()` and `if-no-files-found: error`. Upload successful benchmark, mutation, coverage, or release evidence on success when that evidence is the output of the lane. The producer and uploader must share the exact artifact path; fail fast when an expected file is missing.
+
+For every configured EF provider, CI runs the non-destructive `has-pending-model-changes` or provider-parity verifier. Baseline regeneration is not a normal CI repair action and must not be implemented through a workflow that edits/deletes itself or pushes a cleanup branch.
 
 ### Runner Disk for Container-Backed Test Tiers
 
@@ -313,27 +319,51 @@ foundry-local:
 
 ### Trigger default: `workflow_dispatch` only
 
-`cd.yml` (and `provision.yml`, below) default to **`workflow_dispatch` only** until infra exists and the `AZURE_*` / registry secrets+vars are set. Auto-deploy on push to `main` fails every merge before infra exists, so it is opt-in: add the `push` block once the environment is ready.
+`cd.yml` (and `provision.yml`, below) default to callable/manual entrypoints only until infra exists and the `AZURE_*` / registry secrets+vars are set. `workflow_call` preserves orchestration from a trusted promotion workflow; `workflow_dispatch` supports explicit deploy or rollback. Auto-deploy on push to `main` is opt-in only after the environment is ready.
 
 ```yaml
 on:
+  workflow_call:
+    inputs:
+      environment: { type: string, required: true }
+      commit_sha: { type: string, required: true }
   workflow_dispatch:
     inputs:
       environment:
         type: choice
         options: [dev, staging, prod]
+      operation:
+        type: choice
+        options: [deploy, rollback]
+        default: deploy
+      commit_sha:
+        type: string
+        required: false
+        description: "Exact green commit to deploy; required for operation=deploy"
   # Opt-in after infra + secrets exist - uncomment to deploy on merge:
   # push:
   #   branches: [main]
+
+concurrency:
+  group: deploy-${{ inputs.environment }}
+  cancel-in-progress: false
 ```
+
+The entry job rejects `operation=deploy` without a full commit SHA. Resolve that SHA, verify the repository's required checks are green for the exact commit, and checkout that commit rather than the workflow branch tip. A rollback ignores new build inputs and resolves the authoritative previous successful release manifest for the environment.
 
 ### Step order (schema leads code)
 
-1. Build and push images (ACR or GHCR variant) - the migrator image ships with the other deployables.
-2. **Run the migrator job** (below) - BEFORE the image swap.
-3. Deploy: update each ACA app to the new SHA tag.
+1. Validate the requested exact commit is green.
+2. Build and push images plus Functions/Uno bundles once - the migrator image ships with the other deployables. Resolve image digests and immutable artifact IDs into a release manifest.
+3. Provision infrastructure without activating new runtime revisions.
+4. Back up data before any destructive reset/migration allowed by the recorded lifecycle, then run the migrator job below before the image swap.
+5. Deploy only artifacts from the release manifest.
+6. Verify internal database-aware readiness (`/health/db` or app equivalent), then public full health (`/health/full` or app equivalent), then an explicit functional CRUD smoke.
+7. Atomically record the previous/current successful release manifests for later rollback.
 
 Keep scheduler replicas pinned when no coordination layer exists.
+
+Rollback selects the recorded previous manifest, redeploys its exact image digests and bundle artifact IDs, and reruns readiness/functional smoke. It never rebuilds a historical SHA. If no authoritative previous manifest exists, fail safely instead of guessing from mutable tags or revision ordering.
 
 ### Build + Push - ACR variant
 
@@ -561,12 +591,17 @@ For `scaffoldMode: lite`:
 
 1. OIDC only for Azure auth in workflows (image push to ACR/GHCR + Azure control-plane). Private GHCR pull still needs a `read:packages` PAT on each app - OIDC does not cover ACA-to-GHCR pulls.
 2. Build context matches the Dockerfile's `COPY` roots (repo root or `src/`) - verify per app, do not assume `src/`.
-3. Deploy by SHA tag; avoid mutable-only deploy references.
+3. Tag by SHA for traceability, deploy the resolved digest/revision from the immutable release manifest, and avoid mutable-only references.
 4. Schema prerequisites (such as scheduler tables) are applied before rolling dependent services.
 5. Keep environment promotions explicit and approval-gated.
 6. Validate Bicep before deploy.
 7. Default PR path runs fast tiers only; all heavy/special tiers are `workflow_dispatch` toggles, default off.
 8. Keep token placeholders aligned with [placeholder-tokens.md](../ai/placeholder-tokens.md).
+9. Validate the requested deployment SHA is green before building; build each artifact once and reuse it through rollout and promotion.
+10. Verify database-aware internal readiness before public health, then run a post-deploy functional smoke.
+11. Roll back from authoritative previous-release metadata without rebuilding. Deployment concurrency queues rather than canceling an active run.
+12. Operational docs state what automation actually verifies. Do not claim rollback, backup, health, or smoke coverage that the workflow does not execute.
+13. Local/manual emergency deployment may mirror the same gates when explicitly requested, but scaffold generation does not create a second default deployment path.
 
 ---
 
@@ -576,11 +611,15 @@ For `scaffoldMode: lite`:
 - [ ] `ci.yml` declares a `workflow_dispatch` boolean (default false) for every manual tier it references, and emits one only for tiers this scaffold generated; every `inputs.*` referenced in an `if:` is declared
 - [ ] heavy tiers carry the `workflow_dispatch && inputs.<x>` gate, do not overlap, and use `-m:1`; Benchmarks use `dotnet run` and Mutation uses `dotnet stryker` (never `dotnet test`); disk reclaim covers Integration/Aspire/E2E
 - [ ] scheduled/manual acceptance provisions generated prerequisites, then runs unfiltered `dotnet test {SolutionName}.slnx --no-build -m:1`; filtered fast tiers remain diagnostic lanes, not acceptance
-- [ ] `cd.yml` defaults to `workflow_dispatch` only (push-to-main is opt-in, added after infra exists)
+- [ ] `ci.yml` cancels superseded runs, skips draft PR work, and includes `ready_for_review`; deployment queues with `cancel-in-progress: false`
+- [ ] `cd.yml` defaults to `workflow_call` plus `workflow_dispatch` deploy/rollback inputs (push-to-main is opt-in, added after infra exists); deploy requires an exact `commit_sha`
 - [ ] `cd.yml` logs in with OIDC and pushes SHA-tagged images (ACR or GHCR per scaffold choice)
 - [ ] GHCR path: private package has `az containerapp registry set` pull cred per app
 - [ ] Migrator Container Apps Job runs BEFORE image swap; pipeline polls the execution to terminal status; runtime deploys gate on it
 - [ ] deployment step updates correct environment resources by SHA tag
+- [ ] requested SHA is green; one release manifest records image digests and immutable bundle IDs; expected files fail fast when absent
+- [ ] internal DB-aware readiness, public full health, and functional smoke pass in order
+- [ ] previous/current successful manifests are authoritative and rollback reuses the previous manifest without rebuilding
 - [ ] scheduler deployment order includes prerequisite schema step
 - [ ] `infra.yml`/`provision.yml` validates and deploys infra when enabled
 - [ ] repo secrets/variables/environments match the registry path and are protected

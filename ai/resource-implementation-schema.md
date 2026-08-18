@@ -46,6 +46,8 @@ includeGitHubActions: false
 includeAzd: false
 includeAiServices: false
 useAspire: true
+migrationLifecycle: preserved-append-only  # preserved-append-only | unreleased-resettable
+databaseProviders: [SqlServer]              # every EF provider that owns migrations
 ```
 
 ## Scaffold Configuration
@@ -272,8 +274,12 @@ Selection rules:
 | Input | Default | Values |
 |---|---|---|
 | `database` | `AzureSQL` | `AzureSQL`, `SQLServer` |
+| `migrationLifecycle` | `preserved-append-only` | `preserved-append-only`, `unreleased-resettable` |
+| `databaseProviders` | `[SqlServer]` | Non-empty unique list of configured EF providers; Azure SQL uses `SqlServer` |
 | `caching` | `FusionCache+Redis` | `FusionCache+Redis`, `DistributedMemory`, `None` |
 | `includeKeyVault` | `false` | |
+
+`migrationLifecycle` and `databaseProviders` are required project context, not inferred later from the current migration folder. Use `preserved-append-only` as soon as a teammate, shared environment, or preserved dataset depends on migration history. Use `unreleased-resettable` only when the project is explicitly pre-release and every affected environment may be reset from a verified backup. Every provider in `databaseProviders` must be generated and checked from the same application model; do not validate only the locally convenient provider.
 
 ### Messaging
 

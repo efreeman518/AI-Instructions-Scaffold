@@ -181,6 +181,33 @@ public class {Entity}Service(
 - POST/PUT bodies use `DefaultRequest<T>` with an `Item` property.
 - Single-item GET/create/update responses unwrap `DefaultResponse<T>.Item`.
 - Search responses use `PagedResponse<T>` and its `Data` collection; search requests are not wrapped in `DefaultRequest<T>`.
+- Browser-WASM clients use a source-generated `JsonSerializerContext`; reflection-based JSON is not a valid published-Release dependency.
+
+```csharp
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
+namespace {Project}.Uno.Core.Client;
+
+[JsonSourceGenerationOptions(JsonSerializerDefaults.Web)]
+[JsonSerializable(typeof(DefaultRequest<{Entity}Dto>))]
+[JsonSerializable(typeof(DefaultResponse<{Entity}Dto>))]
+[JsonSerializable(typeof(PagedResponse<{Entity}Dto>))]
+[JsonSerializable(typeof(SearchRequest<{Entity}SearchFilter>))]
+[JsonSerializable(typeof(List<{Entity}Dto>))]
+internal partial class {Project}ApiJsonContext : JsonSerializerContext;
+```
+
+Use the generated `JsonTypeInfo<T>` overload at every `HttpClientJsonExtensions` call, for example:
+
+```csharp
+await http.PostAsJsonAsync(uri, request, {Project}ApiJsonContext.Default.DefaultRequest{Entity}Dto, ct);
+var response = await content.ReadFromJsonAsync(
+    {Project}ApiJsonContext.Default.DefaultResponse{Entity}Dto,
+    ct);
+```
+
+The generated property names depend on the closed generic type names. Compile once, then use the emitted property exactly. Inventory internal envelopes read inside client methods as well as public parameters and returns.
 
 ## Shared Interfaces
 

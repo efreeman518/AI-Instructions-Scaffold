@@ -153,15 +153,15 @@ public class {Entity}RepositoryQuery({Project}DbContextQuery dbContext)
         {
             return sort.PropertyName.ToLowerInvariant() switch
             {
-                "name" => q => q.OrderByDescending(e => e.Name),
-                _ => q => q.OrderByDescending(e => e.Name)
+                "name" => q => q.OrderByDescending(e => e.Name).ThenBy(e => e.Id),
+                _ => q => q.OrderByDescending(e => e.Name).ThenBy(e => e.Id)
             };
         }
 
         return sort?.PropertyName.ToLowerInvariant() switch
         {
-            "name" => q => q.OrderBy(e => e.Name),
-            _ => q => q.OrderBy(e => e.Name)  // Default sort
+            "name" => q => q.OrderBy(e => e.Name).ThenBy(e => e.Id),
+            _ => q => q.OrderBy(e => e.Name).ThenBy(e => e.Id)  // Stable default sort
         };
     }
 }
@@ -356,6 +356,12 @@ Every query repo search method must follow this pattern. Use `{Entity}Mapper.Pro
 > **PageIndex pitfall:** `ComposeIQueryable` in EF.Data expects **1-based** `pageIndex` (it does `pageIndex - 1` internally). `SearchRequest<T>.PageIndex` defaults to `0`. Without `Math.Max(1, request.PageIndex)`, a default request produces a negative SQL `OFFSET`, crashing with `SqlException: The offset specified in a OFFSET clause may not be negative`.
 
 > **Prove it with a real-SQL search test.** Because both the argument-swap and `includeTotal` regressions are invisible to fake providers, every searchable aggregate needs a `Test.Integration` search test against a SQL Testcontainer that asserts the returned page **and** `Total`. This is required at `balanced` and above - it is the specific failure that test exists to catch.
+
+### Paged queries require a deterministic total order
+
+Every order passed to `QueryPageProjectionAsync`, `Skip`, or `Take` must end in a unique tie-breaker. A business column such as `Name`, `Title`, `CreatedAt`, or `Status` is not unique and cannot define stable page boundaries alone. Append `ThenBy(e => e.Id)` (or another immutable unique key) after the requested business sort, including every default and descending branch. The business sort controls presentation; the tie-breaker exists only for deterministic membership. Do not turn this into a universal newest-first or UUID-version policy.
+
+Real-SQL coverage must create more than one page of rows with the same business sort value, read all pages, and assert exact IDs: no duplicate, no omission, stable repeat result, and correct `Total`. In smoke/UI tests, locate the created row by its returned ID or an exact normalized cell value. Substring matches can select another user's row once shared data grows.
 
 ## Critical: Value-Converted Predicate Boundary
 

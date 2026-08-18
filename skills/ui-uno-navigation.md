@@ -10,6 +10,20 @@ Companion files:
 
 ---
 
+## Navigator layout mode and route ownership
+
+Choose the navigator from the host control and desired ownership. These shapes are not interchangeable:
+
+| Shape | Use | Ownership rule |
+|---|---|---|
+| Panel/Grid with `Region.Navigator="Visibility"` | Multiple top-level sibling routes kept alive and shown/hidden | Leave the panel region empty; the navigator materializes sibling `FrameView` children. Do not predeclare named attached `ContentControl` children inside it. |
+| `ContentControl` content region | One route view replaces the current content | Attach the region to the content host and use its content navigator; do not add a competing `Visibility` panel around named child hosts. |
+| `Frame` / `FrameView` | Detail navigation with a back stack | The frame owns push/pop history. Decide explicitly whether a detail belongs in this stack or is a sibling in the parent region. |
+
+Mixing `Region.Navigator="Visibility"` with predeclared named attached `ContentControl` children can produce successful route responses with no visible content. Start from one proven layout shape and add a render test that navigates to every registered sibling.
+
+`this.Navigator()` resolves the navigator containing `this`; it does not mean "the navigator for the sibling I want." A command executing inside a child frame can therefore replace that frame or its shell while the intended sibling region never changes. Resolve the owning region element (`RootGrid.Navigator()` in the pattern below), or use an explicit parent route qualifier only after proving the resulting route ownership. Tests must assert both the active view and the shell/chrome that must remain mounted.
+
 ## Menu Navigation: Always Land On Top Page
 
 A persistent side-nav / bottom-tab menu must land on the **top** page regardless of any sub-page stacked in the content region. Three distinct traps must be handled together - solving only one leaves the nav broken in a different way.

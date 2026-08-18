@@ -89,7 +89,7 @@ Playwright requires a real hosted stack. It cannot run on `WebApplicationFactory
 
 - Use Page Object Model. **Language split:** author page objects in **C# only for stable, strongly-typed smoke paths that benefit from typed orchestration** - the Gateway/Blazor happy path is the canonical case. Keep React and Uno page/test helpers in **TypeScript** unless a concrete maintenance reason (e.g. an MSTest runner that must own the flow) justifies a C# wrapper. Do not port a working TypeScript suite to C# for uniformity's sake; the renderer-specific helpers (canvas bridge, coordinate-click) live more naturally in TS.
 - Prefer stable selectors (`data-testid`).
-- Isolate test data with unique names/ids.
+- Isolate test data with unique names/ids and delete or archive every smoke-created record in `finally` / fixture teardown. Cleanup failure is diagnostic evidence and must not mutate unrelated provider data.
 - Assert structural UI strings, not data-dependent counts.
 - Cover the real workflow surface: shell/navigation, create/read/update/delete, and nested child collections when DOM-capable UI exposes them. For Uno Skia canvas, use smoke plus app-owned bridge state transitions only; do not claim CRUD or nested-child correctness from pixels alone.
 
@@ -168,30 +168,42 @@ When `Test.PlaywrightUI` is a C# MSTest project that drives an existing TypeScri
 - **Build the wrapper project as a gate.** Namespace mismatches between wrapper tests and `TypeScriptPlaywrightRunner.cs` are scaffold defects. `dotnet build` or `dotnet test tests/Test.PlaywrightUI/Test.PlaywrightUI.csproj -m:1` must catch them before handoff.
 - **Register the C# wrapper in the `.slnx`.** A `Test.PlaywrightUI` project with a .NET wrapper must be in the solution file or `dotnet test` over the solution silently skips it - the suite passes by being invisible. The TypeScript-only projects (React/Uno) are still run by their own Playwright config; only the .NET wrapper needs `.slnx` registration.
 
+### Browser synchronization and lookup contract
+
+- Do not click after only `DOMContentLoaded`, a splash disappearance, or a guessed delay. Wait for an explicit app-interactive marker owned by the UI, then begin actions.
+- Detect the renderer before choosing selectors. Prefer roles, labels, test IDs, and other semantic DOM locators whenever real elements exist.
+- Scope popover/menu locators to the currently visible/open container. Global selectors can hit stale, hidden overlays retained by the component framework.
+- After a mutation, wait for a visible server-acknowledged state such as the returned ID, exact normalized row cell, success state, or refreshed detail. Do not start the next action on click completion alone.
+- Locate created rows by returned ID or exact normalized cell text, never substring containment. Shared data can make a substring select the wrong row.
+- Browser policy behavior that headless automation does not reproduce, including popup blocking and user-gesture rules, retains an explicit real-browser/manual acceptance check.
+
 ### Uno WASM: DOM/Click Strategy (managed-DOM renderer)
 
-Uno WASM with the **managed-DOM renderer** often needs coordinate-click interaction.
+Uno WASM with the **managed-DOM renderer** uses semantic locators first. Coordinate clicking is a renderer-specific fallback only after a visible DOM element is proven but normal Playwright click dispatch does not reach the Uno event handler.
 
-- Query Uno elements by attributes like `xamltype` or `xamlautomationid`.
+- Prefer roles, labels, test IDs, then Uno attributes such as `xamltype` or `xamlautomationid`.
 - Compute center with `getBoundingClientRect()`.
-- Use `page.mouse.click(x, y)` (or down/up) with retry loop.
-- Filter target text with known prefix (for example `E2E-`) to avoid collisions.
+- Use `page.mouse.click(x, y)` (or down/up) only as the bounded fallback.
+- Match exact normalized target text or a returned ID. A known prefix is useful for isolation but is not an exact row selector.
 
 ```typescript
+const expectedExactText = "E2E-created-row";
+let clicked = false;
 for (let attempt = 0; attempt < 20; attempt++) {
-  const coords = await page.evaluate(() => {
+  const coords = await page.evaluate((expected) => {
     for (const p of Array.from(document.querySelectorAll("p"))) {
       const txt = (p.textContent ?? "").trim();
-      if (!txt.startsWith("E2E-")) continue; // filter by known prefix to avoid overlapping elements
+      if (txt !== expected) continue;
       const r = p.getBoundingClientRect();
       if (r.width > 0 && r.height > 0 && r.y > 0 && r.x > 0)
         return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
     }
     return null;
-  });
-  if (coords) { await page.mouse.click(coords.x, coords.y); break; }
+  }, expectedExactText);
+  if (coords) { await page.mouse.click(coords.x, coords.y); clicked = true; break; }
   await page.waitForTimeout(500);
 }
+if (!clicked) throw new Error(`Visible exact row not found: ${expectedExactText}`);
 ```
 
 ### Uno WASM: Canvas Test Bridge (Skia renderer)
@@ -243,8 +255,13 @@ Browser diagnostics are part of the harness, not an optional debugging add-on. C
 - Canvas count.
 - Body text snippet.
 - Last bridge state JSON.
+- Server/resource notices and host diagnostics for the affected resource.
+- Full DOM snapshot and screenshot.
+- The resolved artifact directory and a check that every expected artifact file exists there before upload.
 
 Install the `window.onerror` / `unhandledrejection` capture with `AddInitScriptAsync` before navigating so early Mono/WASM failures are retained.
+
+CI uploads failure diagnostics with `if: failure() || cancelled()` and `if-no-files-found: error`. Successful benchmark, mutation, or other evidence artifacts still upload on success. The producer and uploader must use the same resolved path; an upload step pointing at a different repo-relative `TestResults` folder is a harness failure.
 
 ### Uno WASM: Published Release Cold-Start Proof
 

@@ -386,7 +386,7 @@ operator setup, not part of any app's payload, and not required to scaffold or r
 
 Setup, installation, and per-tool details are operator/machine concerns managed separately
 and are out of scope for this instruction set. Within the scaffold, the only context-tooling
-guidance that matters is the per-repo graphify layer choice and phase-boundary build timing,
+guidance that matters is the optional per-repo graphify layer choice and material-change refresh timing,
 in [support/context-tooling.md](support/context-tooling.md) (reached per repo via a pointer in
 [START-AI.md](START-AI.md)).
 
