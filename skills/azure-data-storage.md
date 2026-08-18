@@ -95,9 +95,9 @@ private static void Add{Store}Services(IServiceCollection services, IConfigurati
 
 Blob and Table share an `AzureStorage` resource with emulator support. Cosmos DB uses its own resource.
 
-> **Version constraint:** When using `IAzureClientFactory<T>` alongside `EF.Host`, `Microsoft.Extensions.Azure` must be >=1.12.0 (pulled transitively by `EF.Host` -> `AzureAppConfiguration`). Lower versions cause assembly version conflicts.
+> **Dependency alignment:** Resolve the latest stable `Microsoft.Extensions.Azure` when using `IAzureClientFactory<T>` alongside `EF.Host`. Keep the concrete version in `Directory.Packages.props`; restore and build must reject an incompatible transitive family.
 
-> **Cosmos DB dependency:** `Microsoft.Azure.Cosmos` requires `Newtonsoft.Json >=10.0.2`. Add an explicit `Newtonsoft.Json` entry to `Directory.Packages.props` when adding Cosmos.
+> **Cosmos DB dependency:** When adding Cosmos, resolve the latest stable compatible `Newtonsoft.Json` explicitly in `Directory.Packages.props`; do not preserve an older transitive version from copied guidance.
 
 ```csharp
 // Blob + Table (shared Azure Storage resource)

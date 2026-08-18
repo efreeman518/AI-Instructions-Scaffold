@@ -1,10 +1,23 @@
 # Reference Application - TaskFlow
 
-A companion reference app that demonstrates every pattern and convention this instruction set produces.
+A companion reference app that provides executable proof for selected high-value patterns without claiming universal coverage.
 
 **Repository:** <https://github.com/efreeman518/AI-Instructions-ReferenceApp>
 
-TaskFlow is a fully scaffolded task-management application built by following this instruction set end-to-end. It covers dual DbContext pooling, YARP gateway with claims transformation, Aspire orchestration, FusionCache with Redis backplane, TickerQ scheduling, Azure Functions, multi-tenancy, scaffold-mode auth, Uno WASM UI, Blazor UI, and React/Vite UI.
+TaskFlow is a scaffolded task-management application built by following this instruction set end-to-end. It covers dual DbContext pooling, YARP gateway with claims transformation, Aspire orchestration, FusionCache with Redis backplane, TickerQ scheduling, Azure Functions, multi-tenancy, scaffold-mode auth, Uno WASM UI, Blazor UI, and React/Vite UI.
+
+## Coverage contract
+
+TaskFlow's `.scaffold/REFERENCE-STATUS.md` is the canonical current matrix. Read each capability through one of four statuses:
+
+| Status | Meaning |
+|---|---|
+| `proven` | Implemented and covered by executable build, test, or smoke evidence |
+| `deployment-only` | Generated or wired, but live acceptance requires deployed external resources or identity |
+| `documented-only` | Example or opt-in documentation exists without active runtime wiring |
+| `not enabled` | Intentionally absent from TaskFlow configuration |
+
+Do not promote `deployment-only` or `documented-only` examples as compiled proof. Use the [proof map](taskflow-proof-map.md) only for capabilities marked `proven` in current status.
 
 ## When to consult it
 
@@ -21,7 +34,7 @@ For a phase-by-phase pointer map into the reference app, use [taskflow-proof-map
 
 ## Rules
 
-- Do not install the scaffold `.instructions/` payload into TaskFlow during normal maintenance. TaskFlow is the proof/reference implementation; install into it only when deliberately testing installer smoke behavior.
+- Do not install the scaffold `.instructions/` payload into TaskFlow during normal maintenance. TaskFlow is the proof/reference implementation; install into it only when deliberately testing installer behavior.
 - Do not copy TaskFlow files wholesale - use as a verified example and generate code matching the target project's domain.
 - When stuck on how a pattern should look in practice, consult TaskFlow before inventing a new approach.
 - Treat TaskFlow as a live codebase reference whenever local clone or GitHub MCP access is available. If neither access path is available, note the gap in `HANDOFF.md` and continue with the current instruction set.

@@ -57,11 +57,16 @@ Canonical detail (what to update where, supersede vs rewrite, do-not-delete): [`
 
 ```
 Is HANDOFF.md present?
-  YES -> Resume from currentPhase/currentSubPhase. Skip Phase Router.
+  YES -> Read workflowStatus first.
+         complete -> Scaffold workflow is terminal. Return to ordinary repository maintenance; do not load phase files.
+         active   -> Resume from currentPhase/currentSubPhase. Skip Phase Router.
+         missing  -> Legacy HANDOFF: infer active unless currentSubPhase is complete, then treat as complete.
   NO  -> New project          -> Phase Router
         New entity            -> load support/vertical-slice-checklist.md fast-path only
         Brownfield adoption   -> load ai/adopt-codebase.md (replaces Phase 1)
 ```
+
+`workflowStatus` is the terminal-state authority. `currentPhase: 5` plus `currentSubPhase: complete` remains a supported legacy completion signal, but new handoffs always write `workflowStatus: active | complete`.
 
 First scaffold? The pruned API-only path with canonical prompt overlays is [support/minimum-viable-scaffold.md](support/minimum-viable-scaffold.md).
 
@@ -106,7 +111,7 @@ Apply Session Model and File Loading Rule above, then route the active phase:
 
 ## Reference Application
 
-A companion reference app **TaskFlow** demonstrates every pattern these instructions produce. Canonical detail (repo URL, AI access rules, do-not-copy-wholesale rule, when to consult): see [`support/reference-app.md`](support/reference-app.md) and [`support/taskflow-proof-map.md`](support/taskflow-proof-map.md) for the phase -> area index. For regression-checking instruction changes against a canonical small scaffold, see [`support/golden-path-sample.md`](support/golden-path-sample.md).
+A companion reference app **TaskFlow** provides executable proof for selected high-value patterns. Its current coverage matrix distinguishes `proven`, `deployment-only`, `documented-only`, and `not enabled`. Canonical detail (repo URL, AI access rules, do-not-copy-wholesale rule, when to consult): see [`support/reference-app.md`](support/reference-app.md) and [`support/taskflow-proof-map.md`](support/taskflow-proof-map.md) for the phase -> area index. For regression-checking instruction changes against a canonical small scaffold, see [`support/golden-path-sample.md`](support/golden-path-sample.md).
 
 ## Event Boundary Rule
 

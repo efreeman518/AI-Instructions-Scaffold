@@ -31,7 +31,7 @@ Walk the Inspection Order in `.instructions/ai/adopt-codebase.md` section Inspec
 When inference is complete:
 
 1. Write `.scaffold/domain-specification.yaml`, `.scaffold/UBIQUITOUS-LANGUAGE.md`, `.scaffold/DESIGN-DECISIONS.md` (create `.scaffold/` if absent).
-2. Write `HANDOFF.md` at project root with `currentPhase: 2`, `currentSubPhase: ""`, `contractsScaffolded: false`, and a section Completed note recording the adoption.
+2. Write `HANDOFF.md` at project root with `workflowStatus: active`, `currentPhase: 2`, `currentSubPhase: ""`, `contractsScaffolded: false`, and a section Completed note recording the adoption.
 3. Stop. Phase 2 resumes in the next session, identically to a greenfield project.
 
 ## Validation Gate

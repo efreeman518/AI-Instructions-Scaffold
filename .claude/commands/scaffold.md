@@ -14,7 +14,7 @@ You are executing the phased scaffolding workflow. Follow these steps exactly:
 
 1. Read `.instructions/START-AI.md` - it is the canonical bootstrap. Follow it precisely.
 2. Check for `HANDOFF.md` in the project root (NOT inside `.instructions/`).
-   - If present: resume from `currentPhase` / `currentSubPhase`.
+   - If present: read `workflowStatus` first. `complete` exits the scaffold workflow into ordinary maintenance; `active` resumes from `currentPhase` / `currentSubPhase`. For a legacy file without the field, follow the fallback in `START-AI.md`.
    - If absent: new project - run the Phase Router.
 3. Load only the files listed for the current phase in the Phase Router. For Phase 5, use the Phase 5 file table in `.instructions/ai/SKILL.md`.
 

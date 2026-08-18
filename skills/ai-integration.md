@@ -99,19 +99,19 @@ Useful primitives:
 ## Packages
 
 - Baseline for any AI capability (Aspire Foundry path):
-    - `Aspire.Hosting.Foundry` (AppHost) - preview-only, pin with reason
-    - `Aspire.Azure.AI.Inference` (host project) - preview-only, pin with reason; provides the `IChatClient`
+    - `Aspire.Hosting.Foundry` (AppHost) - when no stable release exists, resolve the latest compatible prerelease and document the temporary exception
+    - `Aspire.Azure.AI.Inference` (host project) - same prerelease rule; provides the `IChatClient`
     - `Microsoft.Extensions.AI` - `IChatClient`, `AIFunctionFactory`
     - `Microsoft.Agents.AI` - `ChatClientAgent`
     - `Azure.Identity` - managed identity for real Azure
 - Add only when enabled:
     - `Azure.Search.Documents` + `Aspire.Hosting.Azure.Search` for search
     - `Azure.AI.OpenAI` only if a component needs the Azure OpenAI client directly (embeddings, a FlowEngine Azure-OpenAI connector)
-    - `Azure.AI.Projects` + `Microsoft.Agents.AI.Foundry` (prerelease) when consuming a Foundry **project** or **server-hosted/pre-existing agent** from app code (the `AIProjectClient.AsAIAgent(...)` path). `Microsoft.Agents.AI.Foundry` carries no stable release - pin with reason.
-    - `Microsoft.AI.Foundry.Local` (pin `1.2.3`) + `OpenAI` + `Microsoft.Extensions.AI.OpenAI` (API host only) - **temporary** SDK-direct local-dev workaround while Aspire `RunAsFoundryLocal()` is broken (see *Aspire Integration* -> *Known issue*). `Microsoft.AI.Foundry.Local` is a native self-contained SDK: set `RuntimeIdentifiers` and reference with `PrivateAssets="all"`. `Microsoft.Extensions.AI.OpenAI` provides `.AsIChatClient()` over the OpenAI client. **Remove all three** when the Aspire fix lands (see *Migration: restoring `RunAsFoundryLocal()`*). See *SDK-direct API-host bootstrap (temporary workaround)*.
+    - `Azure.AI.Projects` + `Microsoft.Agents.AI.Foundry` when consuming a Foundry **project** or **server-hosted/pre-existing agent** from app code (the `AIProjectClient.AsAIAgent(...)` path). If only a prerelease exists, use the latest compatible prerelease under the temporary-exception rule.
+    - `Microsoft.AI.Foundry.Local` + `OpenAI` + `Microsoft.Extensions.AI.OpenAI` (API host only) - conditional SDK-direct local-dev workaround only when the latest stable Aspire path reproduces dotnet/aspire#12750. Resolve latest stable packages, set `RuntimeIdentifiers`, and reference the native package with `PrivateAssets="all"`. `Microsoft.Extensions.AI.OpenAI` provides `.AsIChatClient()` over the OpenAI client. Remove all three when the preferred Aspire path passes the live lane. See *SDK-direct API-host bootstrap (temporary workaround)*.
     - `Microsoft.Agents.Workflows` for workflow orchestration
 
-Version all packages in `Directory.Packages.props`. The preview-only packages above (`Aspire.Hosting.Foundry`, `Aspire.Azure.AI.Inference`, `Microsoft.Agents.AI.Foundry`) carry no stable release; pin them with a one-line inline reason (the version-pinning exception). `Microsoft.AI.Foundry.Local` is pinned to `1.2.3` for a different reason - it is the version-specific workaround for the broken Aspire local path; pin it with that inline reason and remove it (with `OpenAI` and `Microsoft.Extensions.AI.OpenAI`) when Aspire bundles Foundry Local SDK >= 1.x.
+Resolve packages at generation time and record concrete versions in `Directory.Packages.props`. Prefer latest stable. When a required package has no stable release, record the issue, prerelease reason, removal condition, and validating test beside the resolved prerelease. The SDK-direct local path uses the latest stable Foundry Local SDK and remains only while the preferred Aspire live lane reproduces dotnet/aspire#12750.
 
 ---
 
@@ -309,9 +309,9 @@ Endpoint keys by axis: `FoundryEndpoint` selects/configures the real Azure path 
 
 Only wire AI resources through Aspire if the solution already uses an AppHost. Do not introduce Aspire solely for AI.
 
-> **Known issue - the preferred local path (`RunAsFoundryLocal()`) is temporarily broken (as of 2026-06).** `RunAsFoundryLocal()` is the **target/long-term** local model path and should be restored as soon as `Aspire.Hosting.Foundry` bundles Foundry Local SDK >= 1.x. It does not work today: every `Aspire.Hosting.Foundry` release (through `13.4.5-preview.1.26316.12`) pins **`Microsoft.AI.Foundry.Local` 0.3.0**, whose endpoint discovery shells `foundry service status` and regex-matches `is running on (http://...)`. That only matches the stale `0.8.119` runtime; the GA `1.x` runtime (SDK `1.2.x`; `cli-preview-0.10.0` even renamed `service` -> `server`) does not, so Aspire injects an empty `Endpoint=` connection string and the host throws `Azure AI Inference chat client endpoint is invalid` (dotnet/aspire#12750). **Until then, the local path is the SDK-direct API-host bootstrap below - a temporary workaround, not the target architecture.** The Azure path (`AddFoundry` provision/existing + `AddAzureChatCompletionsClient("chat")` over `ConnectionStrings:chat`) is unaffected and remains the Aspire path.
+> **Conditional known issue - dotnet/aspire#12750.** Test the latest stable `RunAsFoundryLocal()` path first. If it injects an empty endpoint or fails current runtime discovery, record the reproduction, use the SDK-direct API-host bootstrap below temporarily, and keep `Test.FoundryLocal` as the validating test. Removal condition: the preferred Aspire path passes provider-status and live completion tests on the current runtime. The Azure path (`AddFoundry` provision/existing + `AddAzureChatCompletionsClient("chat")` over `ConnectionStrings:chat`) is unaffected.
 
-Use the Foundry hosting integration (`Aspire.Hosting.Foundry`) for the **Azure path** - it provisions Foundry on publish and connects to it in run mode. This package and the Inference client (`Aspire.Azure.AI.Inference`) are preview-only - pin them with an inline reason in `Directory.Packages.props` (the version-pinning exception). The deployment resource name (`"chat"` below) is the connection name consumers bind to. The current **local** path does not share this graph (see *Known issue*): it is the SDK-direct API-host workaround with no `chat` Aspire resource. Restoring `RunAsFoundryLocal()` after the Aspire fix is what brings local back onto the same graph.
+Use the Foundry hosting integration (`Aspire.Hosting.Foundry`) for the **Azure path** - it provisions Foundry on publish and connects to it in run mode. If this package or the Inference client has no stable release, resolve the latest compatible prerelease and apply the four-part temporary-exception record in `Directory.Packages.props`. The deployment resource name (`"chat"` below) is the connection name consumers bind to. A reproduced local-path issue uses the SDK-direct workaround with no `chat` Aspire resource until the preferred path passes again.
 
 ### Two axes: lifecycle x consumption
 
@@ -324,7 +324,7 @@ Use the Foundry hosting integration (`Aspire.Hosting.Foundry`) for the **Azure p
 
 | Mode | AppHost call | Result | Azure? |
 |---|---|---|---|
-| Foundry Local - `RunAsFoundryLocal` (preferred, target) | `AddFoundry("foundry").RunAsFoundryLocal().AddDeployment("chat", FoundryModel.Local.Qwen2505b)` | **Preferred/target** local path: runs the model on-device, inference only, injects `ConnectionStrings:chat`. **Temporarily broken** against GA Foundry Local (dotnet/aspire#12750, see *Known issue*) - restore after the Aspire fix. | No |
+| Foundry Local - `RunAsFoundryLocal` (preferred, target) | `AddFoundry("foundry").RunAsFoundryLocal().AddDeployment("chat", FoundryModel.Local.Qwen2505b)` | Runs the model on-device and injects `ConnectionStrings:chat`. Test this current path first; use the fallback only if dotnet/aspire#12750 reproduces. | No |
 | Foundry Local - `sdk-direct-api-host` (temporary, current) | No `AddFoundry` resource; when Azure is absent the API host attempts the local SDK bootstrap by default (no opt-in var), driving `Microsoft.AI.Foundry.Local` directly. Offline / RID-free tiers opt out via `AiServices:DisableFoundryLocal`. | **Temporary workaround** in effect now - no `chat` resource, no `ConnectionStrings:chat`. See *SDK-direct API-host bootstrap*. | No |
 | Provision new | `AddFoundry("foundry").AddDeployment("chat", FoundryModel.OpenAI.Gpt4oMini)` | Bicep creates the account + deploys the model on publish (and in run mode when `Azure:SubscriptionId/ResourceGroupPrefix/Location` provisioning secrets are set). | Yes (your sub) |
 | Connect to existing | `AddFoundry("foundry").RunAsExisting(nameParam, rgParam)` (also `PublishAsExisting`, `AsExisting`) then `.AddDeployment("chat", ...)` | Points at an account you already provisioned; provisions nothing. The deployment name must match a model already deployed there. | Yes (existing) |
@@ -418,11 +418,11 @@ If the target Azure environment requires keyless managed-identity inference inst
 
 > **This is a temporary workaround, not the target architecture.** Use it only while the preferred path (`RunAsFoundryLocal()`) is broken (see *Known issue*). When Aspire ships the fix, migrate back per *Migration: restoring `RunAsFoundryLocal()`* below.
 
-> **The snippet below is verified against `Microsoft.AI.Foundry.Local` `1.2.3` only** (the pin), by the RID-bound `Test.FoundryLocal` live lane (provider `local`, real `qwen2.5-0.5b` completion). The preview SDK surface has shifted across releases - `CreateAsync` returns `Task` (get the manager from the static `Instance`), `StartWebServiceAsync()` needs `Configuration.Web` set first and the bound endpoint reads back from `manager.Urls`, and `IModel.GetChatClientAsync()` is not a `Microsoft.Extensions.AI` client. Re-verify against the installed version before relying on it; treat it as illustrative, not version-agnostic.
+> Resolve the latest stable `Microsoft.AI.Foundry.Local` package before using this illustrative snippet, then run the RID-bound `Test.FoundryLocal` live lane. SDK surfaces can shift; compile and live-provider evidence, not this snippet, decide whether the current API shape is valid.
 
-In this mode the **AppHost wires no Foundry/`chat` resource at all** - there is no `AddFoundry`, no `RunAsFoundryLocal()`, and **no `ConnectionStrings:chat`**. The AppHost only forwards the opt-in env var to the API host; the API host references the self-contained **`Microsoft.AI.Foundry.Local` 1.2.3** SDK and drives it directly (the SDK starts the Foundry Local service, loads a model, and exposes a local OpenAI-compatible endpoint wrapped as `IChatClient`). The Azure path is untouched and stays on Aspire - `AddFoundry` (provision/existing) + host-side `AddAzureChatCompletionsClient("chat")` over `ConnectionStrings:chat`.
+In this mode the **AppHost wires no Foundry/`chat` resource at all** - there is no `AddFoundry`, no `RunAsFoundryLocal()`, and **no `ConnectionStrings:chat`**. The API host references the resolved latest stable `Microsoft.AI.Foundry.Local` SDK and drives it directly. The Azure path is untouched and stays on Aspire - `AddFoundry` (provision/existing) + host-side `AddAzureChatCompletionsClient("chat")` over `ConnectionStrings:chat`.
 
-**Why version-pinned here (baseline exception):** the failure is version-specific - Aspire's bundled `0.3.0` discovery only matches the stale `0.8.119` runtime, and only `Microsoft.AI.Foundry.Local` `>= 1.2.x` works against the GA `1.x` runtime. Pin `1.2.3` with an inline reason and drop the pin when Aspire ships against a current SDK.
+**Temporary-exception record:** issue: dotnet/aspire#12750 reproduced on the latest stable Aspire path; reason: direct SDK bootstrap restores current runtime discovery; removal: preferred `RunAsFoundryLocal()` passes again; validating test: RID-bound `Test.FoundryLocal` provider-status and live completion lane.
 
 **AppHost (local workaround branch).** Wire no `chat` resource and forward no opt-in var; when Azure is absent the API host attempts the local bootstrap on its own. The only thing an AppHost ever forwards for this path is the **testing** opt-out:
 
@@ -444,7 +444,7 @@ In this mode the **AppHost wires no Foundry/`chat` resource at all** - there is 
 <ItemGroup>
   <!-- TEMPORARY workaround refs - remove when Aspire RunAsFoundryLocal() is restored (see Migration).
        PrivateAssets=all keeps the native package out of downstream refs.
-       Pinned: Aspire's bundled 0.3.0 cannot discover the GA 1.x runtime (dotnet/aspire#12750). -->
+       Issue: dotnet/aspire#12750. Remove when the preferred path passes Test.FoundryLocal. -->
   <PackageReference Include="Microsoft.AI.Foundry.Local" PrivateAssets="all" />
   <PackageReference Include="OpenAI" />
   <PackageReference Include="Microsoft.Extensions.AI.OpenAI" /> <!-- .AsIChatClient() over the OpenAI client -->

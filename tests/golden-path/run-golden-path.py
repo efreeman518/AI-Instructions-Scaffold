@@ -103,7 +103,7 @@ PROMPT_HEADINGS = {
 RUNTIME_CONCERNS_5B = "aspire/caching/observability/security/multi-tenant"
 RUNTIME_PLACEHOLDER_5B = "{gateway/aspire/caching/observability/security/multi-tenant}"
 
-HANDOFF_FIXTURE = """instructionVersion: ""
+HANDOFF_FIXTURE = """workflowStatus: active
 currentPhase: "3"
 currentSubPhase: ""
 scaffoldMode: full

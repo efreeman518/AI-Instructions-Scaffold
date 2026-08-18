@@ -13,7 +13,7 @@ All instruction files (skills, templates, support docs, schemas, scripts) live u
 ## Bootstrap
 
 1. Read `.instructions/START-AI.md` and follow its Session Start Router.
-2. If `HANDOFF.md` exists in the project root, resume from `currentPhase`/`currentSubPhase`. Otherwise run the Phase Router fresh.
+2. If `HANDOFF.md` exists in the project root, read `workflowStatus` first. `complete` exits the scaffold workflow into ordinary maintenance; `active` resumes from `currentPhase`/`currentSubPhase`. For a legacy file without the field, follow the fallback in `START-AI.md`. Otherwise run the Phase Router fresh.
 3. Load only the files listed for the current phase. For Phase 5, use the file table in `.instructions/ai/SKILL.md`.
 
 ## Core Rules

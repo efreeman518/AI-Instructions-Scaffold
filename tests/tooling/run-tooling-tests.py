@@ -19,6 +19,9 @@ Exit code 0 when all tests pass, 1 otherwise.
 from __future__ import annotations
 
 import importlib.util
+import contextlib
+import io
+import json
 import os
 import shutil
 import subprocess
@@ -48,6 +51,7 @@ def load_module(name: str, path: Path):
 
 installer = load_module("installer", REPO_ROOT / "scripts" / "install-to-project.py")
 validator = load_module("validator", REPO_ROOT / "scripts" / "validate-instructions.py")
+reference_validator = load_module("reference_validator", REPO_ROOT / "scripts" / "validate-reference.py")
 goldenpath = load_module("goldenpath", REPO_ROOT / "tests" / "golden-path" / "run-golden-path.py")
 
 
@@ -138,16 +142,34 @@ class InstallerTests(unittest.TestCase):
         self.assertIn("[README.md](README.md)", untouched)
 
     def _make_complete_install(self, root: Path) -> None:
+        managed_files: dict[str, str] = {}
+        managed_blocks: dict[str, str] = {}
+        merge_targets = {
+            dst_rel for _src, dst_rel, kind in installer.AGENT_COPIES if kind == "merge"
+        }
         for rel in installer.SMOKE_CHECK_PAYLOAD + installer.SMOKE_CHECK_HARNESS_ENTRYPOINTS:
             p = root / rel
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text("x\n", encoding="utf-8")
+            if rel not in merge_targets:
+                managed_files[rel] = installer.hash_file(p)
         for _src, dst_rel, kind in installer.AGENT_COPIES:
             if kind == "merge":
                 (root / dst_rel).write_text(
                     installer.MERGE_SENTINEL_START + "\nx\n" + installer.MERGE_SENTINEL_END + "\n",
                     encoding="utf-8",
                 )
+                managed_blocks[dst_rel] = installer.hash_bytes(b"x")
+        manifest = {
+            "format": installer.MANIFEST_FORMAT,
+            "scope": "full",
+            "sourceRepository": "https://example.test/scaffold",
+            "managedFiles": managed_files,
+            "managedBlocks": managed_blocks,
+        }
+        manifest_path = root / installer.MANIFEST_REL
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
     def test_verify_install_passes_then_detects_missing_file(self):
         root = self.tmp / "app"
@@ -156,19 +178,278 @@ class InstallerTests(unittest.TestCase):
         (root / ".instructions" / "START-AI.md").unlink()
         self.assertEqual(installer.verify_install(root, instructions_only=False), 1)
 
+    def test_verify_install_detects_tampered_file(self):
+        root = self.tmp / "app"
+        self._make_complete_install(root)
+        (root / ".instructions" / "START-AI.md").write_text("tampered\n", encoding="utf-8")
+        self.assertEqual(installer.verify_install(root, instructions_only=False), 1)
+
     def test_verify_install_detects_missing_sentinels(self):
         root = self.tmp / "app"
         self._make_complete_install(root)
         (root / "AGENTS.md").write_text("no markers here\n", encoding="utf-8")
         self.assertEqual(installer.verify_install(root, instructions_only=False), 1)
 
-    def test_verify_install_detects_obsolete_payload_file(self):
+    def test_verify_install_detects_tampered_managed_block(self):
         root = self.tmp / "app"
         self._make_complete_install(root)
-        for rel in installer.OBSOLETE_PAYLOAD_FILES:
-            (root / rel).parent.mkdir(parents=True, exist_ok=True)
-            (root / rel).write_text("stale\n", encoding="utf-8")
+        (root / "AGENTS.md").write_text(
+            installer.MERGE_SENTINEL_START
+            + "\ntampered\n"
+            + installer.MERGE_SENTINEL_END
+            + "\n",
+            encoding="utf-8",
+        )
         self.assertEqual(installer.verify_install(root, instructions_only=False), 1)
+
+    def test_verify_install_ignores_user_content_and_warns_on_extra_file(self):
+        root = self.tmp / "app"
+        self._make_complete_install(root)
+        harness = root / "AGENTS.md"
+        harness.write_text("user content\n\n" + harness.read_text(encoding="utf-8"), encoding="utf-8")
+        extra = root / ".instructions" / "consumer-note.md"
+        extra.write_text("consumer-owned\n", encoding="utf-8")
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            result = installer.verify_install(root, instructions_only=False)
+        self.assertEqual(result, 0)
+        self.assertIn("[warn]", output.getvalue())
+        self.assertIn("consumer-note.md", output.getvalue())
+
+    def test_load_manifest_rejects_unsafe_path(self):
+        root = self.tmp / "app"
+        manifest_path = root / installer.MANIFEST_REL
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        manifest_path.write_text(
+            json.dumps({
+                "format": installer.MANIFEST_FORMAT,
+                "scope": "full",
+                "sourceRepository": "https://example.test/scaffold",
+                "managedFiles": {"../outside.md": "0" * 64},
+                "managedBlocks": {},
+            }),
+            encoding="utf-8",
+        )
+        manifest, error = installer.load_manifest(root)
+        self.assertIsNone(manifest)
+        self.assertIn("invalid entry", error)
+
+    def test_verify_install_warns_on_unmanifested_legacy_file(self):
+        root = self.tmp / "app"
+        self._make_complete_install(root)
+        legacy = root / ".instructions" / "CLAUDE.md"
+        legacy.write_text("locally owned legacy content\n", encoding="utf-8")
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            self.assertEqual(installer.verify_install(root, instructions_only=False), 0)
+        self.assertIn("unmanifested file(s) left untouched", output.getvalue())
+        self.assertEqual(legacy.read_text(encoding="utf-8"), "locally owned legacy content\n")
+
+    def test_plan_pruning_removes_unchanged_and_rejects_changed_file(self):
+        root = self.tmp / "app"
+        old = root / ".instructions" / "old.md"
+        old.parent.mkdir(parents=True, exist_ok=True)
+        old.write_text("old managed content\n", encoding="utf-8")
+        previous = {
+            "managedFiles": {".instructions/old.md": installer.hash_file(old)},
+            "managedBlocks": {},
+        }
+        expected = {"managedFiles": {}, "managedBlocks": {}}
+
+        removed, blocks, conflicts = installer.plan_pruning(
+            root, previous, expected, instructions_only=False
+        )
+        self.assertEqual(removed, [".instructions/old.md"])
+        self.assertEqual(blocks, [])
+        self.assertEqual(conflicts, [])
+
+        old.write_text("local edit\n", encoding="utf-8")
+        removed, _blocks, conflicts = installer.plan_pruning(
+            root, previous, expected, instructions_only=False
+        )
+        self.assertEqual(removed, [])
+        self.assertEqual(conflicts, [".instructions/old.md"])
+
+    def test_plan_pruning_handles_removed_managed_block_safely(self):
+        root = self.tmp / "app"
+        harness = root / "AGENTS.md"
+        harness.parent.mkdir(parents=True, exist_ok=True)
+        harness.write_text(
+            "user content\n\n"
+            + installer.MERGE_SENTINEL_START
+            + "\nmanaged\n"
+            + installer.MERGE_SENTINEL_END
+            + "\n",
+            encoding="utf-8",
+        )
+        previous = {
+            "managedFiles": {},
+            "managedBlocks": {"AGENTS.md": installer.hash_bytes(b"managed")},
+        }
+        expected = {"managedFiles": {}, "managedBlocks": {}}
+
+        files, blocks, conflicts = installer.plan_pruning(
+            root, previous, expected, instructions_only=False
+        )
+        self.assertEqual(files, [])
+        self.assertEqual(blocks, ["AGENTS.md"])
+        self.assertEqual(conflicts, [])
+
+        harness.write_text(harness.read_text(encoding="utf-8").replace("managed", "local edit"), encoding="utf-8")
+        _files, blocks, conflicts = installer.plan_pruning(
+            root, previous, expected, instructions_only=False
+        )
+        self.assertEqual(blocks, [])
+        self.assertEqual(conflicts, ["AGENTS.md (managed block)"])
+
+    def test_fresh_install_passes_full_verification(self):
+        app = self.tmp / "fresh"
+        app.mkdir()
+        with (
+            mock.patch.object(
+                sys,
+                "argv",
+                ["install-to-project.py", "--target", str(app), "--verify"],
+            ),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(installer.main(), 0)
+
+    def test_install_prunes_only_hash_matching_removed_file(self):
+        app = self.tmp / "update"
+        app.mkdir()
+        with (
+            mock.patch.object(sys, "argv", ["install-to-project.py", "--target", str(app)]),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(installer.main(), 0)
+
+        manifest_path = app / installer.MANIFEST_REL
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        removed_rel = ".instructions/upstream-removed.md"
+        removed = app / removed_rel
+        removed.write_text("prior managed content\n", encoding="utf-8")
+        manifest["managedFiles"][removed_rel] = installer.hash_file(removed)
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        with (
+            mock.patch.object(sys, "argv", ["install-to-project.py", "--target", str(app)]),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(installer.main(), 0)
+        self.assertFalse(removed.exists())
+
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        conflict_rel = ".instructions/locally-changed-removed.md"
+        conflict = app / conflict_rel
+        conflict.write_text("prior managed content\n", encoding="utf-8")
+        manifest["managedFiles"][conflict_rel] = installer.hash_file(conflict)
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        conflict.write_text("local edit\n", encoding="utf-8")
+        with (
+            mock.patch.object(sys, "argv", ["install-to-project.py", "--target", str(app)]),
+            contextlib.redirect_stdout(io.StringIO()),
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            self.assertEqual(installer.main(), 1)
+        self.assertEqual(conflict.read_text(encoding="utf-8"), "local edit\n")
+
+    def test_pre_manifest_install_creates_manifest_and_dry_run_does_not(self):
+        app = self.tmp / "app"
+        app.mkdir()
+        legacy = app / ".instructions" / "CLAUDE.md"
+        legacy.parent.mkdir()
+        legacy.write_text("locally owned legacy content\n", encoding="utf-8")
+        with (
+            mock.patch.object(sys, "argv", ["install-to-project.py", "--target", str(app)]),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(installer.main(), 0)
+        manifest, error = installer.load_manifest(app)
+        self.assertIsNone(error)
+        self.assertIsNotNone(manifest)
+        self.assertIn(".instructions/START-AI.md", manifest["managedFiles"])
+        self.assertEqual(legacy.read_text(encoding="utf-8"), "locally owned legacy content\n")
+
+        dry = self.tmp / "dry"
+        dry.mkdir()
+        with (
+            mock.patch.object(
+                sys,
+                "argv",
+                ["install-to-project.py", "--target", str(dry), "--dry-run"],
+            ),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(installer.main(), 0)
+        self.assertFalse((dry / installer.MANIFEST_REL).exists())
+
+
+class WorkflowStateContractTests(unittest.TestCase):
+    def test_handoff_template_uses_explicit_active_terminal_contract(self):
+        handoff = (REPO_ROOT / "support" / "HANDOFF.md").read_text(encoding="utf-8")
+        self.assertIn("workflowStatus: active", handoff)
+        self.assertIn("currentSubPhase: complete", handoff)
+        self.assertNotIn("instructionVersion:", handoff)
+
+    def test_router_checks_workflow_status_before_phase_fields(self):
+        router = (REPO_ROOT / "START-AI.md").read_text(encoding="utf-8")
+        status_index = router.index("Read workflowStatus first")
+        phase_index = router.index("Resume from currentPhase/currentSubPhase")
+        self.assertLess(status_index, phase_index)
+        self.assertIn("complete -> Scaffold workflow is terminal", router)
+        self.assertIn("ordinary repository maintenance", router)
+
+    def test_golden_path_fixture_starts_active(self):
+        self.assertIn("workflowStatus: active", goldenpath.HANDOFF_FIXTURE)
+        self.assertNotIn("instructionVersion:", goldenpath.HANDOFF_FIXTURE)
+
+
+class ReferenceValidatorTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp(prefix="tooling-reference-"))
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def test_feature_flags_require_explicit_current_values(self):
+        resource = dict(reference_validator.EXPECTED_FLAGS)
+        self.assertEqual(reference_validator.check_flags(resource), [])
+        resource.pop("includeFlowEngine")
+        resource["includeGitHubActions"] = False
+        errors = reference_validator.check_flags(resource)
+        self.assertTrue(any("includeFlowEngine" in error and "missing" in error for error in errors))
+        self.assertTrue(any("includeGitHubActions=False" in error for error in errors))
+
+    def test_markdown_links_detect_missing_tracked_target(self):
+        docs = self.tmp / "docs"
+        docs.mkdir()
+        (docs / "ok.md").write_text("ok\n", encoding="utf-8")
+        readme = self.tmp / "README.md"
+        readme.write_text("[good](docs/ok.md)\n[bad](docs/missing.md)\n", encoding="utf-8")
+        errors = reference_validator.check_markdown_links(self.tmp)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("docs/missing.md", errors[0])
+
+    def test_action_refs_require_full_sha(self):
+        workflows = self.tmp / ".github" / "workflows"
+        workflows.mkdir(parents=True)
+        workflow = workflows / "ci.yml"
+        workflow.write_text("steps:\n  - uses: actions/checkout@v7\n", encoding="utf-8")
+        self.assertEqual(len(reference_validator.check_action_refs(self.tmp)), 1)
+        workflow.write_text(
+            "steps:\n  - uses: actions/checkout@" + "a" * 40 + " # latest stable\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(reference_validator.check_action_refs(self.tmp), [])
+
+    def test_proof_path_extraction_ignores_identifiers(self):
+        proof = self.tmp / "proof.md"
+        proof.write_text(
+            "`src/Host/App`, `tests/Test.Unit/Test.Unit.csproj`, `ApplicationStyleResolver`\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(
+            reference_validator.proof_paths(proof),
+            ["src/Host/App", "tests/Test.Unit/Test.Unit.csproj"],
+        )
 
 
 class ValidatorHelperTests(unittest.TestCase):
@@ -375,6 +656,20 @@ class ValidatorHelperTests(unittest.TestCase):
 
     def test_normalize_text(self):
         self.assertEqual(validator.normalize_text("  Foo\t Bar  "), "foo bar")
+
+    def test_action_reference_policy_rejects_mutable_ref(self):
+        temp_root = Path(tempfile.mkdtemp(prefix="tooling-action-policy-"))
+        self.addCleanup(shutil.rmtree, temp_root, ignore_errors=True)
+        path = temp_root / "action-policy.md"
+        path.write_text("- uses: actions/checkout@v7\n", encoding="utf-8")
+        findings = validator.Findings()
+        validator.check_action_reference_policy(path, findings)
+        self.assertEqual(len(findings.errors), 1)
+
+        path.write_text("- uses: actions/checkout@<latest-stable-sha>\n", encoding="utf-8")
+        findings = validator.Findings()
+        validator.check_action_reference_policy(path, findings)
+        self.assertEqual(findings.errors, [])
 
     def test_heading_matches_section(self):
         headings = ["Menu Navigation: Always Land On Top Page", "5a - Foundation (TDD)", "Aspire AppHost"]

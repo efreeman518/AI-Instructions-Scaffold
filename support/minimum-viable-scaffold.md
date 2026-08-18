@@ -4,12 +4,12 @@ The shortest path from "empty repo" to "passing API with one entity" using this 
 
 ## What MVS produces
 
-- A single .NET API host with one entity (CRUD + search), one DbContext pair (Trxn + Query), repositories, mapper, validator, service, endpoints, and unit + endpoint tests.
-- `scaffoldMode: api-only`. No Gateway, no Uno/Blazor/React UI, no Function App, no Scheduler, no AI services, no messaging.
-- Every external dependency declared `lazy-optional` so the app boots locally without cloud setup.
+- A single .NET API host plus Aspire AppHost with one entity (CRUD + search), one DbContext pair (Trxn + Query), repositories, mapper, validator, service, endpoints, and unit + endpoint tests.
+- `scaffoldMode: api-only`. SQL runs as an Aspire-managed local container with `externalDependencyModes.sql: emulator`. No Gateway, Uno/Blazor/React UI, Function App, Scheduler, AI services, or messaging.
+- Dependencies outside MVS scope use explicit no-op or deployment-only modes. Relational persistence is not lazy optional: the default AppHost supplies SQL, or a non-Aspire variant must configure an explicit reachable SQL endpoint.
 - Auth runs in scaffold mode (config-driven principal). Live identity provider is deferred.
 
-You should reach a green `dotnet build` + `dotnet test` and working `/healthz` plus `/readyz` probes in under a day of focused work. Everything beyond that is incremental.
+You should reach a green `dotnet build` + `dotnet test`, working `/healthz` plus `/readyz` probes, and SQL-backed CRUD under `/api/v1/{entity-route}` in under a day of focused work. Everything beyond that is incremental.
 
 ## When to use MVS vs the full workflow
 
@@ -27,7 +27,7 @@ MVS is a profile, not a separate path. After MVS finishes you can promote to a r
 Same as the [README Prerequisites](../README.md#prerequisites), with these MVS-specific simplifications:
 
 - **Skip:** Uno templates, `uno-check`, Kiota, Functions Core Tools.
-- **Required:** `.NET SDK`, `git`, Python (for installer), Docker (only if you keep Aspire enabled - MVS keeps it off by default). Package feed access is conditional on `packageStrategy` (chosen in Phase 2): `feed`/`hybrid` needs read access to the configured private feed (e.g., GitHub Packages for the canonical `EF.*` example); `local` needs only `nuget.org`.
+- **Required:** latest stable .NET SDK, `git`, Python (for installer), and Docker for the default Aspire SQL container and SQL-backed tests. Package feed access is conditional on `packageStrategy` (chosen in Phase 2): `feed`/`hybrid` needs read access to the configured private feed (e.g., GitHub Packages for the canonical `EF.*` example); `local` needs only `nuget.org`.
 
 ## Install
 
@@ -36,7 +36,7 @@ Same as the [README Prerequisites](../README.md#prerequisites), with these MVS-s
 py -3 scripts/install-to-project.py --target C:\path\to\your-app --verify
 ```
 
-The `--verify` flag confirms all entrypoints landed correctly. See [install-to-project.py](../scripts/install-to-project.py) for the full smoke-check list.
+The `--verify` flag checks every manifest-managed file and harness block. See [install-to-project.py](../scripts/install-to-project.py) for the full integrity contract.
 
 ## The MVS prompt overlays
 
@@ -68,11 +68,81 @@ First, resolve packageStrategy + packagePrefix (Discovery question #1):
   - local: provide prefix only; the scaffold generates src/Packages/<Prefix>.* for every layer in ef-packages-reference.md.
   - hybrid: feed URL(s) + prefix + localPackageLayers for layers the feed lacks.
 Set scaffoldMode: api-only. Set testingProfile: minimal.
-Disable: gateway, uno-ui, blazor-ui, function-app, scheduler, aspire, multi-tenant, ai-services, messaging.
-Set every external dependency mode to lazy-optional.
+Enable Aspire and SQL only. Set sql: emulator and generate the SQL container plus AppHost connection references.
+Disable: gateway, uno-ui, blazor-ui, react-ui, function-app, scheduler, multi-tenant, ai-services, messaging, caching, notifications, IaC, CI/CD, and advanced test tiers.
+If the developer explicitly disables Aspire, require a configured SQL connection endpoint before Phase 5b. Do not replace relational CRUD with in-memory persistence or call SQL lazy optional.
 ```
 
-**Done when:** `.scaffold/resource-implementation.yaml` has `scaffoldMode: api-only` and every optional flag is `false`. No external dep is in `deployment-only` or `emulator` mode.
+**Done when:** `.scaffold/resource-implementation.yaml` has `scaffoldMode: api-only`, exactly one entity, every capability flag explicit, `useAspire: true`, and `externalDependencyModes.sql: emulator`. It validates against `schemas/resource-implementation.schema.json`.
+
+## Schema-valid MVS profile
+
+All capability flags are explicit so profile drift is visible in review. Replace names and local package layers for the target app; do not add dependency versions to this artifact.
+
+```yaml
+scaffoldMode: api-only
+testingProfile: minimal
+functionProfile: starter
+unoProfile: starter
+packageStrategy: local
+packagePrefix: Sample
+customNugetFeeds: []
+localPackageLayers: [Domain, Domain.Contracts, Data, Data.Contracts, Common, Common.Contracts]
+applicationStyle: service
+includeApi: true
+includeGateway: false
+includeFunctionApp: false
+includeScheduler: false
+includeUnoUI: false
+includeBlazorUI: false
+includeReactUI: false
+includeNotifications: false
+includeFlowEngine: false
+flowEngineDbStrategy: same-db-separate-schema
+includeIaC: false
+includeGitHubActions: false
+includeAzd: false
+includeAiServices: false
+includeKeyVault: false
+useAspire: true
+database: SQLServer
+migrationLifecycle: preserved-append-only
+databaseProviders: [SqlServer]
+caching: None
+includeArchitectureTests: false
+includeE2ETests: false
+includeLoadTests: false
+includeBenchmarkTests: false
+includeMutationTests: false
+includeAspireTests: false
+includePlaywrightUITests: false
+includeMobileTests: false
+usePrivateEndpoints: false
+entities:
+  - name: WorkItem
+    dataStore: sql
+    properties:
+      - name: Title
+        type: string
+        maxLength: 200
+        required: true
+aspireResources:
+  - name: sql
+    service: SQL Server
+    appHostApi: AddSqlServer
+    localMode: RunAsContainer
+    publishMode: connection-string
+    connectionNames: [SampleDbContextTrxn, SampleDbContextQuery]
+externalDependencyModes:
+  sql: emulator
+  redis: no-op stub
+  serviceBus: no-op stub
+  eventGrid: no-op stub
+  keyVault: deployment-only
+  blobStorage: no-op stub
+  cosmosDb: no-op stub
+  aiServices: deployment-only
+```
 
 ### Phase 3 - Implementation Plan
 
@@ -89,11 +159,11 @@ Tooling section: list only CLIs needed for an api-only scaffold (dotnet, dotnet-
 Paste the Phase 4 prompt from [prompt-catalog.md](prompt-catalog.md), then append:
 
 ```text
-MVS scope: api-only. Skip projects for Gateway, Aspire AppHost, Function App, Uno/Blazor/React UI, Scheduler.
-Expected solution: API host, Application/Domain/Infrastructure projects, Test.Support, Test.Unit, Test.Endpoints.
+MVS scope: api-only. Skip projects for Gateway, Function App, Uno/Blazor/React UI, Scheduler.
+Expected solution: Aspire AppHost, API host, Application/Domain/Infrastructure projects, Test.Support, Test.Unit, Test.Endpoints.
 ```
 
-**Done when:** `dotnet build` is green and the solution contains the API host, Application/Domain/Infrastructure projects, the three test projects, and any `src/Packages/<Prefix>.*` projects required by `packageStrategy`. No optional hosts.
+**Done when:** `dotnet build` is green and the solution contains the AppHost, API host, Application/Domain/Infrastructure projects, the three test projects, and any `src/Packages/<Prefix>.*` projects required by `packageStrategy`. No optional hosts.
 
 ### Phase 5 - Implementation (5a + 5b only for MVS)
 
@@ -113,11 +183,11 @@ Use the Phase 5 session-start prompt plus the 5b block from [prompt-catalog.md](
 
 ```text
 Load only the api-only required entries from the 5b row.
-Skip runtime concerns: gateway, multi-tenant, caching, aspire, observability, security.
-Skip the Aspire portion of the 5b gate - Aspire is disabled in MVS.
+Skip runtime concerns: gateway, multi-tenant, caching, observability, security.
+Wire both DbContexts to the Aspire SQL resource and run the AppHost startup, health, and SQL-backed CRUD gate.
 ```
 
-**Done when:** `dotnet build` green, `dotnet test --filter "TestCategory=Unit|TestCategory=Endpoint"` green, the API host starts, and `/healthz` plus `/readyz` return 200.
+**Done when:** `dotnet build` green, `dotnet test --filter "TestCategory=Unit|TestCategory=Endpoint"` green, the AppHost starts, `/healthz` plus `/readyz` return 200, and one SQL-backed CRUD cycle works under `/api/v1/{entity-route}`.
 
 ## "You are done" check
 
@@ -126,14 +196,16 @@ Run from the solution root:
 ```powershell
 dotnet build
 dotnet test --filter "TestCategory=Unit|TestCategory=Endpoint"
-dotnet run --project src\Host\{Host}.Api -- --urls "http://localhost:5100"
-# in another shell, or via your HTTP client:
-# GET http://localhost:5100/healthz -> 200 OK
-# GET http://localhost:5100/readyz -> 200 OK
-# POST http://localhost:5100/v1/{entity-route} -> 201 + Location header
+dotnet run --project src\Host\Aspire\AppHost
+# Discover the API URL in the Aspire dashboard, then use it from another shell:
+# GET {api-url}/healthz -> 200 OK
+# GET {api-url}/readyz -> 200 OK
+# POST {api-url}/api/v1/{entity-route} -> 201 + Location header
 ```
 
-If all three pass, MVS is complete.
+If Aspire is deliberately disabled, configure the API's SQL connection names to an explicit reachable SQL endpoint before running it directly. Missing SQL configuration is a failed MVS prerequisite, not a lazy-optional fallback. If all checks pass, MVS is complete.
+
+The CI `--dry-run` is an extraction smoke only: it proves prompt and YAML extraction without invoking an agent, .NET, Docker, or SQL. Before an instruction-set release, run the non-dry-run golden path with a real supported agent and retain its build, Unit, Endpoint, health, and SQL-backed CRUD results as release evidence.
 
 ## Promoting beyond MVS
 

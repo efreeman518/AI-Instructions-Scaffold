@@ -27,17 +27,16 @@ These two repos define the canonical contract surface for all modes. In `local` 
 In instruction docs:
 
 - Use the `<latest-stable>` placeholder in xml/json snippets (e.g., `Sdk="Aspire.AppHost.Sdk/<latest-stable>"`, `<TargetFramework>$(LatestStableTfm)</TargetFramework>`).
-- Do **not** write a hard-coded `Version="9.2.0"` or `net9.0` into a template - it goes stale silently and contradicts this rule on every PR diff.
-- Do **not** cite versions in prose either ("first-class since Aspire 9.3", "fixed in EF 1.0.104", "MudBlazor 9.x point releases"). Describe the current behavior as present truth - the baseline tracks latest, so the current API is the only one that matters.
+- Do **not** write a hard-coded `Version="<copied-version>"` or target framework into a template - it goes stale silently and contradicts this rule on every PR diff.
+- Do **not** cite dependency versions in prose either. Describe current behavior as present truth - the baseline tracks latest, so the current API is the only one that matters.
 - Do **not** add version-history or backwards-compat framing ("resolved in X", "pre-X bug", "obsolete in X", "verified <date>", "regression guard for the old behavior"). State what the API does now; drop how it got there. ("Legacy" is fine only when it names a non-version concept - the `.sln` format, the `datetime` SQL type - never a package version.)
 
-**Documented exceptions only.** A pinned version is permitted **only** when accompanied by a one-line reason inline (NU1605/NU1011 conflict, breaking-change quarantine, vendor compatibility note). Any pin without justification is a bug - replace with `<latest-stable>`. Vulnerable transitives get the commented direct-pin lift - canonical pattern in [../support/execution-gates.md](../support/execution-gates.md) section Vulnerable Transitive Lift.
+**Temporary documented exceptions only.** A version below latest stable is permitted only for a specific issue. Record four items beside the pin: issue or failing behavior, reason the selected version resolves it, removal condition, and validating test. Any pin without all four is a bug - replace it with the latest stable release. Vulnerable transitives get the commented direct-pin lift - canonical pattern in [../support/execution-gates.md](../support/execution-gates.md) section Vulnerable Transitive Lift.
 
 SDK upgrade discipline:
 
-- Treat major-version SDK bumps (e.g., a major Aspire bump, or .NET N -> N+1) as **deliberate, scheduled tasks**, not routine work.
-- Consult the vendor's official upgrade guide via MS Learn before bumping.
-- A file-naming or convention change introduced by a newer SDK MAY be adopted on the current SDK if it is purely cosmetic and compatible - call out the rationale in the relevant skill file.
+- Resolve the latest stable SDK during generation and consult the vendor's current official upgrade guide when its API or project shape changed.
+- Do not hold a prior major by policy. If the latest stable SDK is temporarily blocked, use the four-part exception record above and keep the validating test in CI until removal.
 
 ## Minimize Third-Party Dependencies (Mandatory)
 
@@ -106,7 +105,7 @@ The goal is a small, owned dependency surface - every package added is one the t
 ### When `packageStrategy: local` or `hybrid` (locally-generated layers only)
 
 1. No `nuget.config` private-feed entry is required for layers in `localPackageLayers`. `nuget.org` access is still mandatory, but the repo-root file may be absent when NuGet's default source is sufficient.
-2. Each generated project under `src/Packages/<packagePrefix>.<Layer>/` sets `IsPackable=true`, `<PackageId>=<packagePrefix>.<Layer>`, `<Version>=0.1.0` (overridable).
+2. Each generated project under `src/Packages/<packagePrefix>.<Layer>/` sets `IsPackable=true`, `<PackageId>=<packagePrefix>.<Layer>`, and a developer-selected initial package version.
 3. Application/domain/host projects consume locally-generated layers via `<ProjectReference Include="..\..\Packages\<packagePrefix>.<Layer>\<packagePrefix>.<Layer>.csproj" />` - no `<PackageVersion>` entry in `Directory.Packages.props`.
 4. Transitive NuGet dependencies of the generated projects (e.g., `Microsoft.EntityFrameworkCore`) still go through `Directory.Packages.props` central versions.
 5. To publish later: `dotnet pack src/Packages/<packagePrefix>.<Layer>` produces a `.nupkg` that can be pushed to any feed. After the layer is published and consumed via `<PackageReference>`, move the layer from `localPackageLayers` into the feed-supplied set and delete the local project. When a layer package is meant to own a type that was temporarily copied into a consuming project, reference the package directly, prove it with `dotnet restore` + `dotnet build`, then delete the local copy - a shadow copy masks whether the package actually provides the type.

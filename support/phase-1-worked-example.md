@@ -14,7 +14,7 @@ The developer comes in with a one-paragraph idea and an empty repo. The AI loads
 DEV
 Multi-tenant task-management app for an enterprise. Users organize work into
 categories, manage task items with sub-tasks, comments, checklists, and file
-attachments. Want it to demonstrate every pattern in the scaffold instruction
+attachments. Want it to exercise a broad proof profile from the scaffold instruction
 set so it's also a reference app.
 ```
 

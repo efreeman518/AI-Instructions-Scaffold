@@ -192,7 +192,7 @@ Locally-generated layers (from `localPackageLayers`) must scaffold under `src/Pa
 
 - [ ] `packagePrefix` is set in `.scaffold/resource-implementation.yaml`.
 - [ ] Phase 4 will generate one packable project per entry in `localPackageLayers`, e.g., `src/Packages/<packagePrefix>.Domain`, `.Domain.Contracts`, `.Data`, `.Data.Contracts`, `.Common`, `.Common.Contracts` (per [`../support/ef-packages-reference.md`](../support/ef-packages-reference.md)).
-- [ ] Each packable project sets `IsPackable=true`, `<PackageId>=<packagePrefix>.<Layer>`, default version `0.1.0`.
+- [ ] Each packable project sets `IsPackable=true`, `<PackageId>=<packagePrefix>.<Layer>`, and the developer-selected initial package version.
 - [ ] Application/domain/host projects consume these via `<ProjectReference>` (no `Version` attribute, no `Directory.Packages.props` entry needed).
 - [ ] When `hybrid`: locally-generated layers use the **same** `packagePrefix` as the feed so they can be published into the feed later without renaming.
 

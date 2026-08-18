@@ -27,8 +27,9 @@ For Claude Code these are skills under `.claude/skills/` (auto-discovered, sourc
 |---|---|---|
 | Install / update the payload into an app | `/install-instructions` | `py -3 scripts/install-to-project.py --target "<app>" --verify` |
 | SSOT / drift audit after a refactor | `/maintain-instructions` | `py -3 scripts/validate-instructions.py`, then the audit in [INSTRUCTION-SET-MAINTENANCE.md](INSTRUCTION-SET-MAINTENANCE.md) |
+| Validate TaskFlow against current scaffold | n/a | `py -3 scripts/validate-reference.py --reference-root ..\AI-Instructions-ReferenceApp` |
 | Fold feedback / a gap back into the set | `/fold-feedback` | edit the owner file -> validate -> reinstall |
-| End-to-end golden-path regression | `/golden-path` | `py -3 tests/golden-path/run-golden-path.py --dry-run` |
+| Golden-path extraction smoke | `/golden-path` | `py -3 tests/golden-path/run-golden-path.py --dry-run` |
 
 ## Ground rules for instruction edits
 
@@ -36,6 +37,7 @@ For Claude Code these are skills under `.claude/skills/` (auto-discovered, sourc
 - One canonical owner per concept; volatile facts live once + pointers elsewhere (SSOT - see [INSTRUCTION-SET-MAINTENANCE.md](INSTRUCTION-SET-MAINTENANCE.md)).
 - Match the house voice: compressed, no em dash / emoji, `->` for arrows, no version numbers in baseline docs.
 - After any edit: `py -3 scripts/validate-instructions.py` must pass; reinstall affected apps with `--verify` (installs are content-aware and idempotent).
+- Before an instruction-set release: run `py -3 tests/golden-path/run-golden-path.py --package-strategy local` with a supported agent. Retain its real build, Unit, Endpoint, health, and SQL-backed CRUD output; the CI dry run is extraction-only evidence.
 
 ### Selective rationale
 

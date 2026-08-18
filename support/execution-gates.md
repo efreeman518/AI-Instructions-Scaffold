@@ -467,7 +467,6 @@ Rules:
 - The pin is temporary by definition: on every package-update pass, retry removing it and re-run the audit.
 - The direct reference goes only into projects whose dependency graph pulls the vulnerable version (`dotnet list package --vulnerable --include-transitive` names them).
 - When no fixed version exists anywhere, this pattern cannot apply - use the severity table above (gap entry with owner and target date).
-- TaskFlow proof: `MessagePack` lifted above the version `NBomber` resolves (`Directory.Packages.props` + `tests/Test.Load/Test.Load.csproj`).
 
 ---
 

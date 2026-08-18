@@ -130,14 +130,14 @@ Gate: `dotnet build` + `dotnet test --filter TestCategory=Endpoint` (auth) + `do
 ```text
 Load .instructions/support/final-scaffold-checklist.md.
 Walk through the checklist manually: build, test, run smoke checks for each enabled host.
-Record exact results, blockers, and deployment-only residuals in HANDOFF.md.
+Record exact results, blockers, and deployment-only residuals in HANDOFF.md. When acceptance passes, set workflowStatus: complete, currentPhase: 5, and currentSubPhase: complete.
 ```
 
 ## Resume From HANDOFF
 
 ```text
 Load .instructions/START-AI.md and HANDOFF.md from the project root.
-Resume from currentPhase/currentSubPhase. Load the files listed in Next Load Set. Check Blockers before proceeding.
+Read workflowStatus first. If complete, leave the scaffold workflow and use ordinary repository maintenance. If active, resume from currentPhase/currentSubPhase, load the files listed in Next Load Set, and check Blockers.
 ```
 
 ## Add New Entity (Existing Project)

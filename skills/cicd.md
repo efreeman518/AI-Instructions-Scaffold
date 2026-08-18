@@ -43,15 +43,11 @@ ACR vs GHCR is a scaffold decision, not a default. Each path has a different aut
 
 ---
 
-## Action Versions
+## Action References
 
-Action majors drift. **Verify current majors at scaffold time** (check each action's repo) rather than copying pins. As of May 2026 the verified majors are:
+At generation time, query each action repository for its latest stable release, resolve that release tag to its commit, and write `owner/action@<resolved-commit-sha> # <stable-release-tag>` into the generated workflow. The instruction examples use `owner/action@<latest-stable-sha>` placeholders so source guidance never freezes a release or SHA. Add GitHub Actions Dependabot updates to generated repositories; review and merge its immutable-ref updates through normal CI.
 
-- `actions/checkout@v6` (was `@v4` in older templates)
-- `azure/login@v3` (was `@v2`)
-- `actions/setup-dotnet@v4` (a `v5` exists - verify before bumping), `actions/upload-artifact@v4`
-- GHCR/Docker path: `docker/setup-buildx-action@v4`, `docker/login-action@v4`, `docker/metadata-action@v6`, `docker/build-push-action@v7`
-- azd path: `Azure/setup-azd@v2`
+A temporary action rollback is allowed only for a specific documented issue. Record the issue or failing behavior, selected temporary release, removal condition, and validating test beside the generated ref. Remove the exception as soon as that test passes on the latest stable release.
 
 ---
 
@@ -152,8 +148,8 @@ jobs:
     env:
       NUGET_AUTH_TOKEN: ${{ secrets.NUGET_PAT }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@<latest-stable-sha>
+      - uses: actions/setup-dotnet@<latest-stable-sha>
         with:
           global-json-file: global.json
 
@@ -218,7 +214,7 @@ Reclaim space before the container-backed steps, gated to the same dispatch inpu
 ```yaml
 - name: Free disk space
   if: ${{ github.event_name == 'workflow_dispatch' && (inputs.includeIntegration || inputs.includeAspireMesh || inputs.includeE2E) }}
-  uses: jlumbroso/free-disk-space@main
+  uses: jlumbroso/free-disk-space@<latest-stable-sha>
   with:
     tool-cache: false   # keep the hosted .NET; build depends on it
     dotnet: false
@@ -263,8 +259,8 @@ playwright:
   needs: [build]
   if: github.event_name == 'workflow_dispatch' && inputs.includePlaywright == true
   steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-dotnet@v4
+    - uses: actions/checkout@<latest-stable-sha>
+    - uses: actions/setup-dotnet@<latest-stable-sha>
     - run: dotnet build {SolutionName}.slnx --configuration Release -m:1
     - name: Install Playwright browsers
       run: pwsh tests/Test.PlaywrightUI/bin/Release/$(TargetFramework)/playwright.ps1 install --with-deps
@@ -287,11 +283,11 @@ mobile:
   runs-on: ubuntu-latest        # the emulator action provides KVM acceleration
   if: github.event_name == 'workflow_dispatch' && inputs.includeMobile == true
   steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-dotnet@v4
+    - uses: actions/checkout@<latest-stable-sha>
+    - uses: actions/setup-dotnet@<latest-stable-sha>
       with: { global-json-file: global.json }
  - name: Run Mobile UI tests on emulator
-   uses: reactivecircus/android-emulator-runner@v2
+   uses: reactivecircus/android-emulator-runner@<latest-stable-sha>
    with:
      api-level: 34
      script: pwsh -NoProfile -File tests/Test.Mobile/run-mobile-tests.ps1
@@ -307,8 +303,8 @@ foundry-local:
   runs-on: ubuntu-latest
   if: github.event_name == 'workflow_dispatch' && inputs.includeFoundryLocal == true
   steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-dotnet@v4
+    - uses: actions/checkout@<latest-stable-sha>
+    - uses: actions/setup-dotnet@<latest-stable-sha>
       with: { global-json-file: global.json }
     - name: Install + bootstrap Foundry Local runtime
       run: |
@@ -372,7 +368,7 @@ Rollback selects the recorded previous manifest, redeploys its exact image diges
 
 ### Build + Push - ACR variant
 
-- login via `azure/login@v3` + OIDC, then `az acr login`.
+- login via `azure/login@<latest-stable-sha>` + OIDC, then `az acr login`.
 - build each deployable image, push `:${{ github.sha }}` (+ optional `:latest`).
 - ACA pull needs no secret (managed identity pulls ACR).
 
@@ -391,8 +387,8 @@ jobs:
           - { name: gateway, dockerfile: src/Host/{Gateway}.Gateway/Dockerfile }
           - { name: scheduler, dockerfile: src/Host/{Host}.Scheduler/Dockerfile }
     steps:
-      - uses: actions/checkout@v6
-      - uses: azure/login@v3
+      - uses: actions/checkout@<latest-stable-sha>
+      - uses: azure/login@<latest-stable-sha>
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -427,21 +423,21 @@ jobs:
           - { name: gateway, dockerfile: src/Host/{Gateway}.Gateway/Dockerfile }
           - { name: scheduler, dockerfile: src/Host/{Host}.Scheduler/Dockerfile }
     steps:
-      - uses: actions/checkout@v6
-      - uses: docker/setup-buildx-action@v4
-      - uses: docker/login-action@v4
+      - uses: actions/checkout@<latest-stable-sha>
+      - uses: docker/setup-buildx-action@<latest-stable-sha>
+      - uses: docker/login-action@<latest-stable-sha>
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - id: meta
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@<latest-stable-sha>
         with:
           images: ghcr.io/${{ github.repository_owner }}/${{ matrix.project.name }}
           tags: |
             type=sha,format=long,prefix=
             type=raw,value=latest
-      - uses: docker/build-push-action@v7
+      - uses: docker/build-push-action@<latest-stable-sha>
         with:
           context: .
           file: ${{ matrix.project.dockerfile }}
@@ -462,7 +458,7 @@ deploy:
   runs-on: ubuntu-latest
   environment: ${{ inputs.environment }}
   steps:
-    - uses: azure/login@v3
+    - uses: azure/login@<latest-stable-sha>
       with:
         client-id: ${{ secrets.AZURE_CLIENT_ID }}
         tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -493,7 +489,7 @@ run-migrations:
   environment: ${{ inputs.environment }}
   timeout-minutes: 60   # sized for data movement, not just DDL
   steps:
-    - uses: azure/login@v3
+    - uses: azure/login@<latest-stable-sha>
       with:
         client-id: ${{ secrets.AZURE_CLIENT_ID }}
         tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -545,7 +541,7 @@ Use manual dispatch per environment:
 
 1. OIDC login
 2. `az bicep build --file infra/main.bicep`
-3. deploy with `azure/arm-deploy@v2`
+3. deploy with `azure/arm-deploy@<latest-stable-sha>`
 
 Run infra separately from app rollout unless the team explicitly couples both.
 

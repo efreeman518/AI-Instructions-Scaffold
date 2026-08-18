@@ -3,9 +3,9 @@
 Create this file in the **target project root** at the end of every phase and each Phase 5 sub-phase session. The next AI session loads `START-AI.md` + this file only - nothing else - and resumes from `currentPhase` / `currentSubPhase`.
 
 ```yaml
-instructionVersion: ""
+workflowStatus: active      # active | complete - router checks this before phase fields
 currentPhase: ""           # next phase to run: 1 | 2 | 3 | 4 | 5
-currentSubPhase: ""        # next Phase 5 sub-phase to run: 5a | 5b | 5c | 5d | 5e (blank before Phase 5)
+currentSubPhase: ""        # 5a | 5b | 5c | 5d | 5e | complete (blank before Phase 5)
 scaffoldMode: ""           # full | lite | api-only - drives load-set sizing (see ai/SKILL.md section Load-Set Sizing)
 testingProfile: ""         # minimal | balanced | comprehensive
 contractsScaffolded: false # set true after Phase 4 completes
@@ -104,6 +104,7 @@ Out of scope for this session - do not attempt unless explicitly re-scoped:
 ## Notes
 
 - Keep `domain-specification.yaml`, `resource-implementation.yaml`, `UBIQUITOUS-LANGUAGE.md`, and `DESIGN-DECISIONS.md` under `.scaffold/` in the target project. `HANDOFF.md` itself stays at project root.
+- Keep `workflowStatus: active` while scaffold work remains. After final acceptance, set `workflowStatus: complete`, `currentPhase: 5`, and `currentSubPhase: complete`; subsequent sessions use ordinary repository maintenance instead of the phase router.
 - `currentPhase` and `currentSubPhase` always describe the next work to run, not the phase just completed. Record completed gate evidence in `Completed` and `Validation` per [execution-gates.md](execution-gates.md) section Verification Evidence Rule (observed output only, never anticipated).
 - At Phase 1 close, summarize unresolved/deferred design decisions and confirm they do not block Phase 2.
 - Keep `enabledFeatures` flags in sync with `.scaffold/resource-implementation.yaml` canonical hosting/IaC/AI toggles.

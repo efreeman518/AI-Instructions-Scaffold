@@ -31,9 +31,9 @@ Canonical execution rules: [START-AI.md](START-AI.md) (session model, phase rout
 
 Use `install-to-project.py` from a local clone of this repo. It copies only the runtime payload - instruction files, scoped agents, CLI entrypoint, and slash commands - into your app, and skips repo-maintenance files (tests, CI workflows, global assistant instruction files, git hooks, virtualenvs).
 
-Do not install this payload into the TaskFlow reference app (`AI-Instructions-ReferenceApp`) during normal maintenance. TaskFlow is the proof/reference implementation that these instructions point to; it should not carry its own `.instructions/` copy unless you are deliberately smoke-testing installer behavior.
+Do not install this payload into the TaskFlow reference app (`AI-Instructions-ReferenceApp`) during normal maintenance. TaskFlow is the proof/reference implementation that these instructions point to; it should not carry its own `.instructions/` copy unless you are deliberately testing installer behavior.
 
-`--target` is the **app repo root** (not the `.instructions/` folder). The script creates `<target>/.instructions/` if it does not exist, and writes harness entrypoints (`AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`, `.claude/commands/`, `.github/agents/`) at the target root so CLI agents, Claude, and Copilot discover the scoped scaffold instructions. Root-level `AGENTS.md`/`CLAUDE.md`/`copilot-instructions.md` scaffold content is written inside sentinel markers (`<!-- ai-scaffold: start --> ... <!-- ai-scaffold: end -->`) so re-running the installer is idempotent; existing user content outside the markers is preserved.
+`--target` is the **app repo root** (not the `.instructions/` folder). The script creates `<target>/.instructions/` if it does not exist, and writes harness entrypoints (`AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`, `.claude/commands/`, `.github/agents/`) at the target root so CLI agents, Claude, and Copilot discover the scoped scaffold instructions. Root-level `AGENTS.md`/`CLAUDE.md`/`copilot-instructions.md` scaffold content is written inside sentinel markers (`<!-- ai-scaffold: start --> ... <!-- ai-scaffold: end -->`) so re-running the installer is idempotent; existing user content outside the markers is preserved. Each install regenerates `.instructions/.scaffold-install-manifest.json` with the managed paths, SHA-256 content hashes, and source repository plus commit when Git can resolve them. This is ownership and diagnostic evidence, not an instruction-set or dependency version constraint.
 
 ```bash
 # from a clone of this repo
@@ -72,8 +72,8 @@ Flags:
 | `--dry-run` | Print planned copies without writing anything. |
 | `--update` | Deprecated no-op, kept for compatibility. Installs are always content-aware: identical target files are skipped (`[unchanged]`), differing ones are overwritten and listed (installed `.instructions/` is read-only per GR-07, so the source is SSOT). `HANDOFF.md` is always left untouched. |
 | `--instructions-only` | Copy only `<app>/.instructions/`; skip `AGENTS.md`, `.claude/commands/`, and `.github/agents/` placement (useful if you manage those separately). |
-| `--verify` | After install, smoke-check that the expected entrypoints and payload files exist. Non-zero exit if anything is missing. Cheap insurance after a manual edit or selective copy. |
-| `--verify-only` | Skip install entirely; just run the smoke check against an existing target. Useful in CI or to confirm an unfamiliar repo is correctly wired. |
+| `--verify` | After install, verify every manifest-managed file and marker block against its SHA-256 hash. Missing or changed managed content fails; unmanifested files warn and remain untouched. |
+| `--verify-only` | Skip install entirely; run the same manifest integrity check against an existing target. Useful in CI or to confirm an unfamiliar repo is correctly wired. |
 
 After install:
 
@@ -154,7 +154,7 @@ Pattern files in `patterns/` document how generated components wire together acr
 
 ## Reference Application
 
-A companion reference app - **TaskFlow** - demonstrates every pattern and convention these instructions produce: dual DbContext pooling, YARP gateway, Aspire orchestration, FusionCache + Redis backplane, TickerQ scheduling, Azure Functions, multi-tenancy, scaffold-mode auth, Uno WASM UI, Blazor UI, and React/Vite UI.
+A companion reference app - **TaskFlow** - provides executable proof for many high-value patterns: dual DbContext pooling, YARP gateway, Aspire orchestration, FusionCache + Redis backplane, TickerQ scheduling, Azure Functions, multi-tenancy, scaffold-mode auth, Uno WASM UI, Blazor UI, and React/Vite UI. Its canonical capability matrix distinguishes `proven`, `deployment-only`, `documented-only`, and `not enabled`; see [support/reference-app.md](support/reference-app.md).
 
 TaskFlow is a reference/proof target, not a normal install target for `.instructions/`. Keep scaffold runtime instructions in this repository and consult TaskFlow through [support/reference-app.md](support/reference-app.md) and [support/taskflow-proof-map.md](support/taskflow-proof-map.md).
 
@@ -408,7 +408,8 @@ These references are for **maintaining and developing the instruction set itself
 
 Useful script entrypoints:
 
-- `scripts/install-to-project.py` - copy the runtime payload into a consumer app's `.instructions/` directory and place harness entrypoints at the app root. `--verify` smoke-checks the install; `--verify-only` runs the smoke check without copying.
+- `scripts/install-to-project.py` - copy the runtime payload into a consumer app's `.instructions/` directory and place harness entrypoints at the app root. The bounded install manifest enables full managed-content verification and safe pruning of upstream-removed content; a locally changed removed file or managed block is preserved and reported as a conflict. `--verify-only` checks integrity without copying.
 - `scripts/configure-ef-packages-feed.py` - create/update target-app `nuget.config` for any private NuGet feed without writing PATs. Pass `--prefix <packagePrefix>` to map the appropriate `<packagePrefix>.*` pattern; the canonical EF.* example is the default. Only run for `packageStrategy: feed` or `hybrid`.
 - `scripts/validate-instructions.py` - author-side sanity check: relative-link integrity, phase-label canonical set, harness command-file shape, payload shape vs installer declaration, and golden-path YAML vs `schemas/*.schema.json` (full jsonschema validation when `pyyaml` + `jsonschema` are installed; stdlib structural checks otherwise). Run before committing edits to instruction files; CI runs it on every push via `.github/workflows/validate.yml`.
+- `scripts/validate-reference.py --reference-root <path>` - validate TaskFlow contracts against current schemas, tracked Markdown links, proof-map paths, explicit feature flags, high-value feature sentinels, and immutable workflow action refs. TaskFlow CI checks out the scaffold's current `main` branch and records the exact commit used as diagnostic evidence.
 - `tests/golden-path/run-golden-path.py` - author-side end-to-end regression: drives headless agent sessions (Claude Code subscription login or Codex CLI - no API key) through Phases 3-5b against the WorkBoard golden-path fixture in a throwaway workspace, gating each phase with `dotnet build`/`dotnet test`. Start with `--dry-run`. Not part of the installed payload; reports land under `.tmp/golden-path-runs/`.

@@ -292,7 +292,7 @@ For generator-driven stacks (Uno, Kiota, Resizetizer, and similar toolchains):
 
 - **Preserve generated conventions by default.** Do not rewrite generated bootstrap, host plumbing, or build targets unless a specific symptom proves the generated assumption is wrong.
 - **Patch minimally.** Fix only the smallest confirmed incompatibility. One targeted MSBuild property override or one config fixup - not a full rewrite of the generated file.
-- **Document the justification.** Every patch to generated code must carry an inline comment citing the exact symptom (e.g., `<!-- Workaround: Resizetizer 1.12.1 manifest-path bug -->`).
+- **Document the justification.** Every patch to generated code must carry an inline comment with the issue or exact symptom, reason, removal condition, and validating build or test.
 
 If you cannot identify the specific failing assumption, do not modify generated code - escalate to the engineer.
 
@@ -424,7 +424,7 @@ A trimmed Release build is proven only by rendering and signing in with CI-equiv
 
 Treat this as an upstream-runtime candidate only when the exact evidence is present: a published `Release` Skia browser-WASM build hangs on the splash during a first visit with empty site storage, and the early console trace shows `BrowserRenderer.requestRender` in `Uno.Runtime.Wasm.js` entering managed rendering before renderer state exists, followed by `NullReferenceException`. A later refresh or warm-storage visit may succeed because initialization timing changed; that does not make the first-load failure acceptable.
 
-Known reproduced case (2026-07-17): `Uno.Sdk` `6.5.36` produced `BrowserRenderer.requestRender` followed by managed `Arg_NullReferenceException` on published `Release` cold start. A temporary `6.6.0-dev.166` pin passed the same fresh-profile proof without refresh or retry. Treat that preview pin only as a time-boxed upstream workaround: record it and its removal criterion in `HANDOFF.md`, then replace it with a compatible stable `Uno.Sdk` 6.6 or later as soon as one is available and rerun the cold-start proof.
+Use the latest stable Uno SDK and reproduce from a clean Release publish before changing dependencies. If an upstream issue forces a temporary SDK exception, record the issue, why the selected release resolves it, the removal condition, and the cold-start Playwright test that validates both the exception and its eventual removal.
 
 Diagnosis and response:
 
@@ -441,7 +441,7 @@ Uno.Resizetizer requires asset filenames to be **lowercase**, containing only al
 
 **`Assets\**\*.svg` files are build inputs, never runtime references.** Resizetizer treats every SVG under `Assets` as an `UnoImage` and rasterizes it to `name.png` plus scale variants; the raw `.svg` is not published. On WASM, `ms-appx:///Assets/name.svg` falls through to the SPA rewrite (observed: `200, text/html`) and `SvgImageSource` renders blank with no binding error and no console warning. Runtime XAML references the generated `.png` by base name (Uno picks the scale variant; the same pipeline feeds Android/iOS, so the `.png` reference is portable). A `<Content Include="Assets\x.svg">` with `CopyToOutputDirectory` does **not** fix this - it copies into build output, with no effect on the WASM bundle or `ms-appx` resolution.
 
-### UnoSplashScreen WASM Build Failure (Resizetizer 1.12.1)
+### UnoSplashScreen WASM Build Failure
 
 **Symptom:** Adding `<UnoSplashScreen Include="Assets\splashscreen.svg" />` causes `GenerateWasmSplashAssets` to fail silently on WASM. Even without `UnoSplashScreen`, ShellTask may crash with `DirectoryNotFoundException` on clean builds.
 
@@ -450,9 +450,9 @@ Uno.Resizetizer requires asset filenames to be **lowercase**, containing only al
 **Workaround:** Add this target to the UI `.csproj`:
 
 ```xml
-<!-- Workaround: Resizetizer 1.12.1 sets WasmPWAManifestFile to a directory
-     path when no UnoSplashScreen is configured. Clear it so ShellTask doesn't
-     call File.ReadAllText on a directory. -->
+<!-- Temporary workaround: current Resizetizer sets WasmPWAManifestFile to a
+     directory when no UnoSplashScreen is configured. Remove when a clean latest-stable
+     build no longer reproduces it; validate clean WASM build plus published cold start. -->
 <Target Name="_FixWasmPwaManifestPath"
         BeforeTargets="GenerateUnoWasmAssets"
         AfterTargets="ProcessResizedImagesWasm"
@@ -482,4 +482,4 @@ When the solution includes a Uno WASM project, CI workflows must install the `wa
 
 Without this, the build fails with `UNOWA0001: Native WebAssembly assets were detected, but the wasm-tools workload could not be located.`
 
-Add this step after `actions/setup-dotnet@v4` and before `dotnet restore`. See [cicd.md](cicd.md) for the full CI template.
+Add this step after `actions/setup-dotnet@<latest-stable-sha>` and before `dotnet restore`. See [cicd.md](cicd.md) for the full CI template.

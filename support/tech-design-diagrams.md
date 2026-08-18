@@ -122,14 +122,14 @@ powershell -NoProfile -Command '& {
   $fail = @()
   Get-ChildItem "docs\assets\tech-design-diagrams\*.mmd" | Sort-Object Name | ForEach-Object {
     $out = [System.IO.Path]::ChangeExtension($_.FullName, ".svg")
-    npx -y "@mermaid-js/mermaid-cli@10.9.1" -i $_.FullName -o $out -t dark -b "#0f1419" --quiet
+    npx -y "@mermaid-js/mermaid-cli@<latest-stable>" -i $_.FullName -o $out -t dark -b "#0f1419" --quiet
     if ($LASTEXITCODE -ne 0) { $fail += $_.Name }
   }
   if ($fail.Count -eq 0) { "all ok" } else { $fail; exit 1 }
 }'
 ```
 
-Pin `@mermaid-js/mermaid-cli@10.9.1` so the rendered SVGs stay deterministic. Theme/background (`-t dark -b "#0f1419"`) is the scaffold default; override only if the project's `docs/` template uses a different theme.
+Resolve `<latest-stable>` when generating the project and record it in the project's npm lockfile so repeated renders are deterministic. Theme/background (`-t dark -b "#0f1419"`) is the scaffold default; override only if the project's `docs/` template uses a different theme.
 
 ## Final Doc Validation
 

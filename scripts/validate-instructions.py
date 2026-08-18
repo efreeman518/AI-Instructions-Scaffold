@@ -17,13 +17,13 @@ Checks:
   - The payload shape declared in install-to-project.py covers every top-level
     runtime directory present in this repo (catches "added skills/foo, forgot
     to wire it into the installer" mistakes).
-  - Installer smoke checks cover every first-class harness entrypoint.
+  - Installer integrity checks cover every first-class harness entrypoint.
   - README install-table parity: every file in the installer's INSTRUCTIONS_FILES
     and every dir in INSTRUCTIONS_DIRS appears in README.md's "What it places"
     table (catches "installer copies GROUND-RULES.md, README table forgot it").
   - Bare-version prose guard (GR-08): no unallowlisted semver-looking string
-    (x.y.z) in payload markdown. IP addresses are excluded; quarantined or
-    reasoned version constraints are allowlisted in VERSION_PROSE_ALLOWLIST.
+    (x.y.z) in payload markdown. IP addresses are excluded; only non-dependency
+    format identifiers are allowlisted in VERSION_PROSE_ALLOWLIST.
   - Deprecated-layout guard: generated solutions/config stay at the repo root,
     production projects stay under src/, and test projects stay under tests/.
   - Section-anchor existence: when prose says ``[label](file.md) section Section Name``
@@ -79,17 +79,9 @@ REPO_ROOT = INSTRUCTIONS_ROOT
 # Directories the runtime payload should ship. Must match install-to-project.py.
 EXPECTED_RUNTIME_DIRS = {"ai", "patterns", "profiles", "schemas", "skills", "support", "templates", "scripts"}
 
-# GR-08 bare-version prose guard. Semver-looking string (x.y.z) allowed only when
-# listed here. Value None allowlists the whole file (quarantined version-pin owner);
-# a set allowlists exact version strings (each must carry an inline reason in the file).
+# GR-08 bare-version prose guard. This allowlist is for non-dependency format
+# identifiers only; SDK, package, runtime, and action versions do not belong here.
 VERSION_PROSE_ALLOWLIST: dict[str, set[str] | None] = {
-    "skills/ai-integration.md": None,  # quarantined preview-pin owner (canary-guarded)
-    "skills/package-dependencies.md": {"9.2.0", "1.0.104", "0.1.0"},  # GR-08 rule's own counter-examples + packable default
-    "skills/azure-data-storage.md": {"1.12.0", "10.0.2"},  # minimum-version constraints with inline reasons
-    "skills/ui-uno-platforms.md": {"1.12.1", "6.5.36", "6.6.0-dev.166"},  # upstream Uno WASM bug evidence/workarounds
-    "ai/implementation-plan.md": {"0.1.0"},  # packable project default version
-    "GROUND-RULES.md": {"1.0.104"},  # GR-08 rule's own counter-example
-    "support/tech-design-diagrams.md": {"10.9.1"},  # mermaid-cli pin for deterministic SVG rendering (inline reason)
     "templates/local-test-stack-template.md": {"2.0.0"},  # JSON manifest format version, not a package version
 }
 
@@ -269,9 +261,9 @@ DEPLOYMENT_HARDENING_CONTRACT_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "skills/ui-uno-platforms.md": (
         "### Skia Browser-WASM Cold-Start Renderer Race",
         "`BrowserRenderer.requestRender`",
-        "`Uno.Sdk` `6.5.36`",
-        "`6.6.0-dev.166`",
-        "stable `Uno.Sdk` 6.6 or later",
+        "Use the latest stable Uno SDK",
+        "issue, why the selected release resolves it, the removal condition",
+        "cold-start Playwright test",
         "latest unaffected stable Uno packages",
         "refresh is diagnostic evidence only",
         "### Published Release artifact and static-host contract",
@@ -749,6 +741,9 @@ def check_deployment_hardening_contract(findings: Findings) -> None:
 
 # Matches x.y.z(-suffix) but not segments of 4-part dotted quads (IP addresses).
 BARE_VERSION_PATTERN = re.compile(r"(?<![\d.])\d+\.\d+\.\d+(?:-[A-Za-z0-9.]+)?(?![.\d])")
+ACTION_REFERENCE_PATTERN = re.compile(
+    r"\b((?:actions|azure|Azure|docker|reactivecircus|jlumbroso)/[A-Za-z0-9_.-]+)@([^\s`\"']+)"
+)
 
 
 def check_version_prose(path: Path, findings: Findings) -> None:
@@ -766,7 +761,19 @@ def check_version_prose(path: Path, findings: Findings) -> None:
                 findings.err(
                     path,
                     f"line {line_no}: bare version '{m.group(0)}' in payload prose (GR-08) - "
-                    "use <latest-stable>/$(LatestStableTfm), or allowlist it in VERSION_PROSE_ALLOWLIST with an inline reason",
+                    "use <latest-stable>/$(LatestStableTfm); allowlists are reserved for non-dependency format identifiers",
+                )
+
+
+def check_action_reference_policy(path: Path, findings: Findings) -> None:
+    """Generated-action examples resolve latest stable at generation, never in source."""
+    for line_no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        for match in ACTION_REFERENCE_PATTERN.finditer(line):
+            if match.group(2) != "<latest-stable-sha>":
+                findings.err(
+                    path,
+                    f"line {line_no}: action reference '{match.group(0)}' must use "
+                    "<latest-stable-sha>; generation resolves the current stable release to a full SHA",
                 )
 
 
@@ -1037,12 +1044,12 @@ def check_loadset_token_budget(findings: Findings) -> None:
 # regression fixture for instruction changes. Keep them consistent with the
 # machine-readable schemas so doc edits and schema edits cannot drift apart.
 
-GOLDEN_PATH_REL = "support/golden-path-sample.md"
-# (label, heading that precedes the yaml block, schema file)
-GOLDEN_PATH_BLOCKS = [
-    ("Phase 1 domain-specification", "### `.scaffold/domain-specification.yaml`", "schemas/domain-specification.schema.json"),
-    ("Phase 2 resource-implementation", "## Expected Phase 2 Output", "schemas/resource-implementation.schema.json"),
-    ("Focused AI/Aspire resource-implementation", "## Focused AI/Aspire Schema Fixture", "schemas/resource-implementation.schema.json"),
+# (document, label, heading that precedes the yaml block, schema file)
+SCHEMA_FIXTURE_BLOCKS = [
+    ("support/golden-path-sample.md", "Phase 1 domain-specification", "### `.scaffold/domain-specification.yaml`", "schemas/domain-specification.schema.json"),
+    ("support/golden-path-sample.md", "Phase 2 resource-implementation", "## Expected Phase 2 Output", "schemas/resource-implementation.schema.json"),
+    ("support/golden-path-sample.md", "Focused AI/Aspire resource-implementation", "## Focused AI/Aspire Schema Fixture", "schemas/resource-implementation.schema.json"),
+    ("support/minimum-viable-scaffold.md", "Minimum viable resource-implementation", "## Schema-valid MVS profile", "schemas/resource-implementation.schema.json"),
 ]
 YAML_FENCE_PATTERN = re.compile(r"```yaml\r?\n(.*?)\r?\n```", re.DOTALL)
 TOP_KEY_LINE_PATTERN = re.compile(r"^([A-Za-z][A-Za-z0-9]*):(.*)$")
@@ -1115,19 +1122,21 @@ def _check_block_structure(path: Path, label: str, block: str, schema: dict, fin
 def check_golden_path_schemas(findings: Findings) -> None:
     import json
 
-    gp_path = INSTRUCTIONS_ROOT / GOLDEN_PATH_REL
-    if not gp_path.exists():
-        findings.err(gp_path, "golden-path sample missing - schema integrity unverifiable")
-        return
-    text = gp_path.read_text(encoding="utf-8")
-
     try:  # optional full validation when the libs are installed (CI installs them)
         import jsonschema  # type: ignore
         import yaml  # type: ignore
     except ImportError:
         jsonschema = yaml = None  # type: ignore
 
-    for label, heading, schema_rel in GOLDEN_PATH_BLOCKS:
+    document_cache: dict[str, str] = {}
+    for document_rel, label, heading, schema_rel in SCHEMA_FIXTURE_BLOCKS:
+        document_path = INSTRUCTIONS_ROOT / document_rel
+        if not document_path.exists():
+            findings.err(document_path, f"{label}: fixture document missing")
+            continue
+        text = document_cache.setdefault(
+            document_rel, document_path.read_text(encoding="utf-8")
+        )
         schema_path = INSTRUCTIONS_ROOT / schema_rel
         if not schema_path.exists():
             findings.err(schema_path, f"{label}: schema file missing")
@@ -1140,19 +1149,19 @@ def check_golden_path_schemas(findings: Findings) -> None:
 
         block = _extract_yaml_block(text, heading)
         if block is None:
-            findings.err(gp_path, f"{label}: no yaml block found after heading '{heading}'")
+            findings.err(document_path, f"{label}: no yaml block found after heading '{heading}'")
             continue
 
-        _check_block_structure(gp_path, label, block, schema, findings)
+        _check_block_structure(document_path, label, block, schema, findings)
 
         if yaml is not None and jsonschema is not None:
             try:
                 data = yaml.safe_load(block)
                 jsonschema.validate(data, schema)
             except yaml.YAMLError as exc:  # type: ignore[union-attr]
-                findings.err(gp_path, f"{label}: YAML parse failure ({exc})")
+                findings.err(document_path, f"{label}: YAML parse failure ({exc})")
             except jsonschema.ValidationError as exc:  # type: ignore[union-attr]
-                findings.err(gp_path, f"{label}: full schema validation failed - {exc.message} (path: {'/'.join(str(p) for p in exc.absolute_path)})")
+                findings.err(document_path, f"{label}: full schema validation failed - {exc.message} (path: {'/'.join(str(p) for p in exc.absolute_path)})")
 
 
 # --- EF package API integrity ------------------------------------------------
@@ -1290,6 +1299,7 @@ def main() -> int:
         check_section_anchors(path, findings, headings_cache)
         check_refapp_count_claims(path, findings)
         check_version_prose(path, findings)
+        check_action_reference_policy(path, findings)
         check_deprecated_layout(path, findings)
 
     check_command_shape(findings)

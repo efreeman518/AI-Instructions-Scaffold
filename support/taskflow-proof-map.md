@@ -111,7 +111,7 @@ Use these links first. If a branch or path has moved, search inside the same rep
 
 ## High-Value Proof Checks
 
-- **Current reference proof snapshot:** build, separate Uno build, vulnerability audit, targeted deployment/data/UI checks, and unfiltered serial acceptance were verified on 2026-08-17. Authoritative counts live only in the reference app's `.scaffold/REFERENCE-STATUS.md` (<https://github.com/efreeman518/AI-Instructions-ReferenceApp/blob/main/.scaffold/REFERENCE-STATUS.md>) - not restated here.
+- **Current reference status:** authoritative counts, dates, capability classifications, and scaffold-compatibility evidence live only in the reference app's `.scaffold/REFERENCE-STATUS.md` (<https://github.com/efreeman518/AI-Instructions-ReferenceApp/blob/main/.scaffold/REFERENCE-STATUS.md>) - not restated here.
 
 - **Multi-tenant proof:** TaskFlow demonstrates full multi-tenancy - `ITenantEntity<TenantId>` (typed domain ID), `ITenantBoundaryValidator`, `ValidationHelper`, `TenantBoundaryLoggingExtensions`, tenant query filters, tenant stamping, and global-admin bypass. Not all scaffolds require multi-tenancy.
 - **Service pattern proof:** TaskFlow services use `BuildResponse` helper, `ErrorConstants.ERROR_ITEM_NOTFOUND`, `nameof(Entity)`, `[LoggerMessage]` source-gen logging, and `DefaultRequest<T>`/`DefaultResponse<T>` as `record` types.

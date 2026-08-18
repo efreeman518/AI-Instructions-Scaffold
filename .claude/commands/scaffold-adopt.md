@@ -19,7 +19,7 @@ You are executing the brownfield adoption workflow - a code-driven replacement f
 5. Walk the Inspection Order in `.instructions/ai/adopt-codebase.md` section Inspection Order. After each pass, recap findings and ask the developer to confirm or correct.
 6. For each inferred design decision, run the Decision Confirmation Loop in `.instructions/ai/adopt-codebase.md` section Decision Confirmation Loop.
 7. Write the three artifacts under `.scaffold/` per the schema/templates referenced in `.instructions/ai/adopt-codebase.md` section Output Artifacts.
-8. Write `HANDOFF.md` at project root with `currentPhase: 2`, `currentSubPhase: ""`, `contractsScaffolded: false`, and a section Completed note: "Phase 1 adopted from existing codebase via `ai/adopt-codebase.md` inference."
+8. Write `HANDOFF.md` at project root with `workflowStatus: active`, `currentPhase: 2`, `currentSubPhase: ""`, `contractsScaffolded: false`, and a section Completed note: "Phase 1 adopted from existing codebase via `ai/adopt-codebase.md` inference."
 9. Stop. The next session resumes at Phase 2 (Resource Definition) exactly as for a greenfield project.
 
 ## Pre-Flight

@@ -218,7 +218,7 @@ az deployment sub create `
 ### GitHub Actions
 
 ```yaml
-- uses: azure/arm-deploy@v2
+- uses: azure/arm-deploy@<latest-stable-sha>
   with:
     scope: subscription
     template: infra/main.bicep
@@ -282,8 +282,8 @@ jobs:
       AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: Azure/setup-azd@v2
+      - uses: actions/checkout@<latest-stable-sha>
+      - uses: Azure/setup-azd@<latest-stable-sha>
       - run: azd auth login --federated-credential-provider github
       - run: azd provision --no-prompt
       # After provision, set the GHCR pull cred on each app (private packages only):

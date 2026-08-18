@@ -73,7 +73,7 @@ Use `curl`, HTTPie, REST Client, or Scalar. Record status codes and endpoint dis
 - [ ] `.scaffold/resource-implementation.yaml` declares `migrationLifecycle` and every configured `databaseProviders` entry. Each provider passes its non-destructive pending-model-change/parity gate; baseline regeneration occurred only under the recorded `unreleased-resettable` reset/backup guard.
 - [ ] `.scaffold/UBIQUITOUS-LANGUAGE.md` and `.scaffold/DESIGN-DECISIONS.md` still match the generated entity, service, and endpoint names. Mechanical check: `python {instructionsRoot}/scripts/check-artifact-drift.py --root .` reports no drift (advisory - review each finding against GR-01: fix the artifact first, then code).
 - [ ] Generated solution shape matches `skills/solution-structure.md` (no missing project, no orphan no-op stub).
-- [ ] `HANDOFF.md` resume state is current: `currentPhase`, `currentSubPhase`, gate result, blockers, next load set.
+- [ ] `HANDOFF.md` terminal state is current: final acceptance sets `workflowStatus: complete`, `currentPhase: 5`, and `currentSubPhase: complete`; gate results, blockers, and deployment-only residuals remain recorded.
 - [ ] `.scaffold/implementation-plan.md` open questions resolved or explicitly deferred with TODO.
 - [ ] Every enabled host has a recorded status in `HANDOFF.md`: `validated`, `partially-validated`, or `blocked` with reason.
 - [ ] At least one entity CRUD/search smoke cycle succeeds.

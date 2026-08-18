@@ -27,7 +27,10 @@ Usage:
 
 import argparse
 import filecmp
+import hashlib
+import json
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -64,6 +67,9 @@ EXCLUDE_PARTS = {
     "obj",
 }
 
+MANIFEST_FORMAT = 1
+MANIFEST_REL = ".instructions/.scaffold-install-manifest.json"
+
 # Sentinel markers used when merging root-level markdown files.
 MERGE_SENTINEL_START = "<!-- ai-scaffold: start -->"
 MERGE_SENTINEL_END = "<!-- ai-scaffold: end -->"
@@ -77,6 +83,227 @@ AGENT_COPIES = [
     (".claude/commands", ".claude/commands", "dir"),
     (".github/agents", ".github/agents", "dir"),
 ]
+
+
+def hash_bytes(content: bytes) -> str:
+    return hashlib.sha256(content).hexdigest()
+
+
+def hash_file(path: Path) -> str:
+    return hash_bytes(path.read_bytes())
+
+
+def managed_block_content(src: Path) -> str:
+    return adapt_installed_entrypoint_links(
+        src,
+        src.read_text(encoding="utf-8"),
+    ).strip()
+
+
+def extract_managed_block(content: str) -> str | None:
+    if MERGE_SENTINEL_START not in content or MERGE_SENTINEL_END not in content:
+        return None
+    _before, rest = content.split(MERGE_SENTINEL_START, 1)
+    managed, _after = rest.split(MERGE_SENTINEL_END, 1)
+    return managed.strip()
+
+
+def source_commit(repo_root: Path) -> str | None:
+    if not shutil.which("git"):
+        return None
+    proc = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    return proc.stdout.strip() if proc.returncode == 0 else None
+
+
+def source_repository(repo_root: Path) -> str | None:
+    if not shutil.which("git"):
+        return None
+    proc = subprocess.run(
+        ["git", "remote", "get-url", "origin"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    return proc.stdout.strip() if proc.returncode == 0 and proc.stdout.strip() else None
+
+
+def iter_source_files(root: Path):
+    for path in root.rglob("*"):
+        if path.is_dir():
+            continue
+        rel = path.relative_to(root)
+        if any(part in EXCLUDE_PARTS for part in rel.parts):
+            continue
+        yield path, rel
+
+
+def build_manifest(repo_root: Path, instructions_only: bool) -> dict:
+    managed_files: dict[str, str] = {}
+    managed_blocks: dict[str, str] = {}
+
+    for rel in INSTRUCTIONS_FILES:
+        src = repo_root / rel
+        if src.exists():
+            managed_files[f".instructions/{rel}"] = hash_file(src)
+    for rel in INSTRUCTIONS_DIRS:
+        src_root = repo_root / rel
+        if not src_root.exists():
+            continue
+        for src, child_rel in iter_source_files(src_root):
+            managed_files[f".instructions/{rel}/{child_rel.as_posix()}"] = hash_file(src)
+
+    if not instructions_only:
+        for src_rel, dst_rel, kind in AGENT_COPIES:
+            src = repo_root / src_rel
+            if not src.exists():
+                continue
+            if kind == "merge":
+                managed_blocks[dst_rel] = hash_bytes(managed_block_content(src).encode("utf-8"))
+            elif kind == "file":
+                managed_files[dst_rel] = hash_file(src)
+            else:
+                for child, child_rel in iter_source_files(src):
+                    managed_files[f"{dst_rel}/{child_rel.as_posix()}"] = hash_file(child)
+
+    manifest = {
+        "format": MANIFEST_FORMAT,
+        "scope": "instructions-only" if instructions_only else "full",
+        "managedFiles": dict(sorted(managed_files.items())),
+        "managedBlocks": dict(sorted(managed_blocks.items())),
+    }
+    repository = source_repository(repo_root)
+    if repository:
+        manifest["sourceRepository"] = repository
+    commit = source_commit(repo_root)
+    if commit:
+        manifest["sourceCommit"] = commit
+    return manifest
+
+
+def validate_manifest_shape(manifest: object) -> str | None:
+    if not isinstance(manifest, dict):
+        return "manifest root must be an object"
+    if manifest.get("format") != MANIFEST_FORMAT:
+        return f"unsupported manifest format: {manifest.get('format')!r}"
+    if manifest.get("scope") not in {"full", "instructions-only"}:
+        return "manifest scope must be 'full' or 'instructions-only'"
+    for key in ("managedFiles", "managedBlocks"):
+        entries = manifest.get(key)
+        if not isinstance(entries, dict):
+            return f"manifest {key} must be an object"
+        for rel, digest in entries.items():
+            path = Path(rel)
+            if (
+                not isinstance(rel, str)
+                or not rel
+                or path.is_absolute()
+                or ".." in path.parts
+                or not isinstance(digest, str)
+                or len(digest) != 64
+                or any(ch not in "0123456789abcdef" for ch in digest)
+            ):
+                return f"manifest {key} contains an invalid entry: {rel!r}"
+    return None
+
+
+def load_manifest(target_root: Path) -> tuple[dict | None, str | None]:
+    path = target_root / MANIFEST_REL
+    if not path.exists():
+        return None, None
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return None, f"cannot read {MANIFEST_REL}: {exc}"
+    error = validate_manifest_shape(manifest)
+    return (None, error) if error else (manifest, None)
+
+
+def plan_pruning(
+    target_root: Path,
+    previous: dict | None,
+    expected: dict,
+    instructions_only: bool,
+) -> tuple[list[str], list[str], list[str]]:
+    if previous is None:
+        return [], [], []
+
+    old_files: dict[str, str] = previous["managedFiles"]
+    new_files: dict[str, str] = expected["managedFiles"]
+    removed_files: list[str] = []
+    removed_blocks: list[str] = []
+    conflicts: list[str] = []
+
+    for rel in sorted(set(old_files) - set(new_files)):
+        if instructions_only and not rel.startswith(".instructions/"):
+            continue
+        path = target_root / rel
+        if not path.exists():
+            continue
+        if not path.is_file() or hash_file(path) != old_files[rel]:
+            conflicts.append(rel)
+        else:
+            removed_files.append(rel)
+
+    if not instructions_only:
+        old_blocks: dict[str, str] = previous["managedBlocks"]
+        new_blocks: dict[str, str] = expected["managedBlocks"]
+        for rel in sorted(set(old_blocks) - set(new_blocks)):
+            path = target_root / rel
+            if not path.exists():
+                continue
+            managed = extract_managed_block(path.read_text(encoding="utf-8"))
+            if managed is None or hash_bytes(managed.encode("utf-8")) != old_blocks[rel]:
+                conflicts.append(f"{rel} (managed block)")
+            else:
+                removed_blocks.append(rel)
+
+    return removed_files, removed_blocks, conflicts
+
+
+def remove_managed_block(path: Path) -> None:
+    content = path.read_text(encoding="utf-8")
+    before, rest = content.split(MERGE_SENTINEL_START, 1)
+    _managed, after = rest.split(MERGE_SENTINEL_END, 1)
+    remaining = (before.rstrip() + "\n\n" + after.lstrip()).strip()
+    if remaining:
+        path.write_text(remaining + "\n", encoding="utf-8")
+    else:
+        path.unlink()
+
+
+def apply_pruning(
+    target_root: Path,
+    removed_files: list[str],
+    removed_blocks: list[str],
+    dry_run: bool,
+) -> None:
+    for rel in removed_files:
+        print(f"  [{'dry-run' if dry_run else 'removed'}] {rel} (removed from source manifest)")
+        if not dry_run:
+            (target_root / rel).unlink()
+    for rel in removed_blocks:
+        print(f"  [{'dry-run' if dry_run else 'removed'}] {rel} managed block (removed from source manifest)")
+        if not dry_run:
+            remove_managed_block(target_root / rel)
+
+
+def write_manifest(target_root: Path, manifest: dict, dry_run: bool) -> None:
+    action = "dry-run" if dry_run else "write"
+    print(f"  [{action}] {MANIFEST_REL}")
+    if dry_run:
+        return
+    path = target_root / MANIFEST_REL
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
 
 def adapt_installed_entrypoint_links(src: Path, content: str) -> str:
@@ -156,11 +383,11 @@ class Planner:
 
     def merge_file(self, src: Path, dst: Path, label: str) -> None:
         """Write src inside sentinel markers, preserving target content outside the managed block."""
-        src_content = adapt_installed_entrypoint_links(src, src.read_text(encoding="utf-8"))
+        src_content = managed_block_content(src)
         block = (
             MERGE_SENTINEL_START
             + "\n"
-            + src_content.strip()
+            + src_content
             + "\n"
             + MERGE_SENTINEL_END
         )
@@ -211,12 +438,6 @@ def preserve_handoff(target_instructions: Path, dry_run: bool) -> Path | None:
 
 # Required files/dirs after a full install (relative to <target>).
 # Skipped expectations are pruned in verify_install when --instructions-only was used.
-# Payload files removed from INSTRUCTIONS_FILES over time; deleted from targets
-# on install so stale copies cannot contradict the current payload.
-OBSOLETE_PAYLOAD_FILES = [
-    ".instructions/CLAUDE.md",  # replaced by .instructions/AGENTS.md (root CLAUDE.md is now an @AGENTS.md import stub)
-]
-
 SMOKE_CHECK_PAYLOAD = [
     ".instructions/START-AI.md",
     ".instructions/README.md",
@@ -241,47 +462,105 @@ SMOKE_CHECK_HARNESS_ENTRYPOINTS = [
 
 
 def verify_install(target_root: Path, instructions_only: bool) -> int:
-    """Verify the expected files exist after install. Returns process exit code."""
-    expected = list(SMOKE_CHECK_PAYLOAD)
-    if not instructions_only:
-        expected += SMOKE_CHECK_HARNESS_ENTRYPOINTS
+    """Verify every manifest-managed file and marker block. Returns process exit code."""
+    manifest, manifest_error = load_manifest(target_root)
+    print()
+    print("== install integrity check ==")
+    if manifest_error:
+        print(f"  [fail] {manifest_error}")
+        return 1
+    if manifest is None:
+        print(f"  [fail] {MANIFEST_REL} is missing; re-run the installer to establish managed ownership")
+        return 1
 
-    missing = [rel for rel in expected if not (target_root / rel).exists()]
-    obsolete = [rel for rel in OBSOLETE_PAYLOAD_FILES if (target_root / rel).exists()]
-    unmarked_merge_files: list[str] = []
+    managed_files: dict[str, str] = manifest["managedFiles"]
+    managed_blocks: dict[str, str] = manifest["managedBlocks"]
+    required = list(SMOKE_CHECK_PAYLOAD)
+    if not instructions_only:
+        required += SMOKE_CHECK_HARNESS_ENTRYPOINTS
+
+    missing_records = [
+        rel for rel in required
+        if rel not in managed_files and rel not in managed_blocks
+    ]
+    missing: list[str] = []
+    changed: list[str] = []
+    for rel, expected_hash in managed_files.items():
+        if instructions_only and not rel.startswith(".instructions/"):
+            continue
+        path = target_root / rel
+        if not path.exists() or not path.is_file():
+            missing.append(rel)
+        elif hash_file(path) != expected_hash:
+            changed.append(rel)
+
+    block_issues: list[str] = []
+    if not instructions_only:
+        for rel, expected_hash in managed_blocks.items():
+            path = target_root / rel
+            if not path.exists() or not path.is_file():
+                missing.append(rel)
+                continue
+            managed = extract_managed_block(path.read_text(encoding="utf-8"))
+            if managed is None:
+                block_issues.append(f"{rel} (sentinel markers missing)")
+            elif hash_bytes(managed.encode("utf-8")) != expected_hash:
+                block_issues.append(f"{rel} (managed block changed)")
+
+    observed: set[str] = set()
+    instructions_root = target_root / ".instructions"
+    if instructions_root.exists():
+        for path in instructions_root.rglob("*"):
+            if path.is_file() and path != target_root / MANIFEST_REL:
+                observed.add(path.relative_to(target_root).as_posix())
     if not instructions_only:
         for _src_rel, dst_rel, kind in AGENT_COPIES:
-            if kind != "merge":
+            if kind != "dir":
                 continue
-            path = target_root / dst_rel
-            if not path.exists():
-                continue
-            content = path.read_text(encoding="utf-8")
-            if MERGE_SENTINEL_START not in content or MERGE_SENTINEL_END not in content:
-                unmarked_merge_files.append(dst_rel)
+            root = target_root / dst_rel
+            if root.exists():
+                for path in root.rglob("*"):
+                    if path.is_file():
+                        observed.add(path.relative_to(target_root).as_posix())
+    extras = sorted(observed - set(managed_files))
 
-    print()
-    print("== install smoke check ==")
-    if missing or unmarked_merge_files or obsolete:
-        issue_count = len(missing) + len(unmarked_merge_files) + len(obsolete)
+    if missing_records or missing or changed or block_issues:
+        issue_count = (
+            len(missing_records) + len(missing) + len(changed)
+            + len(block_issues)
+        )
         print(f"  [fail] {issue_count} install issue(s) under {target_root}:")
+    if missing_records:
+        print("         required manifest record(s) missing:")
+        for rel in missing_records:
+            print(f"         - {rel}")
     if missing:
-        print("         missing expected file(s):")
+        print("         managed file(s) missing:")
         for rel in missing:
             print(f"         - {rel}")
-    if unmarked_merge_files:
-        print("         merge entrypoint(s) missing sentinel markers:")
-        for rel in unmarked_merge_files:
+    if changed:
+        print("         managed file(s) changed:")
+        for rel in changed:
             print(f"         - {rel}")
-    if obsolete:
-        print("         obsolete payload file(s) present (re-run install to remove):")
-        for rel in obsolete:
+    if block_issues:
+        print("         managed block issue(s):")
+        for rel in block_issues:
             print(f"         - {rel}")
-    if missing or unmarked_merge_files or obsolete:
+    if extras:
+        print(f"  [warn] {len(extras)} unmanifested file(s) left untouched:")
+        for rel in extras:
+            print(f"         - {rel}")
+    if missing_records or missing or changed or block_issues:
         return 1
-    print(f"  [ok]   all {len(expected)} expected files present under {target_root}")
+    checked_count = sum(
+        1 for rel in managed_files
+        if not instructions_only or rel.startswith(".instructions/")
+    )
+    print(f"  [ok]   {checked_count} managed file hash(es) match")
     if not instructions_only:
-        print("  [ok]   merge entrypoints contain sentinel markers")
+        print(f"  [ok]   {len(managed_blocks)} managed block hash(es) match")
+    if manifest.get("sourceCommit"):
+        print(f"  [info] installed from source commit {manifest['sourceCommit']}")
     return 0
 
 
@@ -308,11 +587,11 @@ def main() -> int:
     )
     parser.add_argument(
         "--verify", action="store_true",
-        help="After install, verify expected entrypoints and payload files exist.",
+        help="After install, verify all manifest-managed file and marker-block hashes.",
     )
     parser.add_argument(
         "--verify-only", action="store_true",
-        help="Skip install; just verify an existing target. Implies --verify.",
+        help="Skip install; verify all manifest-managed content. Implies --verify.",
     )
     args = parser.parse_args()
 
@@ -339,6 +618,24 @@ def main() -> int:
 
     preserve_handoff(target_instructions, args.dry_run)
 
+    previous_manifest, manifest_error = load_manifest(target_root)
+    if manifest_error:
+        print(f"error: {manifest_error}", file=sys.stderr)
+        return 1
+    expected_manifest = build_manifest(repo_root, args.instructions_only)
+    removed_files, removed_blocks, prune_conflicts = plan_pruning(
+        target_root,
+        previous_manifest,
+        expected_manifest,
+        args.instructions_only,
+    )
+    if prune_conflicts:
+        print("error: cannot safely remove locally changed managed content:", file=sys.stderr)
+        for rel in prune_conflicts:
+            print(f"  - {rel}", file=sys.stderr)
+        print("restore the prior managed content or move the local changes, then retry", file=sys.stderr)
+        return 1
+
     planner = Planner(dry_run=args.dry_run)
 
     print("== .instructions/ payload ==")
@@ -357,13 +654,7 @@ def main() -> int:
             f".instructions/{rel}",
         )
 
-    for rel in OBSOLETE_PAYLOAD_FILES:
-        stale = target_root / rel
-        if stale.exists():
-            action = "[dry-run]" if args.dry_run else "[removed]"
-            print(f"  {action} {rel} (obsolete payload file)")
-            if not args.dry_run:
-                stale.unlink()
+    apply_pruning(target_root, removed_files, removed_blocks, args.dry_run)
 
     if not args.instructions_only:
         print()
@@ -381,6 +672,10 @@ def main() -> int:
                 planner.copy_file(src, dst, dst_rel)
             else:
                 planner.copy_tree(src, dst, dst_rel)
+
+    print()
+    print("== install manifest ==")
+    write_manifest(target_root, expected_manifest, args.dry_run)
 
     planner.summary()
 
