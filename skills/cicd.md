@@ -29,6 +29,7 @@ Use GitHub Actions for:
 9. Superseded CI may cancel. An environment deployment uses `cancel-in-progress: false`; never interrupt an in-flight migration or rollout.
 10. A deployment consumes one previously validated commit, builds each artifact once, records immutable image digests/artifact IDs, and rolls back from the previous release manifest without rebuilding.
 11. Tracked files contain no package credentials. Repository `nuget.config` may contain `%NUGET_AUTH_TOKEN%` only; secrets must not be echoed or included in diagnostic artifacts.
+12. **CI green must imply the deploy will compile.** Every compile surface the deploy pipeline builds - platform heads excluded from the fast lane for workload cost, container-only hosts, the migrator image - either gets a pre-merge compile gate (`dotnet build`, no tests, workloads installed) or the workflow states the required manual build explicitly. A fast lane that tests less than deploy compiles converts merge-time errors into deploy-time outages.
 
 ### Registry choice is a scaffold input
 
@@ -87,6 +88,8 @@ Run on PRs to `main`/`develop`:
 - `dotnet build --no-restore`
 - targeted test runs by category (Endpoint path by default, broader Integration path optionally gated)
 - publish TRX and coverage artifacts
+
+Base-filtered triggers do not gate stacked PRs: a PR whose base is another feature branch never triggers CI, and its empty check list reads as "nothing ran", not "not covered". Either retarget to `main` before relying on CI or state local verification in the PR body. Never `gh pr merge --squash --delete-branch` while another PR is stacked on that branch - deleting the base auto-closes the stacked PR, and GitHub refuses both `gh pr reopen` (base branch gone) and retargeting a closed PR; the only recovery is a replacement PR that strands the original review thread. After a squash merge, replay a stacked branch with `git rebase --onto main <old-base-sha>` (a plain rebase replays the merged commits), and check merged-ness by content (`git diff origin/<branch> <squash-sha>`), never by `git rev-list --count`, which stays nonzero after a squash merge.
 
 Minimal shape:
 
@@ -203,6 +206,8 @@ The committed `nuget.config` uses an environment placeholder such as `<add key="
 Upload failure diagnostics with `if: failure() || cancelled()` and `if-no-files-found: error`. Upload successful benchmark, mutation, coverage, or release evidence on success when that evidence is the output of the lane. The producer and uploader must share the exact artifact path; fail fast when an expected file is missing.
 
 For every configured EF provider, CI runs the non-destructive `has-pending-model-changes` or provider-parity verifier. Baseline regeneration is not a normal CI repair action and must not be implemented through a workflow that edits/deletes itself or pushes a cleanup branch.
+
+The self-modifying prohibition is general, not EF-specific: **routine maintenance is never a workflow that modifies workflows.** Action bumps, cleanups, and one-time repairs land as ordinary PR edits to the workflow files. Two consumer repos have independently burned double-digit commit counts on one-shot updater/cleanup workflows that never triggered reliably (eight trigger variations in one case) and then had to be removed by hand.
 
 ### Runner Disk for Container-Backed Test Tiers
 
@@ -521,6 +526,19 @@ Migration gotchas (these cost real time):
 
 ---
 
+## Post-Deploy Smoke Contract
+
+When a deployment pipeline gains a post-deploy smoke workflow (browser tests against the deployed app), it inherits evidence duties the CI tiers do not cover:
+
+- **Upload condition.** `if: failure()` on the artifact-upload step discards the most interesting case: a first attempt that fails and passes on retry leaves the job green, so screenshots, traces, and accessibility snapshots from the flaky failure are gone - and a full deploy cycle gets burned re-triggering a failure that already happened. Use `if: ${{ !cancelled() }}` with `if-no-files-found: ignore`; a clean run still uploads nothing.
+- **Retention is a ceiling, not a setting.** `retention-days:` above the repo/org ceiling is silently clamped (a `Using N instead` line in the very log being debugged), and it covers artifacts only - run **logs** follow the repo-level value, which is why a failure log can be unreadable by the time someone looks. Check both at `gh api repos/{owner}/{repo}/actions/permissions/artifact-and-log-retention`.
+- **Dispatching without a checkout.** A job that only calls `gh` (e.g. triggering the smoke workflow after deploy) has no repo checkout, and `gh` fails with "not a git repository". Pass `--repo`/`GH_REPO` explicitly instead of adding an unneeded checkout step.
+- **Diagnosis order for a deployed UI failure.** The browser trace shows what the client attempted; the server request log shows what the server actually did; the bugs live in the gap. Read the server's request timeline for the failure window before theorizing from the client trace - one query can settle what two trace-derived root causes got wrong (e.g. `POST /signin-oidc` 302 -> `GET /` 200 -> `POST /logout`: sign-in succeeded, the test signed itself out).
+
+Selector durability for the smoke suite is owned by [testing-quality.md](testing-quality.md) (every smoke-asserted selector pinned by a fast-lane component test); interactive IdP login helper rules live there too.
+
+---
+
 ## `infra.yml` (Optional Bicep)
 
 Use manual dispatch per environment:
@@ -598,10 +616,11 @@ For `scaffoldMode: lite`:
 7. Default PR path runs fast tiers only; all heavy/special tiers are `workflow_dispatch` toggles, default off.
 8. Keep token placeholders aligned with [placeholder-tokens.md](../ai/placeholder-tokens.md).
 9. Validate the requested deployment SHA is green before building; build each artifact once and reuse it through rollout and promotion.
-10. Verify database-aware internal readiness before public health, then run a post-deploy functional smoke.
-11. Roll back from authoritative previous-release metadata without rebuilding. Deployment concurrency queues rather than canceling an active run.
+10. Verify database-aware internal readiness before public health, then run a post-deploy functional smoke. Every health gate polls with a bounded deadline (e.g. 30 x 2s) and dumps recent service logs on genuine failure - a one-shot probe fired straight after container start false-fails healthy deploys.11. Roll back from authoritative previous-release metadata without rebuilding. Deployment concurrency queues rather than canceling an active run.
 12. Operational docs state what automation actually verifies. Do not claim rollback, backup, health, or smoke coverage that the workflow does not execute.
 13. Local/manual emergency deployment may mirror the same gates when explicitly requested, but scaffold generation does not create a second default deployment path.
+14. A single-file bind mount does not track a replaced file: an scp'd/copied replacement is a new inode, so `reload` serves the old config silently. Mount the directory, or restart (not reload) the container after replacing the file.
+15. PowerShell deploy/ops scripts carry three recurring traps: PowerShell 7.3+ drops a literal `$null` argument to a native exe (`curl -o $null` fails before any request - pipe to `Out-Null`); a here-string in a CRLF-checked-out `.ps1` carries `\r` into any embedded script piped to remote bash, aborting `set -euo pipefail` - and the repo's own `*.ps1 text eol=crlf` gitattribute guarantees it, so strip CR before piping; `-match`/`-notmatch` against an array filters elements (always truthy), never a boolean - write `-not ($lines -match ...)`.
 
 ---
 

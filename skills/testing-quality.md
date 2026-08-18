@@ -89,6 +89,9 @@ Playwright requires a real hosted stack. It cannot run on `WebApplicationFactory
 
 - Use Page Object Model. **Language split:** author page objects in **C# only for stable, strongly-typed smoke paths that benefit from typed orchestration** - the Gateway/Blazor happy path is the canonical case. Keep React and Uno page/test helpers in **TypeScript** unless a concrete maintenance reason (e.g. an MSTest runner that must own the flow) justifies a C# wrapper. Do not port a working TypeScript suite to C# for uniformity's sake; the renderer-specific helpers (canvas bridge, coordinate-click) live more naturally in TS.
 - Prefer stable selectors (`data-testid`).
+- Every selector a post-deploy smoke test asserts must be pinned by a fast-lane component test (bUnit for Blazor) whose failure message names the smoke spec. A deploy-gated suite is the slowest possible place to discover a renamed selector: a refactor that drops the anchor passes CI green and only fails after the next deploy, and stays red until someone correlates the two.
+- Settings-style DTOs (client writes, server validates, client re-reads) get one round-trip test: client-serialize -> server-validate -> client-parse. Route paths, validation limits, and enum wire-strings drift independently across client, server validator, and test mocks, and a catch-all route fallback makes the drift silent - four "settings don't save" incidents in one consumer week traced to exactly these.
+- API smoke scripts that re-run against standing data classify expected business-rule rejections (cooldowns, daily limits) as WARN by exact message; anything unexpected still FAILs. In PowerShell, `Invoke-WebRequest` returns `application/problem+json` error bodies as raw `byte[]` - decode before matching, or message assertions silently never match and the gate goes false-green.
 - Isolate test data with unique names/ids and delete or archive every smoke-created record in `finally` / fixture teardown. Cleanup failure is diagnostic evidence and must not mutate unrelated provider data.
 - Assert structural UI strings, not data-dependent counts.
 - Cover the real workflow surface: shell/navigation, create/read/update/delete, and nested child collections when DOM-capable UI exposes them. For Uno Skia canvas, use smoke plus app-owned bridge state transitions only; do not claim CRUD or nested-child correctness from pixels alone.
@@ -212,6 +215,8 @@ If the app paints to a single Skia `<canvas>`, there are no per-control DOM node
 
 Canvas-only fingerprint or visual-delta tests are valid only as `WasmUI` smoke and must be named as smoke, not CRUD/workflow coverage.
 
+The bridge cannot see whether anything was actually drawn: a brand mark with an unresolvable image source renders blank while `page`, `section`, and `hasToken` all report correct - every tier passes and a human finds the hole in production. For image-bearing chrome (logo, wordmark, splash mark), add one cheap non-visual guard an existing tier can carry: assert the control's asset request returns `200` (Playwright `page.on('response')` filtered to the asset path; **no request at all** is the failure signature, since an unresolved source never fetches). Deterministic, no golden image; keep visual-delta as smoke-only layout coverage.
+
 Recommended Uno WASM generation rule:
 
 - Detect renderer first.
@@ -236,7 +241,7 @@ Start one monotonic `{APP}_WASM_STARTUP_TIMEOUT_SECONDS` deadline before Docker 
 
 Generated `WasmUI` assemblies must include `[assembly: DoNotParallelize]`. AppHost-backed browser classes fight over containers, ports, WASM output, and cold-start state when MSTest runs them in parallel.
 
-The shared AppHost-backed `WasmAppHost` builds the WASM head and starts Aspire once per assembly. Its lazy single-start guard must use static fixture state, for example `_app != null && _staticBaseUrl != null`, then copy `_staticBaseUrl` into each test's fresh `WasmTestSettings`. Never guard on the per-test `settings.BaseUrl`; each test gets a new settings instance and would re-enter the clean rebuild while the first `*.WasmHost.exe` still holds the staged output. Reset the static URL during assembly cleanup. Symptom of the broken guard: the second `WasmUI` test fails with `MSB3027` / `MSB3021` copying a locked `*.WasmHost.exe`; after the fix, later tests skip rebuild and start in seconds.
+The shared AppHost-backed `WasmAppHost` builds the WASM head and starts Aspire once per assembly. Its lazy single-start guard must use static fixture state, for example `_app != null && _staticBaseUrl != null`, then copy `_staticBaseUrl` into each test's fresh `WasmTestSettings`. Never guard on the per-test `settings.BaseUrl`; each test gets a new settings instance and would re-enter the clean rebuild while the first `*.WasmHost.exe` still holds the staged output. Reset the static URL during assembly cleanup. The guard must cache the boot **failure** too: a failed boot that clears the cached state makes every remaining test re-boot the full graph (observed: 22 tests x a doomed Aspire boot = hours to report nothing) - record the failure and fail the rest fast with the original diagnostics. Fixtures resolve the repo/source root by walking up to the `*.slnx`/`*.sln` marker, never by a fixed number of parent segments - any relocation of the test tree kills every hard-coded climb. Symptom of the broken guard: the second `WasmUI` test fails with `MSB3027` / `MSB3021` copying a locked `*.WasmHost.exe`; after the fix, later tests skip rebuild and start in seconds.
 
 ### Uno WASM: Browser Diagnostics
 
@@ -306,6 +311,15 @@ Increase late-lifecycle assertions to `60000` when page loads occur after severa
 await field.first().waitFor({ state: "visible" });
 await expect(dialog).toBeVisible({ timeout: 15_000 });
 ```
+
+### Interactive IdP Login Helpers (hosted-provider sign-in)
+
+Any generated helper that drives a hosted IdP's real login pages (Entra, B2C, Auth0) hits the same trap: after a good password the IdP self-submits a `form_post` back to the app, the credential view disappears immediately, but `page.url()` keeps reporting the IdP URL until the navigation commits. A helper that samples `page.url()` to ask "am I still on the IdP?" gets a stale answer during the redirect window and runs its next step against a page that is already the application.
+
+- Wait for the URL to actually leave the IdP with `waitForURL` (it follows in-flight navigations); never poll `page.url()`.
+- Fresh users hit first-run interstitials (consent, "stay signed in?") after the password step. Loop the primary action button through interstitials **until the URL leaves the IdP host**, not a fixed screen sequence.
+- Locate IdP fields by role + accessible name, not `input[type=email]`/`[type=password]`: hosted login pages keep hidden inputs from other views in the DOM, so type selectors match nothing or a hidden element.
+- Scope broad fallback actions (`button[type="submit"]`, blind Enter) to the IdP's own origin. On the provider's form they are safe; one navigation later the only submit button may be the app's sign-out form, and the helper signs the test out then waits on a page it just discarded. The failure is intermittent - it reproduces only when the redirect is slow - and masquerades as a cold-start hang.
 
 ### Playwright Config Output Location
 

@@ -33,6 +33,8 @@ MVUX feeds are pull-based - they do not re-evaluate automatically when the under
 
 **Pattern:** Add an `IState<int>` version counter. Increment it after every mutation. Make the feed depend on the counter so it re-evaluates.
 
+**The dependency trick works for `IState<T>` only.** Reading an `IListState<T>` inside `Feed.Async` is not tracked as a reactive dependency: the feed materializes once (typically empty, because XAML binds at construction before any `LoadAsync` runs) and never updates - silently, with no binding error. Derive from list state via `.AsFeed()` + `Select`, never by awaiting the list state inside `Feed.Async`.
+
 ```csharp
 public partial record CategoryTreeModel(
     INavigator Navigator,
@@ -214,6 +216,7 @@ To make ListView items navigable (e.g., clicking a task row opens its detail pag
 
 ### MVUX Pitfalls
 
+- **One button's `Command` silently no-ops while others work**: MVUX generates the command under the **bare method name** - `SelectSpread()` becomes `SelectSpread`, not `SelectSpreadCommand`. Binding `{x:Bind ViewModel.SelectSpreadCommand}` matches nothing with zero diagnostics. Drop the `Async` suffix on command methods too, so the generated name is unambiguous.
 - **Every `Button.Command` silently no-ops (feeds bind, lists render, commands do nothing)**: the first argument to `UseNavigation(...)` in the host config is missing `ReactiveViewModelMappings.ViewModelMappings`. Without it, navigation sets each page's `DataContext` to the **raw MVUX record** - feed properties are real and bind fine, but command methods are only surfaced as `ICommand` on the generated `Bindable{Model}`, so `{x:Bind ViewModel.Command}` resolves against the wrong object and does nothing. There is no exception; the only console signal is `The [{CommandName}] property getter does not exist on type [...Model]`. Fix: `.UseNavigation(ReactiveViewModelMappings.ViewModelMappings, RegisterRoutes, configure: ...)` (see [ui-uno-shell.md](ui-uno-shell.md) host-config block).
 - **`Feed.Async` type inference**: `Feed.Async(service.GetAsync)` may fail with CS0411/CS0453 when the return type is a reference type or the delegate signature is ambiguous. Always use an explicit lambda: `Feed.Async(async ct => await service.GetAsync(ct))`.
 - **`IListFeed` return type**: `ListFeed.Async(...)` callbacks must return `IImmutableList<T>`. Call `.ToImmutableList()` on results. Requires `using System.Collections.Immutable;` (add as global using in csproj, see Project File Rules).
@@ -340,6 +343,7 @@ private static void RegisterRoutes(IViewRegistry views, IRouteRegistry routes)
 - **`uen:ContentControl`** doesn't exist. For navigation content regions, use `<Frame />` inside a `<Grid uen:Region.Attached="true">`.
 - **`NavigationView` content area**: Place a `<Grid uen:Region.Attached="true"><Frame /></Grid>` as the `NavigationView` content for region-based navigation.
 - **`utu:AutoLayout.PrimaryAlignment`** valid values are `Stretch`, `Center`, `End` - there is no `Start`. Using `Start` produces a XAML parse error with no useful message. Default to `Stretch` for full-width content.
+- **Unresolved bindings reset the target to the DP's type default, converter unrun.** When a `DataContext` goes null (e.g. a tab with no model yet), a bound `Visibility` falls back to its type default `Visible` - a loading overlay renders permanently and blocks input. Every visibility/gating binding that can lose its `DataContext` carries `FallbackValue=Collapsed`.
 
 ### Responsive Menu Pattern (Side-Nav Wide / Bottom-Tabs Narrow)
 
@@ -428,6 +432,8 @@ return await _http.GetFromJsonAsync<CategoryDto>(url, ct);
 
 **Search is different** - search endpoints accept `SearchRequest<TFilter>` directly (no wrapping) and return `PagedResponse<T>` with a `data` array (not `DefaultResponse`).
 
+**Routes, validation limits, and enum wire-strings live in one shared source** consumed by the client, the server validator, and test mocks. They drift independently otherwise, and an `/api/{**catch-all}` fallback makes route drift a silent 404 instead of a loud failure; hand-pinned route strings in strict test mocks then validate the stale contract. Pair with the round-trip test in [testing-quality.md](testing-quality.md).
+
 #### Trimmed browser-WASM JSON contract
 
 Published trimmed browser-WASM builds cannot depend on reflection-based `System.Text.Json` metadata. The Uno client owns an internal source-generated `JsonSerializerContext` and lists every concrete wire type used by HTTP calls: request DTOs, `DefaultRequest<T>`, `DefaultResponse<T>`, `PagedResponse<T>`, collections, and any internal callback/envelope deserialized inside a method body. Public method return types alone are not a complete inventory.
@@ -494,3 +500,12 @@ For every MSAL-enabled `#if __WASM__` target, ship all three browser-specific pi
 The return channel is one-time state, not token storage. Require non-empty OIDC state, correlate the key to the current auth attempt, clear it before opening and immediately after success/failure, validate the callback origin/path and correlation value before returning it to MSAL, never store access/refresh tokens, and keep popup/poll cancellation bounded. Browser storage APIs can throw on managed devices or privacy-restricted profiles; catch that boundary and surface a recoverable "browser storage unavailable" sign-in error instead of hanging, crashing, or silently weakening correlation. Fail clearly on popup blocking, timeout, malformed callback, or unexpected origin.
 
 Automated auth bypass and local-session `WasmUI` tests do not execute these pieces. Before deployment, complete one real interactive sign-in per enabled UI head from its published `Release` build, including browserwasm, and verify the resulting token reaches the Gateway. Debug-only proof is insufficient because browser-WASM timing and trimming differ in Release.
+
+### Android MSAL Interactive Sign-In
+
+`WithUnoHelpers()` wires only the parent activity - on Android, interactive sign-in never completes without two additional pieces:
+
+- `MainActivity.OnActivityResult` forwards the result: `AuthenticationContinuationHelper.SetAuthenticationContinuationEventArgs(requestCode, resultCode, data)`.
+- The `BrowserTabActivity` intent filter for `msal{clientId}://auth` in the Android manifest, so the system browser/custom tab can return.
+
+The custom-tab return can still be canceled (user swipe, OEM browser quirks) before MSAL receives its redirect; configure `WithUseEmbeddedWebView(true)` as the in-app fallback path. Trimmed Release builds additionally need `Uno.UI.MSAL` in the trim roots - see [ui-uno-platforms.md](ui-uno-platforms.md) section Android Release Trimming.

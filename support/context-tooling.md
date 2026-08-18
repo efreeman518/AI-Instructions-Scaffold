@@ -252,6 +252,7 @@ graphify hook uninstall
 Behavior (read before enabling):
 
 - The scaffold does not install this hook. Prefer manual refresh after material code or architecture changes; enable the hook only when the operator accepts generated churn from small code commits.
+- The hook and a **tracked** `graphify-out/` are coupled choices, not independent ones. With committed artifacts, the post-commit rebuild re-dirties the tree the moment a commit finishes (observed: an aborted `git checkout` mid-merge), and regeneration is non-deterministic - one refresh with no content change rewrote ~63k lines, burying the PR's real diff. Hooks fit a gitignored graph; a tracked graph wants hooks off and an explicit refresh at task completion, so every rebuild is a deliberate, reviewable commit.
 
 - **Post-commit**: re-extracts only the changed code files in the BACKGROUND (`git
   commit` returns immediately), **AST-only, no LLM, no API cost**. Skips during

@@ -190,6 +190,8 @@ Use when vectorizing large existing datasets or when eventual consistency is acc
 
 AI services use conditional registration - absent config -> no-op stubs registered, app boots without cloud credentials.
 
+The gate applies to every optional provider (AI, Graph, external identity): registration checks the **complete** credential set, not a single key, and constructs the credential object at registration time so misconfiguration fails at startup. Gating on one key (e.g. ClientId alone) wires the real client when the rest is missing, defeating the no-op fallback with a first-resolve exception deep in a request path.
+
 ```csharp
 public static class AiServiceCollectionExtensions
 {

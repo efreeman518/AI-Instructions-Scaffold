@@ -112,6 +112,7 @@ Uno Platform uses an **MSBuild SDK package** (`Uno.Sdk`), not a .NET workload. N
 ### Non-Negotiable csproj Rules
 
 1. **SDK version**: Use the latest unaffected stable `Uno.Sdk` line that supports the project's target .NET TFM. An older `Uno.Sdk` line can bundle a `Uno.Wasm.Bootstrap` that does not support the current TFM; check Uno release notes when bumping the TFM. Do not accept a known-affected stable line solely because it is the latest release; run the published `Release` cold-start proof and follow [ui-uno-platforms.md](ui-uno-platforms.md) section Skia Browser-WASM Cold-Start Renderer Race when the exact failure appears.
+   `Uno.Sdk` and `Uno.Extensions.*` pins are **coupled through generated code** (an Extensions major can rename every generated MVUX wrapper), and `$(UnoVersion)` is empty in non-Uno.Sdk libraries, so those need explicit versions. Document the coupled pins as moving together in `Directory.Packages.props`. An SDK bump also shifts the transitive graph - a stale explicit pin trips `NU1605` as error and fails publish (silently skipping deploy jobs). A bump is proven only when generated-code consumers compile and a Release head builds.
 2. **TargetFramework clearing**: When `Directory.Build.props` sets a singular `<TargetFramework>` for non-Uno projects, the Uno csproj MUST add `<TargetFramework />` before `<TargetFrameworks>` to clear the inherited value. Otherwise MSBuild merges both, causing `NETSDK1005`. **Do not rely on guarding the root prop with `Condition="'$(UnoSingleProject)' != 'true'"`** - that guard is evaluated during the early `Directory.Build.props` import, *before* the Uno `.csproj` PropertyGroup sets `UnoSingleProject=true`, so the singular `<TargetFramework>` still wins over `<TargetFrameworks>` and the build fails with `NETSDK1005`. Clearing it in the Uno csproj (`<TargetFramework />`) is the reliable fix; alternatively scope the root `<TargetFramework>` so it never reaches Uno heads.
 3. **Targeted builds**: The conditional `TargetFrameworks` property owns the effective target; do not use `-f`, and keep browserwasm as the default. Run the enabled-target commands from [execution-gates.md](../support/execution-gates.md) section 5c - Optional Hosts. Restore/asset-graph hazards and diagnostics live in [ui-uno-platforms.md](ui-uno-platforms.md) section Platform Target Build Rules.
 4. **Entry point**: Uno SDK may not auto-generate `Program.Main` on the latest TFMs. For browserwasm, use the Chefs-style host builder entry point:
@@ -189,6 +190,7 @@ The `App.xaml` base class is `Application`, NOT `utu:App` (which doesn't exist):
 - Do NOT add `<ToolkitResources xmlns="using:Uno.Toolkit.UI" />` as a separate merged dictionary (included via `MaterialToolkitTheme`)
 
 - Put palette changes in `Styles/ColorPaletteOverride.xaml`; do not hard-code page-level hex colors.
+- Theme brushes live **only** inside `ThemeDictionaries`, under the WinUI keys `Default` and `Light` (a `Dark` key is ignored - `Default` is dark). Never duplicate a brush at dictionary root: elements resolve the root copy, so theme switching mutates dictionary copies nothing binds to and silently no-ops.
 - Put global converters in `Converters/Converters.xaml` and reusable control styles in `Styles/AppStyles.xaml`; pages consume resources instead of redefining them.
 
 ### App.xaml.cs Pattern
@@ -217,6 +219,8 @@ public partial class App : Application
     }
 }
 ```
+
+**Activate with a light first frame.** On Android the mandatory splash stays pinned until the first frame renders; a landing page that synchronously builds heavy content (large XAML trees, canvas controls) before `Window.Activate()` holds returning users on the splash for seconds on every reopen - and fresh-install flows hide it by landing on a light login page. When the default post-login page is heavy, activate with a minimal placeholder and swap the real page in after first frame, with a synchronous fallback if the dispatcher enqueue fails so users cannot strand on the placeholder.
 
 ### Shell Control
 

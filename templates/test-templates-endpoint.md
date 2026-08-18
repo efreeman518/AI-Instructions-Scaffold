@@ -37,6 +37,8 @@ If the test base evolves to wrap `HttpClient` in an extension method (e.g. `clie
 
 The plumbing for swapping the production DbContext + interceptors + pooled factories with a test-mode store ships in the `EF.IntegrationTesting` package as `EF.IntegrationTesting.AspNetCore.EfWebApplicationFactoryBase<TProgram, TTrxnContext, TQueryContext>`. `Test.Support` carries only a thin app adapter, `WebApplicationFactoryBase<TProgram, TTrxnContext, TQueryContext>`, and both `Test.Endpoints` (in-memory) and `Test.E2E` (Testcontainers SQL) derive specializations that only declare which options to use.
 
+The adapter pins every mode-selecting config key (auth mode, provider toggles) explicitly - a Development-environment test host loads the developer's **user secrets**, which override both appsettings files and can flip test topology on one machine while CI stays green. Test factories extend base configuration; they never replace it wholesale, or the pinned keys silently vanish in derived factories.
+
 > **Phase 4 generates this file.** The adapter is part of the contract-scaffolding output (see [../ai/contract-scaffolding.md](../ai/contract-scaffolding.md), `### 4. Test Infrastructure`) so the solution builds and both `Test.Endpoints` and `Test.E2E` compile before Phase 5 begins. The package base's descriptor removal no-ops when a descriptor is absent - at Phase 4 the host registers no DbContext yet; the swap takes effect in 5b.
 
 `tests/Test.Support/WebApplicationFactoryBase.cs`:

@@ -190,6 +190,12 @@ silently broken end to end - see [../patterns/api-host-wiring.md](../patterns/ap
 A mismatch (e.g. `new Claim("roles", ...)`) yields empty roles -> global-admin tenant-bypass never
 fires; a missing `userTenantId` yields a null tenant -> every list silently returns zero rows.
 
+With Microsoft.Identity.Web's inbound claim mapping active, `oid` arrives renamed to
+`http://schemas.microsoft.com/identity/claims/objectidentifier` - a chain that checks short `oid`
+then falls to a non-Guid `sub` misses it and silently collapses **every** authenticated user to the
+fallback/audit-empty identity. The `oid` step must check both the short name and the objectidentifier
+URI (or the handler disables mapping). Only an authenticated post-deploy smoke catches this class.
+
 ## Dev-Mode Auth Patterns
 
 ### UI: Custom Auth Provider (dev) to MSAL (production)

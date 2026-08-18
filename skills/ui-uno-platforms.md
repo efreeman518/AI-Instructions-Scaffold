@@ -177,6 +177,8 @@ Deployment and deployment-shaped tests stage a clean `dotnet publish -c Release`
 
 Staging and lookup must use forward slashes plus case-correct paths so Windows cannot hide a Linux deployment failure. Fail the artifact-producing job when expected files are absent, and make artifact upload use `if-no-files-found: error`.
 
+The same clean-first rule binds any manual "republish and re-check" loop: `dotnet publish` does not clean prior output, so repeated publishes accumulate hashed `_framework` assemblies and `dotnet.*.js` boot scripts, and the Uno bootstrap keeps loading whichever it was first built against - the browser renders old code no matter what the source says. Delete `bin/<Config>/<tfm>-browserwasm/publish` before each publish and assert exactly one `dotnet.*.js` and one application assembly in `_framework/` before trusting what the browser shows. A pixel-identical screenshot after a change that must move layout is evidence the pipeline is stuck, not evidence the change did nothing.
+
 Static hosting rules:
 
 - Content-hashed framework assets may use long-lived `public, immutable` caching.
@@ -401,6 +403,21 @@ Use the class name from the output - the generated name cannot be predicted from
 
 ---
 
+## Localization (resw) Pitfalls
+
+A resw key bound via `x:Uid` on any XAML element cannot also be fetched programmatically: the code-side lookup silently returns the fallback (default-language) string while the `x:Uid` binding localizes correctly - no error, no warning. Give code-facing strings dedicated keys (no `x:Uid` sharing), and cross-check code call-site keys against the XAML `x:Uid` set when adding locales.
+
+## Android Release Trimming
+
+Trimmed Android Release builds fail in ways Debug never shows, with no exception:
+
+- ILLink strips SkiaSharp/HarfBuzz internals reached only via native interop - the app renders a black screen. Pin them as trim roots (`<TrimmerRootAssembly Include="SkiaSharp" RootMode="All" />`, plus HarfBuzzSharp).
+- Re-enabling trimming later strips `Uno.UI.MSAL`'s reflective Activity lookup - sign-in breaks. Reflection-dependent auth/interop packages join the roots too.
+- Profiled AOT requires trimming (XA1030): the two flags move together - never disable one without deciding the other.
+- Do not "fix" a trim failure by disabling trimming; bisect to the stripped assembly and root it.
+
+A trimmed Release build is proven only by rendering and signing in with CI-equivalent flags before deploy; Debug and untrimmed proofs are void.
+
 ## Known Build Issues / Workarounds
 
 ### Skia Browser-WASM Cold-Start Renderer Race
@@ -419,6 +436,10 @@ Diagnosis and response:
 ### Resizetizer File Naming Rules
 
 Uno.Resizetizer requires asset filenames to be **lowercase**, containing only alphanumeric characters or underscores, and starting/ending with a letter. Files like `SplashScreen.svg` or `my-icon.png` will fail the build.
+
+**Resizetizer generates Android icon/splash resources but wires up neither.** `UnoIcon`/`UnoSplashScreen` emit `mipmap-anydpi-v26` icons and the `drawable/uno_splash_image` layer-list without touching `AndroidManifest.xml` or any theme - unwired, the app silently ships the default launcher icon and a blank pre-first-frame window. Wire `android:icon`/`android:roundIcon` on `<application>` (the Android splash API then inherits the icon) and `android:windowBackground` on the app theme.
+
+**`Assets\**\*.svg` files are build inputs, never runtime references.** Resizetizer treats every SVG under `Assets` as an `UnoImage` and rasterizes it to `name.png` plus scale variants; the raw `.svg` is not published. On WASM, `ms-appx:///Assets/name.svg` falls through to the SPA rewrite (observed: `200, text/html`) and `SvgImageSource` renders blank with no binding error and no console warning. Runtime XAML references the generated `.png` by base name (Uno picks the scale variant; the same pipeline feeds Android/iOS, so the `.png` reference is portable). A `<Content Include="Assets\x.svg">` with `CopyToOutputDirectory` does **not** fix this - it copies into build output, with no effect on the WASM bundle or `ms-appx` resolution.
 
 ### UnoSplashScreen WASM Build Failure (Resizetizer 1.12.1)
 

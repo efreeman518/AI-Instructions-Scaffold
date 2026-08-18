@@ -98,6 +98,8 @@ The `resource-implementation.yaml` test booleans drive **generation**: `comprehe
 
 EF query-translation correctness requires a real relational provider. `minimal` (Unit + Endpoint) does not cover translated predicates, projections, owned-type filters, or value-converted columns because endpoint tests use the in-memory WAF path. In `balanced` and higher, add at least one real-SQL search/list path per searchable aggregate: `Test.E2E` for HTTP workflow coverage or `Test.Integration` for repository/component coverage.
 
+The real provider must be the **deployed** provider. When configured `databaseProviders` differ between the test default and the deployment target (e.g. tests default to SQL Server, production runs PostgreSQL), a green run proves nothing about deployed-provider query translation - shaper and translation failures are provider-specific. Run the relational integration suite against the deployed provider at least once per release, and on every change to query projections.
+
 ## Capability-Gated Test Tiers (the early decision drives the rest)
 
 The early Phase 2 capability pick - `scaffoldMode` plus the `include*UI` / `useAspire` host flags ([resource-implementation-schema.md](../ai/resource-implementation-schema.md) Question 2) - determines which tiers exist **at all**. An `api-only` / no-UI scaffold has none of the rows below: no project, no category, no env var, no setup-script branch, no VS Code task. Do not default these on; a tier appears only because a capability was selected early.

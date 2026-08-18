@@ -128,6 +128,8 @@ Updater rules:
 
 See [troubleshooting.md](../support/troubleshooting.md) for the canonical paging defaults guidance and test/runtime failure patterns.
 
+Aggregate counts (dashboard tiles, badge numbers) come from a count query over mapped columns, never from counting a fetched page - a 100-row page silently undercounts. When the natural filter property is `[NotMapped]`/computed and will not translate, filter on the underlying mapped columns instead of pulling rows into memory.
+
 ---
 
 ## Entity Configuration
@@ -235,6 +237,7 @@ await repoTrxn.SaveChangesAsync(OptimisticConcurrencyWinner.ClientWins, ct);
 - Inline backfill SQL inside an EF migration - blocks deployment on long-running data work and offers no retry handle. Use a background job for complex transforms; keep migrations idempotent and structural.
 - Mega-migrations that bundle multiple features - hard to revert and obscures the diff. One migration per feature/slice, named `YYYYMMDD_Description`.
 - Renaming a migration after it has been shared - every other developer's state diverges; never rename a migration once pushed.
+- Npgsql GSS encryption default on chiseled/minimal images - Npgsql defaults `GssEncryptionMode` to Prefer and probes for Kerberos libs the image intentionally lacks, printing a `libgssapi_krb5.so.2` load error on every startup. Set `GssEncryptionMode.Disable` unconditionally for password-auth deployments in the central provider-options helper, and pin it with a test against the effective `DbConnection.ConnectionString`. Do not guard with `NpgsqlConnectionStringBuilder.ContainsKey` - it reports whether a keyword is *supported*, not *present*, so the guard never fires.
 - Member access on a value-converted property inside an EF-translated predicate - compiles and passes model validation, then fails at runtime with `InvalidOperationException: The LINQ expression ... could not be translated`. Build typed IDs/value objects outside the expression and compare the whole property. Use `.Value` only in domain code or post-materialization LINQ-to-objects.
 
 ---

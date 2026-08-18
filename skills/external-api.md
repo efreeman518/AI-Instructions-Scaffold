@@ -205,6 +205,10 @@ When an external provider posts callbacks into your system:
 
 ---
 
+## Required vs Enrichment Calls
+
+Classify every external call at the call site: **required** (the operation cannot succeed without it) or **enrichment** (adds optional data). Enrichment failures log and degrade to the unresolved value - they never propagate into the primary operation's status. A geocoding 401 must not turn a profile save into a 500. Cancellation still propagates; work that depends on the missing enrichment skips rather than throws.
+
 ## Stubbing Unresolved External APIs
 
 When an external API is not yet configured (no credentials, no base URL, or provider not chosen). Canonical stub shapes, safe-default table, and `// TODO: [CONFIGURE]` placement: [../templates/no-op-stub-template.md](../templates/no-op-stub-template.md).

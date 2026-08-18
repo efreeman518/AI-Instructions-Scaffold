@@ -107,6 +107,11 @@ Always ship the **smallest chiseled variant the app actually needs** - smaller i
 
 Prefer `-chiseled` and set `<InvariantGlobalization>true</InvariantGlobalization>`; escalate to `-chiseled-extra` only after confirming a globalization/tzdata/`libstdc++` dependency. Never fall back to the full (non-chiseled) `aspnet` image for production.
 
+Two provider-driven escalations are hard rules, silent until runtime:
+
+- **Any host that reaches SQL Server must keep ICU.** `Microsoft.Data.SqlClient` throws `NotSupportedException` on every connection open under `InvariantGlobalization=true` - use `-chiseled-extra` (or drop invariant mode) for those hosts.
+- **Chiseled images have no Kerberos libs, and Npgsql defaults GSS encryption to Prefer** - password-auth Postgres apps log a `libgssapi_krb5.so.2` load error on every startup. Set `GssEncryptionMode=Disable` in the central provider-options helper (see [data-persistence.md](../skills/data-persistence.md) Pitfalls).
+
 ## Rules
 
 - **Always use chiseled base images** for production - smaller attack surface, no shell. Default to the most-chiseled variant (`-noble-chiseled`) and escalate to `-noble-chiseled-extra` only when needed - see *Chiseled variant selection* above.
@@ -127,4 +132,5 @@ Prefer `-chiseled` and set `<InvariantGlobalization>true</InvariantGlobalization
 - [ ] `EXPOSE` port matches Container Apps / Aspire configuration
 - [ ] `ENTRYPOINT` matches the published assembly name
 - [ ] No `HEALTHCHECK` in image - health probes configured at orchestrator level (Container Apps / K8s)
+- [ ] For Blazor/static-asset hosts: the published stage contains the static-asset root (`wwwroot/_framework` for Blazor). A `--no-restore` publish against an incomplete restore skeleton can silently omit `Microsoft.AspNetCore.App.Internal.Assets`, shipping an image whose UI never starts (blank page, green CI). Any change to the restore skeleton invalidates this proof - re-verify.
 - [ ] When native assets exist, build environment matches runtime libc, publish uses the target RID, and the final image passes a P/Invoke smoke

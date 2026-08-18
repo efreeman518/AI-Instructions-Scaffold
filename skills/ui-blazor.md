@@ -186,6 +186,14 @@ No `UseAntiforgery`/`UseHttpsRedirection` - WASM host is a static SPA.
 </Router>
 ```
 
+`FocusOnNavigate Selector="h1"` makes an `h1` a structural dependency: every routed page must render **exactly one `h1`** or two things fail silently - keyboard focus never moves on navigation, and heading order starts below 1 (axe flags it). MudBlazor `Typo` sets only the CSS class, never the element: `<MudText Typo="Typo.h4">` emits an `<h4>`. Page titles therefore carry `HtmlTag`:
+
+```razor
+<MudText Typo="Typo.h4" HtmlTag="h1" data-testid="page-title">{Entity} Dashboard</MudText>
+```
+
+`Typo` still drives styling, so appearance is unchanged. Layout chrome (app-bar brand, `Typo.h6`) stays out of the `h1` slot.
+
 **Non-negotiable:** `@rendermode="InteractiveServer"` on both `HeadOutlet` and `Routes`. Registering an interactive render mode in `Program.cs` (`AddInteractiveServerComponents` + `AddInteractiveServerRenderMode`) does nothing on its own - no component opts in, so Blazor serves everything as **static SSR** and every interaction (theme toggle, dialogs, grid actions, buttons) silently no-ops with no error. The component must opt in via `@rendermode`.
 
 Naming trap: the bare shorthand `InteractiveServer` (used above) requires `@using static Microsoft.AspNetCore.Components.Web.RenderMode` (present in `_Imports.razor` below). The qualified form `@rendermode="RenderMode.InteractiveServer"` works with the default imports and no `using static`. Pick one; do not mix a bare shorthand with missing imports (compile error) or a missing `@rendermode` (dead interactivity).
@@ -522,6 +530,7 @@ back to MudBlazor-generated CSS classes (which churn across MudBlazor versions a
 MudBlazor components forward unknown attributes to the rendered root, so `data-testid` passes through.
 
 Required `data-testid` coverage:
+- Page heading: `page-title` on each page's `h1` `MudText` (see the Routes.razor section). Proving the page body rendered is the first assertion every smoke test makes; without this testid, tests reach for `getByRole('heading', ...)` - a markup-coupled selector whose rename is discovered in the slowest possible place, the deploy-gated smoke.
 - Nav links: `data-testid="nav-{entity}"` on each `MudNavLink`.
 - Page actions: `new-{entity}`, `save`, `delete`, `cancel` on the `MudButton`s.
 - Dialog inputs: one per field, e.g. `field-{property}` on each `MudTextField`/`MudSelect`.
@@ -552,7 +561,8 @@ The consumption-side preference ("prefer stable selectors") lives in
 - [ ] Blazor UI calls the Gateway only - never the API host directly
 - [ ] Aggregate edit pages bind children to `_model.<Collection>` and persist via the single Create/Update call (no per-child API calls) - see [ui-blazor-forms.md](ui-blazor-forms.md) section Editing Parent Aggregates with Child Collections
 - [ ] Each create form binds a field for every required `{Entity}.Create(...)` arg (or is marked a stub) - see [ui-blazor-forms.md](ui-blazor-forms.md) section Editable Forms Against `init`-Only DTO Records
-- [ ] `data-testid` on nav links, New/Save/Delete buttons, dialog inputs, and grids/rows - see section Test Selectors
+- [ ] `data-testid` on page heading, nav links, New/Save/Delete buttons, dialog inputs, and grids/rows - see section Test Selectors
+- [ ] Every routed page renders exactly one `h1` via `MudText HtmlTag="h1"` (`FocusOnNavigate` target + smoke anchor) - see section App.razor & Routes.razor
 
 ## Coexistence With Uno
 

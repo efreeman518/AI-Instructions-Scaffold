@@ -65,6 +65,8 @@ public class DesignTimeDbContextFactoryQuery : IDesignTimeDbContextFactory<{Proj
 
 `ToJson()` with owned types is the preferred pattern for structured data stored as JSON in SQL Server. EF Core may still fail to generate migrations for complex graphs with nested collections or dictionaries.
 
+Projection trap: materializing a primitive collection inside a `ToJson()`-owned type via `.ToList()` NREs in the SQL Server shaper at shaper-build time (even on empty tables), while translating fine on Npgsql - write `new List<T>(x.Items)` instead of `x.Items.ToList()` in projections, and cover the projection on the deployed provider (see [testing.md](../skills/testing.md)).
+
 Fallback: use a serializer-backed value conversion to `nvarchar(max)` with a custom `ValueComparer`.
 
 ```csharp
@@ -118,6 +120,7 @@ Never rename a migration after it has been shared with any environment or teamma
 
 - `preserved-append-only` is the default and is mandatory once any teammate, shared environment, or preserved dataset depends on migration history. Existing migrations are immutable; append a new migration.
 - `unreleased-resettable` is allowed only when the recorded project context confirms no compatibility or data history must survive. Baseline regeneration then requires an explicit list of affected environments, a verified backup for any data worth keeping, and a guarded reset. It is not permission to reset an environment merely because a migration is inconvenient.
+- A data-preserving guarded reset has three concrete failure points, each verified against a real provider container before running destructively: the data-only dump's `COPY` column lists come from the **live** schema, so any column the new baseline dropped aborts the restore after the volume is destroyed - drop listed obsolete columns after the full backup and before the dump; refuse every destructive step when the backup did not actually run; validate identifiers against the live schema (e.g. `to_regclass`) because `ALTER TABLE IF EXISTS` exits 0 on a typo.
 
 For multi-provider applications, generate and verify every provider named in `databaseProviders` from the same application model. Keep provider migration sets separate, run `has-pending-model-changes` for each context/provider, and regenerate each `InitialCreate` only under `unreleased-resettable`. A parity verifier may normalize only nondeterministic generated migration IDs/timestamps before diffing; it must not normalize schema, SQL, annotations, or provider-specific semantics. On drift, fail and upload regenerated files as evidence. Do not create self-modifying, self-deleting, or repository-branch workflows for routine migration repair.
 
