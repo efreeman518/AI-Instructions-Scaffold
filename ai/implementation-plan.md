@@ -30,6 +30,7 @@ Run this check before writing Phase 4 tasks. Fix source artifacts first, not gen
 - [ ] If `useAspire: true`, every non-baseline Aspire dependency has an `aspireResources` entry with AppHost API, local mode, publish mode, connection names, and official docs URL.
 - [ ] Every design decision that affects generation order, auth, tenancy, contracts, hosting, package strategy, or external dependency mode is `confirmed`, `defaulted`, or non-blocking `deferred`.
 - [ ] No `[OPEN QUESTION: ...]` marker remains in Phase 4 scope (**GR-10**). Markers still present must be either resolved or downgraded to a non-blocking deferred decision with `Needed Before` set.
+- [ ] If any `.scaffold/` artifact changed since the Phase 1 gate, re-run the defect scan from `shared-understanding-interview.md` section Adversarial Spec Review: no contradiction, untestable claim, or happy-path-only workflow remains.
 
 ## Implementation Steps
 

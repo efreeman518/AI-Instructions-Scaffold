@@ -119,6 +119,8 @@ This rule is enforced at every session boundary: [START-AI.md](START-AI.md) sect
 
 **Mid-scaffold corrections.** When a domain misunderstanding surfaces mid-Phase-5 (entity purpose wrong, term mismatched, decision violated), [support/OPERATIONS.md](support/OPERATIONS.md) is the canonical recovery path: clarify with the user, update the Phase-1 artifacts, then re-scaffold the affected slice.
 
+**Shrink as code matures.** Once code and tests express a fact (structure, wiring, method behavior), delete artifact prose that merely restates it - two overlapping sources of truth make later sessions average across them instead of obeying one. The artifacts converge toward what code cannot express: rationale, non-goals, key invariants, external contracts, and compliance constraints. This prunes content within the artifacts; it never removes the artifacts themselves (next rule).
+
 **Do not delete.** These artifacts are the onboarding surface for every future AI session, code reviewer, and new team member. Keep them in the repo root for the life of the project - even when they grow long, the cost of reading them is far lower than the cost of an AI session reasoning from absent context.
 
 ## Phases

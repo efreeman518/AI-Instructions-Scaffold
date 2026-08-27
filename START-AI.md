@@ -45,7 +45,7 @@ When scaffold says load an instruction file, read source file text directly and 
 
 `.scaffold/domain-specification.yaml`, `.scaffold/UBIQUITOUS-LANGUAGE.md`, and `.scaffold/DESIGN-DECISIONS.md` are the **binding source of truth** for the project. Every phase consumes them; every session must keep them current.
 
-**Rule of thumb:** *Fix the artifact first, then the code. When drift exists, the artifact loses to code reality.*
+**Rule of thumb:** *Fix the artifact first, then the code. When drift exists, the artifact loses to code reality.* Artifacts shrink as code matures: delete prose the code now expresses; keep rationale, non-goals, invariants, and external contracts.
 
 - **New term, role, event, action, or design decision introduced this session** -> update the relevant Phase-1 artifact **before** generating the code that uses it.
 - **Drift discovered** (code identifier or implemented decision diverges from artifact) -> update the artifact to match accepted reality, then continue.
