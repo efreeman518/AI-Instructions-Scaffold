@@ -60,7 +60,7 @@ Walk these branches in order. Revisit earlier branches when a later answer chang
 
 | Branch | Resolve | Key Dependencies |
 |---|---|---|
-| Purpose | business problem, success criteria, primary users | none |
+| Purpose | business problem, success criteria, explicit non-goals, primary users | none |
 | Actors and roles | human roles, system actors, permissions vocabulary | purpose |
 | Ubiquitous language | accepted terms, rejected synonyms, naming conflicts | purpose, actors |
 | Entities and aggregates | entities, ownership, aggregate roots, tenant scope | language |
@@ -121,6 +121,23 @@ Parent decisions must close before child decisions:
 
 If a child branch exposes a parent conflict, pause and reopen the parent branch.
 
+## Adversarial Spec Review
+
+After drafting the three artifacts and before presenting them for developer review, run one self-critique pass over the drafts. Hunt for these defect classes:
+
+| Defect | What to look for |
+|---|---|
+| Contradiction | Two decisions, rules, or branch answers that cannot both hold. |
+| False precision | A term that reads exact but permits multiple implementations; check each against `.scaffold/UBIQUITOUS-LANGUAGE.md`. |
+| Hidden dependency | A decision that presumes a parent decision never recorded in `.scaffold/DESIGN-DECISIONS.md`. |
+| Untestable claim | A success criterion or domain rule with no observable outcome. Mark each rule machine-checkable (it becomes a test) or human-review. |
+| Happy-path-only | A workflow, external dependency, or async reaction that states only success behavior. Each must state failure behavior: retry, compensation, or partial failure. |
+| Letter-vs-intent | One concrete way an implementation could satisfy the artifacts while violating the stated purpose. |
+
+Route each finding to exactly one of: fix the artifact, ask the developer one targeted question, or record it per **GR-10** (`[OPEN QUESTION: ...]` or a deferred decision with `Needed Before`). A finding is never left only in session memory.
+
+Harnesses with subagent support may run this pass as an independent read-only reviewer per [../support/multi-agent.md](../support/multi-agent.md).
+
 ## Shared Understanding Gate
 
 Before writing Phase 1 outputs, confirm:
@@ -137,6 +154,8 @@ Before writing Phase 1 outputs, confirm:
 - [ ] Every deferred branch names the phase that revisits it (`Needed Before`).
 - [ ] Every defaulted value maps to a canonical default in [resource-implementation-schema.md](resource-implementation-schema.md) section Canonical Defaults, with the assumption stated inline.
 - [ ] Each success criterion is measurable in business terms, not implementation terms.
+- [ ] Non-goals are recorded in `.scaffold/DESIGN-DECISIONS.md` section Non-Goals, or the developer explicitly confirmed there are none.
+- [ ] Adversarial Spec Review completed; every finding fixed, asked, or recorded per GR-10.
 - [ ] Developer has reviewed the final recap.
 
 Only then write `.scaffold/domain-specification.yaml`, `.scaffold/UBIQUITOUS-LANGUAGE.md`, and `.scaffold/DESIGN-DECISIONS.md`.

@@ -17,6 +17,12 @@ Record a decision only when one of these is true:
 
 Do not record obvious facts already covered by `.scaffold/domain-specification.yaml` or `.scaffold/resource-implementation.yaml`.
 
+## Non-Goals
+
+What this system deliberately does not do. One line each, with the reason. A non-goal is not a deferred decision: deferred means later, a non-goal means never unless a new decision supersedes it. Later phases and slices must not implement against an entry here.
+
+- _Non-goal._ - _Why it is out of scope._
+
 ## Decision Dependency Graph
 
 ```mermaid
